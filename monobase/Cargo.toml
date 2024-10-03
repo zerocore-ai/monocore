@@ -1,0 +1,10 @@
+[package]
+name = "monobase"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "monobase"
+path = "lib/lib.rs"
+
+[dependencies]

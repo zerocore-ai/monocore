@@ -1,0 +1,10 @@
+[package]
+name = "monocore"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "monocore"
+path = "lib/lib.rs"
+
+[dependencies]
