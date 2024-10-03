@@ -1,15 +1,8 @@
-//! `monocore` is a secure microvm provisioning system.
-
-#![warn(missing_docs)]
-#![allow(clippy::module_inception)]
-
-mod error;
+//! Monocore proxy server types and helpers.
 
 //--------------------------------------------------------------------------------------------------
-// Exports
+// Types
 //--------------------------------------------------------------------------------------------------
 
-pub mod config;
-pub mod proxy;
-
-pub use error::*;
+/// The monocore proxy server.
+pub struct ProxyServer;
