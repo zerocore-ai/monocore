@@ -1,0 +1,104 @@
+name: 🧪 Tests and Checks
+
+on:
+  push:
+    branches: [ main ]
+
+  pull_request:
+    branches: [ '**' ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  run-checks:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust-toolchain:
+          - stable
+          - nightly
+          # minimum version
+          - "1.75"
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Smarter caching action, speeds up build times compared to regular cache:
+      # https://github.com/Swatinem/rust-cache
+      - name: Cache Project
+        uses: Swatinem/rust-cache@v2
+
+      # Widely adopted suite of Rust-specific boilerplate actions, especially
+      # toolchain/cargo use: https://actions-rs.github.io/
+      - name: Install Rust Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          override: true
+          components: rustfmt, clippy
+          toolchain: ${{ matrix.rust-toolchain }}
+
+      - name: Check Format
+        uses: actions-rs/cargo@v1
+        with:
+          args: --all -- --check
+          command: fmt
+          toolchain: ${{ matrix.rust-toolchain }}
+
+      - name: Run Linter
+        uses: actions-rs/cargo@v1
+        with:
+          args: --all -- -D warnings
+          command: clippy
+          toolchain: ${{ matrix.rust-toolchain }}
+
+      # Check for security advisories
+      - name: Check Advisories
+        if: ${{ matrix.rust-toolchain == 'stable' }}
+        uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          command: check advisories
+        continue-on-error: true
+
+      # Audit licenses, unreleased crates, and unexpected duplicate versions.
+      - name: Check Bans, Licenses, and Sources
+        if: ${{ matrix.rust-toolchain == 'stable' }}
+        uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          command: check bans licenses sources
+
+      # Only "test" release build on push event.
+      - name: Test Release
+        if: ${{ matrix.rust-toolchain == 'stable'  && github.event_name == 'push' }}
+        run: cargo build --release
+
+  run-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust-toolchain:
+          - stable
+          - nightly
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Environment Packages
+        run: |
+          sudo apt-get update -qqy
+          sudo apt-get install jq
+
+      - name: Cache Project
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Rust Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          override: true
+          toolchain: ${{ matrix.rust-toolchain }}
+
+      - name: Run Tests
+        run: cargo test --all-features

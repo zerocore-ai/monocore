@@ -1,0 +1,11 @@
+[package]
+name = "monofs"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[lib]
+name = "monofs"
+path = "lib/lib.rs"
+
+[dependencies]
