@@ -21,9 +21,8 @@
   </p> -->
 </div>
 
-**`monocore`** is designed to be a distributed, decentralized, and secure personal data and compute cloud.
+**`monocore`** is a self-hosted distributed personal _data and compute cloud_ with serverless capabilities.
 
-</br>
 
 > [!WARNING]
 > This project is in early development and is not yet ready for production use.

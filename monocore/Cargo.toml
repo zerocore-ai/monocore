@@ -8,4 +8,25 @@ license.workspace = true
 name = "monocore"
 path = "lib/lib.rs"
 
+[[bin]]
+name = "mono"
+path = "bin/mono.rs"
+
+[[bin]]
+name = "monoproxy"
+path = "bin/monoproxy.rs"
+
+[[bin]]
+name = "monod"
+path = "bin/monod.rs"
+
 [dependencies]
+anyhow.workspace = true
+serde.workspace = true
+structstruck = "0.4.1"
+thiserror.workspace = true
+toml = "0.8.19"
+typed-builder = "0.20.0"
+
+[dev-dependencies]
+test-log = "0.2.16"

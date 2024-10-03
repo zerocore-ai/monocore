@@ -20,8 +20,6 @@ jobs:
         rust-toolchain:
           - stable
           - nightly
-          # minimum version
-          - "1.75"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
