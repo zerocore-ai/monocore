@@ -57,7 +57,7 @@ jobs:
       # Check for security advisories
       - name: Check Advisories
         if: ${{ matrix.rust-toolchain == 'stable' }}
-        uses: EmbarkStudios/cargo-deny-action@v1
+        uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check advisories
         continue-on-error: true
@@ -65,7 +65,7 @@ jobs:
       # Audit licenses, unreleased crates, and unexpected duplicate versions.
       - name: Check Bans, Licenses, and Sources
         if: ${{ matrix.rust-toolchain == 'stable' }}
-        uses: EmbarkStudios/cargo-deny-action@v1
+        uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check bans licenses sources
 
