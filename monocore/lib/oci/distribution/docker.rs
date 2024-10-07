@@ -19,7 +19,7 @@ use tokio::{
 };
 
 use crate::{
-    utils::{self, IMAGE_LAYERS_SUBDIR, MONOCORE_PATH},
+    utils::{self, MONOCORE_IMAGE_LAYERS_PATH, MONOCORE_PATH},
     MonocoreError, MonocoreResult,
 };
 
@@ -74,7 +74,7 @@ pub struct DockerRegistry {
     client: ClientWithMiddleware,
 
     /// The path to the where files are downloaded.
-    download_path: PathBuf,
+    path: PathBuf,
 }
 
 /// Stores authentication credentials obtained from the Docker registry, including tokens and expiration details.
@@ -130,22 +130,19 @@ impl DockerRegistry {
 
         Self {
             client,
-            download_path: MONOCORE_PATH.join(REGISTRY_PATH),
+            path: MONOCORE_PATH.join(REGISTRY_PATH),
         }
     }
 
     /// Creates a new DockerRegistry instance with a custom path.
-    pub fn with_download_path(download_path: PathBuf) -> Self {
+    pub fn with_path(path: PathBuf) -> Self {
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
         let client_builder = ClientBuilder::new(Client::new());
         let client = client_builder
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
 
-        Self {
-            client,
-            download_path,
-        }
+        Self { client, path }
     }
 
     /// Gets the size of a downloaded file if it exists.
@@ -158,12 +155,12 @@ impl DockerRegistry {
         path.metadata().unwrap().len()
     }
 
-    // TODO: Can this accept references instead.
     /// Downloads a blob from the registry, supports download resumption if the file already partially exists.
     async fn download_image_blob(
         &self,
-        repository: String,
-        digest: Digest,
+        repository: &str,
+        digest: &Digest,
+        download_size: u64,
         destination: PathBuf,
     ) -> MonocoreResult<()> {
         // Ensure the destination directory exists
@@ -174,22 +171,27 @@ impl DockerRegistry {
         // Get the size of the already downloaded file if it exists
         let downloaded_size = self.get_downloaded_file_size(&destination);
 
-        // Create the request with a range header for resumption
-        let mut stream = self
-            .fetch_image_blob(&repository, &digest, downloaded_size..)
-            .await?;
-
         // Open the file for writing, create if it doesn't exist
-        let mut file = if downloaded_size > 0 {
-            OpenOptions::new().append(true).open(&destination).await?
-        } else {
+        let mut file = if downloaded_size == 0 {
             OpenOptions::new()
                 .create(true)
                 .truncate(true)
                 .write(true)
                 .open(&destination)
                 .await?
+        } else if downloaded_size < download_size {
+            OpenOptions::new().append(true).open(&destination).await?
+        } else {
+            tracing::info!(
+                "file already exists skipping download: {}",
+                destination.display()
+            );
+            return Ok(());
         };
+
+        let mut stream = self
+            .fetch_image_blob(repository, digest, downloaded_size..)
+            .await?;
 
         // Write the stream to the file
         while let Some(chunk) = stream.next().await {
@@ -199,18 +201,17 @@ impl DockerRegistry {
 
         // TODO: Check that the downloaded file has the same digest as the one we wanted
         // TODO: Use the hash method derived from the digest to verify the download
-        // let algorithm = digest.algorithm();
-        // let expected_hash = digest.to_string();
-        // let actual_hash = utils::get_file_hash(destination, algorithm).await?;
+        let algorithm = digest.algorithm();
+        let expected_hash = digest.digest();
+        let actual_hash = hex::encode(utils::get_file_hash(&destination, algorithm).await?);
 
-        // if actual_hash != expected_hash {
-        // // Delete the file if the hash does not match
-        // fs::remove_file(destination).await?;
-        //     return Err(MonocoreError::DownloadFailed(format!(
-        //         "Downloaded file hash {} does not match expected hash {}",
-        //         actual_hash, expected_hash
-        //     )));
-        // }
+        // Delete the already downloaded file if the hash does not match
+        if actual_hash != expected_hash {
+            fs::remove_file(destination).await?;
+            return Err(MonocoreError::ImageLayerDownloadFailed(format!(
+                "({repository}:{digest}) file hash {actual_hash} does not match expected hash {expected_hash}",
+            )));
+        }
 
         Ok(())
     }
@@ -278,13 +279,8 @@ impl OciRegistryPull for DockerRegistry {
             .layers()
             .iter()
             .map(|layer| {
-                let layer_path = self
-                    .download_path
-                    .join(IMAGE_LAYERS_SUBDIR)
-                    .join(layer.digest().to_string());
-
-                // TODO: Can this accept references instead.
-                self.download_image_blob(repository.to_string(), layer.digest().clone(), layer_path)
+                let layer_path = MONOCORE_IMAGE_LAYERS_PATH.join(layer.digest().to_string());
+                self.download_image_blob(repository, layer.digest(), layer.size(), layer_path)
             })
             .collect();
 
@@ -531,7 +527,9 @@ mod tests {
     async fn test_pull_image() -> anyhow::Result<()> {
         let registry = DockerRegistry::new();
 
-        registry.pull_image("library/alpine", None).await?;
+        let result = registry.pull_image("library/alpine", None).await;
+
+        assert!(result.is_ok());
 
         Ok(())
     }
