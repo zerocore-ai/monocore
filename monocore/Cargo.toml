@@ -22,10 +22,28 @@ path = "bin/monod.rs"
 
 [dependencies]
 anyhow.workspace = true
+async-trait = "0.1.83"
+axum = "0.7.7"
+bytes = "1.7.2"
+chrono = { version = "0.4.38", features = ["serde"] }
+clap.workspace = true
+dotenvy.workspace = true
+futures.workspace = true
+getset.workspace = true
+home = "0.5.9"
+lazy_static = "1.5.0"
+oci-spec = "0.7.0"
+reqwest = { workspace = true, features = ["stream"] }
+reqwest-middleware = "0.3.3"
+reqwest-retry = "0.6.1"
 serde.workspace = true
+serde_json = "1.0.128"
 structstruck = "0.4.1"
 thiserror.workspace = true
+tokio.workspace = true
 toml = "0.8.19"
+tracing.workspace = true
+tracing-subscriber.workspace = true
 typed-builder = "0.20.0"
 
 [dev-dependencies]
