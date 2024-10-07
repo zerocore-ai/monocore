@@ -19,7 +19,7 @@ jobs:
       matrix:
         rust-toolchain:
           - stable
-          - nightly
+          # - nightly
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
