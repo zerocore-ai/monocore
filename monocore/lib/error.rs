@@ -44,6 +44,14 @@ pub enum MonocoreError {
     /// An error that occurred when a join handle returned an error.
     #[error("join error: {0}")]
     JoinError(#[from] tokio::task::JoinError),
+
+    /// An error that occurred when an unsupported image hash algorithm was used.
+    #[error("unsupported image hash algorithm: {0}")]
+    UnsupportedImageHashAlgorithm(String),
+
+    /// An error that occurred when an image layer download failed.
+    #[error("image layer download failed: {0}")]
+    ImageLayerDownloadFailed(String),
 }
 
 /// An error that can represent any error.
