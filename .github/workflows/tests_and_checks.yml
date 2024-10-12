@@ -20,7 +20,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update -qqy
-          sudo apt-get install -y jq
+          sudo apt-get install -y jq libelf-dev build-essential flex bison libssl-dev libncurses5-dev
 
       - name: Build libkrun
         run: |
