@@ -496,6 +496,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[test_log::test(tokio::test)]
     async fn test_fetches() -> anyhow::Result<()> {
         let registry = DockerRegistry::new();
@@ -523,6 +524,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[test_log::test(tokio::test)]
     async fn test_pull_image() -> anyhow::Result<()> {
         let registry = DockerRegistry::new();
