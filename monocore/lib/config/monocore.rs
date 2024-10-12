@@ -9,6 +9,8 @@ use typed_builder::TypedBuilder;
 
 use crate::error::MonocoreResult;
 
+use super::{PathPair, PortPair};
+
 //--------------------------------------------------------------------------------------------------
 // Types
 //--------------------------------------------------------------------------------------------------
@@ -20,64 +22,7 @@ strike! {
     pub struct Monocore {
         /// The services to run.
         #[serde(rename = "service")]
-        services: Vec<
-            /// The service to run.
-            pub struct Service {
-                /// The name of the service.
-                name: String,
-
-                /// The base image to use.
-                #[serde(skip_serializing_if = "Option::is_none", default)]
-                base: Option<String>,
-
-                /// The volumes to mount.
-                #[serde(skip_serializing_if = "Vec::is_empty", default)]
-                volumes: Vec<String>,
-
-                /// The networks to connect to.
-                #[serde(skip_serializing_if = "Vec::is_empty", default)]
-                networks: Vec<String>,
-
-                /// The environment groups to use.
-                #[serde(skip_serializing_if = "Vec::is_empty", default)]
-                env_groups: Vec<String>,
-
-                /// The services to depend on.
-                #[serde(skip_serializing_if = "Vec::is_empty", default)]
-                depends_on: Vec<String>,
-
-                /// The setup commands to run.
-                #[serde(skip_serializing_if = "Vec::is_empty", default)]
-                setup: Vec<String>,
-
-                /// The command to run.
-                #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-                scripts: HashMap<String, String>,
-
-                /// The HTTP configuration.
-                #[serde(skip_serializing_if = "Option::is_none", default)]
-                http: Option<
-                    /// The HTTP configuration.
-                    pub struct HttpConfig {
-                        /// The port to expose.
-                        #[serde(skip_serializing_if = "Option::is_none", default)]
-                        port: Option<Port>,
-
-                        /// Whether the service is serverless.
-                        #[serde(skip_serializing_if = "Option::is_none", default)]
-                        serverless: Option<bool>,
-
-                        /// The URL prefix.
-                        #[serde(skip_serializing_if = "Option::is_none", default)]
-                        url_prefix: Option<String>,
-                    }
-                >,
-            }
-        >,
-
-        /// The precursor services to run first.
-        #[serde(rename = "precursor", skip_serializing_if = "Vec::is_empty", default)]
-        precursors: Vec<Service>,
+        services: Vec<Service>,
 
         /// The volumes to mount.
         #[serde(rename = "volume", skip_serializing_if = "Vec::is_empty", default)]
@@ -122,8 +67,130 @@ strike! {
     }
 }
 
-/// The volume to mount.
+/// The service to run.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type")]
+pub enum Service {
+    /// The default service.
+    #[serde(rename = "default")]
+    Default {
+        /// The name of the service.
+        name: String,
+
+        /// The base image to use.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        base: Option<String>,
+
+        /// The volumes to mount.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        volumes: Vec<String>,
+
+        /// The networks to connect to.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        networks: Vec<String>,
+
+        /// The environment groups to use.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        env_groups: Vec<String>,
+
+        /// The services to depend on.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        depends_on: Vec<String>,
+
+        /// The setup commands to run.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        setup: Vec<String>,
+
+        /// The command to run.
+        #[serde(skip_serializing_if = "HashMap::is_empty", default)]
+        scripts: HashMap<String, String>,
+
+        /// The port to expose.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        port: Option<PortPair>,
+
+        /// The working directory to use.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        workdir: Option<String>,
+
+        /// The command to run. If the `scripts.start` is not specified, this will be used as the
+        /// command to run.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        command: Option<String>,
+    },
+    /// An ephemeral service that does not actually run anything.
+    /// It is typically used to setup the environment for the actual services.
+    #[serde(rename = "precursor")]
+    Precursor {
+        /// The name of the service.
+        name: String,
+
+        /// The base image to use.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        base: Option<String>,
+
+        /// The volumes to mount.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        volumes: Vec<String>,
+
+        /// The networks to connect to.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        networks: Vec<String>,
+
+        /// The environment groups to use.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        env_groups: Vec<String>,
+
+        /// The services to depend on.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        depends_on: Vec<String>,
+
+        /// The setup commands to run.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        setup: Vec<String>,
+
+        /// The port to expose.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        port: Option<PortPair>,
+    },
+    /// An HTTP event handler service. It enables serverless type workloads.
+    #[serde(rename = "http_handler")]
+    HttpHandler {
+        /// The name of the service.
+        name: String,
+
+        /// The base image to use.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        base: Option<String>,
+
+        /// The volumes to mount.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        volumes: Vec<String>,
+
+        /// The networks to connect to.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        networks: Vec<String>,
+
+        /// The environment groups to use.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        env_groups: Vec<String>,
+
+        /// The services to depend on.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        depends_on: Vec<String>,
+
+        /// The setup commands to run.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        setup: Vec<String>,
+
+        /// The port to expose.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        port: Option<PortPair>,
+    },
+}
+
+/// The volume to mount.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum Volume {
     /// The volume is created on the fly for the guest.
@@ -147,45 +214,12 @@ pub enum Volume {
         name: String,
 
         /// The path to mount the volume from.
-        path: Path,
+        path: PathPair,
 
         /// Whether the volume is to be deleted when the service is stopped.
         #[serde(skip_serializing_if = "Option::is_none", default)]
         ephemeral: Option<bool>,
     },
-}
-
-/// Represents a path on the host and the guest.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum Path {
-    /// The host path and the guest path.
-    Separate {
-        /// The host path.
-        host: String,
-
-        /// The guest path.
-        guest: String,
-    },
-    /// The host path and the guest path are the same.
-    Same(String),
-}
-
-/// The port to expose.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum Port {
-    /// The host port and the guest port.
-    Separate {
-        /// The host port.
-        host: u16,
-
-        /// The guest port.
-        guest: u16,
-    },
-
-    /// The host port and the guest port are the same.
-    Same(u16),
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -210,7 +244,8 @@ mod tests {
     #[test]
     fn test_monocore_config_from_toml_string() -> anyhow::Result<()> {
         let config = r#"
-        [[precursor]]
+        [[service]]
+        type = "precursor"
         name = "precursor"
         base = "ubuntu:24.04"
         volumes = ["pre", "main"]
@@ -222,6 +257,7 @@ mod tests {
         ]
 
         [[service]]
+        type = "default"
         name = "server"
         base = "ubuntu:24.04"
         volumes = ["main"]
@@ -231,14 +267,8 @@ mod tests {
         setup = [
             "cd /main"
         ]
-
-        [service.scripts]
-        start = "./monocore"
-
-        [service.http]
-        port = { host = 3000, guest = 3000 }
-        serverless = true
-        url_prefix = "/api"
+        port = "3000:3000"
+        scripts = { start = "./monocore" }
 
         [[volume]]
         name = "main"
@@ -247,7 +277,7 @@ mod tests {
 
         [[volume]]
         name = "pre"
-        path = { host = "./", guest = "/project" }
+        path = "project:./"
         ephemeral = true
 
         [[network]]
@@ -267,46 +297,38 @@ mod tests {
         tracing::info!("config: {:?}", config);
 
         assert_eq!(
-            config.precursors,
-            vec![Service {
-                name: "precursor".to_string(),
-                base: Some("ubuntu:24.04".to_string()),
-                volumes: vec!["pre".to_string(), "main".to_string()],
-                networks: vec![],
-                env_groups: vec![],
-                depends_on: vec![],
-                setup: vec![
-                    "apt update && apt install -y curl".to_string(),
-                    "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
-                        .to_string(),
-                    "cd /project && cargo build --release".to_string(),
-                    "cp target/release/monocore /main/monocore".to_string(),
-                ],
-                scripts: HashMap::new(),
-                http: None,
-            }]
-        );
-
-        assert_eq!(
             config.services,
-            vec![Service {
-                name: "server".to_string(),
-                base: Some("ubuntu:24.04".to_string()),
-                volumes: vec!["main".to_string()],
-                networks: vec!["main".to_string()],
-                env_groups: vec!["main".to_string()],
-                depends_on: vec!["precursor".to_string()],
-                setup: vec!["cd /main".to_string()],
-                scripts: HashMap::from([("start".to_string(), "./monocore".to_string())]),
-                http: Some(HttpConfig {
-                    port: Some(Port::Separate {
-                        host: 3000,
-                        guest: 3000
-                    }),
-                    serverless: Some(true),
-                    url_prefix: Some("/api".to_string()),
-                }),
-            }]
+            vec![
+                Service::Precursor {
+                    name: "precursor".to_string(),
+                    base: Some("ubuntu:24.04".to_string()),
+                    volumes: vec!["pre".to_string(), "main".to_string()],
+                    networks: vec![],
+                    env_groups: vec![],
+                    depends_on: vec![],
+                    setup: vec![
+                        "apt update && apt install -y curl".to_string(),
+                        "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+                            .to_string(),
+                        "cd /project && cargo build --release".to_string(),
+                        "cp target/release/monocore /main/monocore".to_string(),
+                    ],
+                    port: None,
+                },
+                Service::Default {
+                    name: "server".to_string(),
+                    base: Some("ubuntu:24.04".to_string()),
+                    volumes: vec!["main".to_string()],
+                    networks: vec!["main".to_string()],
+                    env_groups: vec!["main".to_string()],
+                    depends_on: vec!["precursor".to_string()],
+                    setup: vec!["cd /main".to_string()],
+                    scripts: HashMap::from([("start".to_string(), "./monocore".to_string())]),
+                    port: Some(PortPair::Same(3000)),
+                    workdir: None,
+                    command: None,
+                }
+            ]
         );
 
         assert_eq!(
@@ -320,10 +342,7 @@ mod tests {
                 },
                 Volume::Mapped {
                     name: "pre".to_string(),
-                    path: Path::Separate {
-                        host: "./".to_string(),
-                        guest: "/project".to_string(),
-                    },
+                    path: "project:./".parse()?,
                     ephemeral: Some(true),
                 },
             ]

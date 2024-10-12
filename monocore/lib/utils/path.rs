@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use home::home_dir;
-
 //--------------------------------------------------------------------------------------------------
 // Constants
 //--------------------------------------------------------------------------------------------------
@@ -17,8 +15,16 @@ pub const IMAGE_DESCRIPTION_SUBDIR: &str = "descriptions";
 
 lazy_static::lazy_static! {
     /// The path where all monocore artifacts, configs, etc are stored.
-    pub static ref MONOCORE_PATH: PathBuf = home_dir().unwrap().join(MONOCORE_SUBDIR);
+    pub static ref DEFAULT_MONOCORE_HOME: PathBuf = dirs::home_dir().unwrap().join(MONOCORE_SUBDIR);
+}
 
-    /// The path where all monocore OCI image layers are cached.
-    pub static ref MONOCORE_IMAGE_LAYERS_PATH: PathBuf = MONOCORE_PATH.join(IMAGE_LAYERS_SUBDIR);
+//--------------------------------------------------------------------------------------------------
+// Functions
+//--------------------------------------------------------------------------------------------------
+
+/// Returns the path where all monocore artifacts, configs, etc are stored.
+#[inline]
+pub fn monocore_home_path() -> PathBuf {
+    let monocore_home = std::env::var("MONOCORE_HOME").unwrap();
+    PathBuf::from(monocore_home)
 }

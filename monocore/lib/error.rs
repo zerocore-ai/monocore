@@ -52,6 +52,14 @@ pub enum MonocoreError {
     /// An error that occurred when an image layer download failed.
     #[error("image layer download failed: {0}")]
     ImageLayerDownloadFailed(String),
+
+    /// An error that occurred when an invalid path pair was used.
+    #[error("invalid path pair: {0}")]
+    InvalidPathPair(String),
+
+    /// An error that occurred when an invalid port pair was used.
+    #[error("invalid port pair: {0}")]
+    InvalidPortPair(String),
 }
 
 /// An error that can represent any error.

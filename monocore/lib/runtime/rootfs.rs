@@ -1,13 +1,7 @@
-//! Configuration types and helpers.
-
-mod path_pair;
-mod port_pair;
-
 //--------------------------------------------------------------------------------------------------
-// Exports
+// Types
 //--------------------------------------------------------------------------------------------------
 
-pub mod monocore;
-
-pub use path_pair::*;
-pub use port_pair::*;
+/// A root filesystem.
+#[derive(Debug)]
+pub struct RootFS {}
