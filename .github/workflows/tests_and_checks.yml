@@ -3,7 +3,6 @@ name: 🧪 Tests and Checks
 on:
   push:
     branches: [ main ]
-
   pull_request:
     branches: [ '**' ]
 
@@ -12,7 +11,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-libkrun:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update -qqy
+          sudo apt-get install -y jq
+
+      - name: Build libkrun
+        run: |
+          chmod +x ./build_libkrun.sh
+          ./build_libkrun.sh
+
+      - name: Cache libkrun
+        uses: actions/cache@v3
+        with:
+          path: |
+            /usr/local/lib64/libkrunfw.so
+            /usr/local/lib64/libkrun.so
+          key: ${{ runner.os }}-libkrun-${{ hashFiles('**/build_libkrun.sh') }}
+
   run-checks:
+    needs: build-libkrun
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -24,13 +48,17 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Smarter caching action, speeds up build times compared to regular cache:
-      # https://github.com/Swatinem/rust-cache
       - name: Cache Project
         uses: Swatinem/rust-cache@v2
 
-      # Widely adopted suite of Rust-specific boilerplate actions, especially
-      # toolchain/cargo use: https://actions-rs.github.io/
+      - name: Restore libkrun cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            /usr/local/lib64/libkrunfw.so
+            /usr/local/lib64/libkrun.so
+          key: ${{ runner.os }}-libkrun-${{ hashFiles('**/build_libkrun.sh') }}
+
       - name: Install Rust Toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -52,7 +80,6 @@ jobs:
           command: clippy
           toolchain: ${{ matrix.rust-toolchain }}
 
-      # Check for security advisories
       - name: Check Advisories
         if: ${{ matrix.rust-toolchain == 'stable' }}
         uses: EmbarkStudios/cargo-deny-action@v2
@@ -60,19 +87,18 @@ jobs:
           command: check advisories
         continue-on-error: true
 
-      # Audit licenses, unreleased crates, and unexpected duplicate versions.
       - name: Check Bans, Licenses, and Sources
         if: ${{ matrix.rust-toolchain == 'stable' }}
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check bans licenses sources
 
-      # Only "test" release build on push event.
       - name: Test Release
         if: ${{ matrix.rust-toolchain == 'stable'  && github.event_name == 'push' }}
         run: cargo build --release
 
   run-tests:
+    needs: build-libkrun
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -91,6 +117,14 @@ jobs:
 
       - name: Cache Project
         uses: Swatinem/rust-cache@v2
+
+      - name: Restore libkrun cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            /usr/local/lib64/libkrunfw.so
+            /usr/local/lib64/libkrun.so
+          key: ${{ runner.os }}-libkrun-${{ hashFiles('**/build_libkrun.sh') }}
 
       - name: Install Rust Toolchain
         uses: actions-rs/toolchain@v1

@@ -51,6 +51,3 @@ typed-path = "0.9.2"
 
 [dev-dependencies]
 test-log = "0.2.16"
-
-# [build-dependencies]
-# dirs = "5.0.1"
