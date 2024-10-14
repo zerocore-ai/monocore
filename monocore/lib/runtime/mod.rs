@@ -1,13 +1,17 @@
-//! Configuration types and helpers.
+//! Runtime management and configuration.
 
-mod path_pair;
-mod port_pair;
+#[allow(unused)]
+mod ffi;
+#[allow(unused)]
+mod rootfs;
+#[allow(unused)]
+mod vm;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub mod monocore;
-
-pub use path_pair::*;
-pub use port_pair::*;
+#[allow(unused)]
+pub use ffi::*;
+pub use rootfs::*;
+pub use vm::*;

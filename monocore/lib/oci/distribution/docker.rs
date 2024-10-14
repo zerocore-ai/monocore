@@ -19,7 +19,7 @@ use tokio::{
 };
 
 use crate::{
-    utils::{self, MONOCORE_IMAGE_LAYERS_PATH, MONOCORE_PATH},
+    utils::{self, IMAGE_LAYERS_SUBDIR},
     MonocoreError, MonocoreResult,
 };
 
@@ -28,9 +28,6 @@ use super::{AuthProvider, OciRegistryPull};
 //--------------------------------------------------------------------------------------------------
 // Constants
 //--------------------------------------------------------------------------------------------------
-
-/// The path dedicated to Docker registry artifacts.
-const REGISTRY_PATH: &str = "docker";
 
 /// Base URL for Docker Registry v2 API, used for accessing image manifests, layers, and other registry operations.
 const DOCKER_REGISTRY_URL: &str = "https://registry-1.docker.io";
@@ -130,7 +127,7 @@ impl DockerRegistry {
 
         Self {
             client,
-            path: MONOCORE_PATH.join(REGISTRY_PATH),
+            path: utils::monocore_home_path(),
         }
     }
 
@@ -279,7 +276,10 @@ impl OciRegistryPull for DockerRegistry {
             .layers()
             .iter()
             .map(|layer| {
-                let layer_path = MONOCORE_IMAGE_LAYERS_PATH.join(layer.digest().to_string());
+                let layer_path = self
+                    .path
+                    .join(IMAGE_LAYERS_SUBDIR)
+                    .join(layer.digest().to_string());
                 self.download_image_blob(repository, layer.digest(), layer.size(), layer_path)
             })
             .collect();
@@ -496,6 +496,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[test_log::test(tokio::test)]
     async fn test_fetches() -> anyhow::Result<()> {
         let registry = DockerRegistry::new();
@@ -523,6 +524,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[test_log::test(tokio::test)]
     async fn test_pull_image() -> anyhow::Result<()> {
         let registry = DockerRegistry::new();

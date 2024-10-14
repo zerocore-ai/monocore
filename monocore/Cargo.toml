@@ -27,11 +27,11 @@ axum = "0.7.7"
 bytes = "1.7.2"
 chrono = { version = "0.4.38", features = ["serde"] }
 clap.workspace = true
+dirs = "5.0.1"
 dotenvy.workspace = true
 futures.workspace = true
 getset.workspace = true
 hex = "0.4.3"
-home = "0.5.9"
 lazy_static = "1.5.0"
 oci-spec = "0.7.0"
 reqwest = { workspace = true, features = ["stream"] }
@@ -47,6 +47,7 @@ toml = "0.8.19"
 tracing.workspace = true
 tracing-subscriber.workspace = true
 typed-builder = "0.20.0"
+typed-path = "0.9.2"
 
 [dev-dependencies]
 test-log = "0.2.16"

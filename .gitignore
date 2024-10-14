@@ -11,3 +11,6 @@ private
 *.tmp
 .history
 .DS_Store
+
+deps/
+build/
