@@ -60,6 +60,42 @@ pub enum MonocoreError {
     /// An error that occurred when an invalid port pair was used.
     #[error("invalid port pair: {0}")]
     InvalidPortPair(String),
+
+    /// An error that occurred when an invalid environment variable pair was used.
+    #[error("invalid environment variable pair: {0}")]
+    InvalidEnvPair(String),
+
+    /// An error that occurred when an invalid microVM configuration was used.
+    #[error("invalid microVM configuration: {0}")]
+    InvalidMicroVMConfig(InvalidMicroVMConfigError),
+
+    /// An error that occurred when an invalid resource limit format was used.
+    #[error("invalid resource limit format: {0}")]
+    InvalidRLimitFormat(String),
+
+    /// An error that occurred when an invalid resource limit value was used.
+    #[error("invalid resource limit value: {0}")]
+    InvalidRLimitValue(String),
+
+    /// An error that occurred when an invalid resource limit resource was used.
+    #[error("invalid resource limit resource: {0}")]
+    InvalidRLimitResource(String),
+}
+
+/// An error that occurred when an invalid microVM configuration was used.
+#[derive(Debug, Error)]
+pub enum InvalidMicroVMConfigError {
+    /// The root path does not exist.
+    #[error("root path does not exist: {0}")]
+    RootPathDoesNotExist(String),
+
+    /// The number of vCPUs is zero.
+    #[error("number of vCPUs is zero")]
+    NumVCPUsIsZero,
+
+    /// The amount of RAM is zero.
+    #[error("amount of RAM is zero")]
+    RamIsZero,
 }
 
 /// An error that can represent any error.

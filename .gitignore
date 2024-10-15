@@ -12,5 +12,6 @@ private
 .history
 .DS_Store
 
-deps/
+# Build dirs
 build/
+monocore/build/

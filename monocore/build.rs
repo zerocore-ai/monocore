@@ -3,7 +3,6 @@ fn main() {
     if cfg!(target_os = "linux") {
         println!("cargo:rustc-link-search=/usr/local/lib64");
     } else if cfg!(target_os = "macos") {
-        println!("cargo:rustc-link-search=/opt/homebrew/lib");
         println!("cargo:rustc-link-search=/usr/local/lib");
     }
 }

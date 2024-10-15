@@ -1,12 +1,12 @@
-//--------------------------------------------------------------------------------------------------
-// Types
-//--------------------------------------------------------------------------------------------------
-
 use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
 use crate::MonocoreError;
+
+//--------------------------------------------------------------------------------------------------
+// Types
+//--------------------------------------------------------------------------------------------------
 
 /// A pair of ports to map between the host and the guest.
 #[derive(Debug, PartialEq, Eq)]
@@ -97,12 +97,13 @@ impl FromStr for PortPair {
 }
 
 impl fmt::Display for PortPair {
+    /// Formats the path pair following the format "<guest>:<host>".
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Distinct { guest, host } => {
                 write!(f, "{}:{}", guest, host)
             }
-            Self::Same(port) => write!(f, "{}", port),
+            Self::Same(port) => write!(f, "{}:{}", port, port),
         }
     }
 }

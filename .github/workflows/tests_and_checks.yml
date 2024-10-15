@@ -130,6 +130,9 @@ jobs:
       - name: Test Release
         if: ${{ matrix.rust-toolchain == 'stable'  && github.event_name == 'push' }}
         run: cargo build --release
+        env:
+          LIBRARY_PATH: ${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LIBRARY_PATH }}
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LD_LIBRARY_PATH }}
 
   run-tests:
     needs: [check-libkrun-changes, build-libkrun]
