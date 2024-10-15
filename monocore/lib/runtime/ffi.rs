@@ -10,22 +10,28 @@ extern "C" {
     ///
     /// ## Arguments
     ///
-    /// * `level` - The log level to set.
-    fn krun_set_log_level(level: u32) -> i32;
+    /// * `level` - The log level to set. The values for the different levels are:
+    ///   - `0` - Off
+    ///   - `1` - Error
+    ///   - `2` - Warn
+    ///   - `3` - Info
+    ///   - `4` - Debug
+    ///   - `5` - Trace
+    pub(crate) fn krun_set_log_level(level: u32) -> i32;
 
     /// Creates a configuration context.
     ///
     /// ## Returns
     ///
     /// Returns the context ID on success or a negative error number on failure.
-    fn krun_create_ctx() -> i32;
+    pub(crate) fn krun_create_ctx() -> i32;
 
     /// Frees an existing configuration context.
     ///
     /// ## Arguments
     ///
     /// * `ctx_id` - The configuration context ID to free.
-    fn krun_free_ctx(ctx_id: u32) -> i32;
+    pub(crate) fn krun_free_ctx(ctx_id: u32) -> i32;
 
     /// Sets the basic configuration parameters for the microVM.
     ///
@@ -34,7 +40,7 @@ extern "C" {
     /// * `ctx_id` - The configuration context ID.
     /// * `num_vcpus` - The number of vCPUs.
     /// * `ram_mib` - The amount of RAM in MiB.
-    fn krun_set_vm_config(ctx_id: u32, num_vcpus: u8, ram_mib: u32) -> i32;
+    pub(crate) fn krun_set_vm_config(ctx_id: u32, num_vcpus: u8, ram_mib: u32) -> i32;
 
     /// Sets the path to be use as root for the microVM. Not available in libkrun-SEV.
     ///
@@ -42,7 +48,7 @@ extern "C" {
     ///
     /// * `ctx_id` - The configuration context ID.
     /// * `root_path` - The path to be used as root.
-    fn krun_set_root(ctx_id: u32, root_path: *const c_char) -> i32;
+    pub(crate) fn krun_set_root(ctx_id: u32, root_path: *const c_char) -> i32;
 
     /// Adds a disk image to be used as a general partition for the microVM.
     ///
@@ -57,7 +63,8 @@ extern "C" {
     ///   contains the root file-system.
     /// * `read_only` - Whether the mount should be read-only. Required if the caller does not have
     ///   write permissions (for disk images in /usr/share).
-    fn krun_add_disk(
+    #[allow(dead_code)]
+    pub(crate) fn krun_add_disk(
         ctx_id: u32,
         block_id: *const c_char,
         disk_path: *const c_char,
@@ -71,7 +78,11 @@ extern "C" {
     /// * `ctx_id` - The configuration context ID.
     /// * `c_tag` - The tag to identify the filesystem in the guest.
     /// * `c_path` - The full path to the host's directory to be exposed to the guest.
-    fn krun_add_virtiofs(ctx_id: u32, c_tag: *const c_char, c_path: *const c_char) -> i32;
+    pub(crate) fn krun_add_virtiofs(
+        ctx_id: u32,
+        c_tag: *const c_char,
+        c_path: *const c_char,
+    ) -> i32;
 
     /// Adds an independent virtio-fs device pointing to a host's directory with a tag. This variant
     /// allows specifying the size of the DAX window.
@@ -82,7 +93,8 @@ extern "C" {
     /// * `c_tag` - The tag to identify the filesystem in the guest.
     /// * `c_path` - The full path to the directory in the host to be exposed to the guest.
     /// * `shm_size` - The size of the DAX SHM window in bytes.
-    fn krun_add_virtiofs2(
+    #[allow(dead_code)]
+    pub(crate) fn krun_add_virtiofs2(
         ctx_id: u32,
         c_tag: *const c_char,
         c_path: *const c_char,
@@ -96,7 +108,8 @@ extern "C" {
     ///
     /// * `ctx_id` - The configuration context ID.
     /// * `fd` - A file descriptor to communicate with passt.
-    fn krun_set_passt_fd(ctx_id: u32, fd: i32) -> i32;
+    #[allow(dead_code)]
+    pub(crate) fn krun_set_passt_fd(ctx_id: u32, fd: i32) -> i32;
 
     /// Configures the networking to use gvproxy in vfkit mode.
     /// Calling this function disables TSI backend to use gvproxy instead.
@@ -110,7 +123,8 @@ extern "C" {
     ///
     /// If you never call this function, networking uses the TSI backend.
     /// This function should be called before krun_set_port_map.
-    fn krun_set_gvproxy_path(ctx_id: u32, c_path: *const c_char) -> i32;
+    #[allow(dead_code)]
+    pub(crate) fn krun_set_gvproxy_path(ctx_id: u32, c_path: *const c_char) -> i32;
 
     /// Sets the MAC address for the virtio-net device when using the passt backend.
     ///
@@ -118,14 +132,16 @@ extern "C" {
     ///
     /// * `ctx_id` - The configuration context ID.
     /// * `c_mac` - The MAC address as an array of 6 uint8_t entries.
-    fn krun_set_net_mac(ctx_id: u32, c_mac: *const u8) -> i32;
+    #[allow(dead_code)]
+    pub(crate) fn krun_set_net_mac(ctx_id: u32, c_mac: *const u8) -> i32;
 
     /// Configures a map of host to guest TCP ports for the microVM.
     ///
     /// ## Arguments
     ///
     /// * `ctx_id` - The configuration context ID.
-    /// * `c_port_map` - An array of string pointers with format "host_port:guest_port".
+    /// * `c_port_map` - A **null-terminated** array of string pointers with format
+    ///   "host_port:guest_port".
     ///
     /// ## Note
     ///
@@ -141,7 +157,7 @@ extern "C" {
     /// If passt networking mode is used (krun_set_passt_fd was called), port mapping is not
     /// supported as an API of libkrun (but you can still do port mapping using command line
     /// arguments of passt).
-    fn krun_set_port_map(ctx_id: u32, c_port_map: *const *const c_char) -> i32;
+    pub(crate) fn krun_set_port_map(ctx_id: u32, c_port_map: *const *const c_char) -> i32;
 
     /// Enables and configures a virtio-gpu device.
     ///
@@ -149,7 +165,8 @@ extern "C" {
     ///
     /// * `ctx_id` - The configuration context ID.
     /// * `virgl_flags` - Flags to pass to virglrenderer.
-    fn krun_set_gpu_options(ctx_id: u32, virgl_flags: u32) -> i32;
+    #[allow(dead_code)]
+    pub(crate) fn krun_set_gpu_options(ctx_id: u32, virgl_flags: u32) -> i32;
 
     /// Enables and configures a virtio-gpu device. This variant allows specifying the size of the
     /// host window (acting as vRAM in the guest).
@@ -159,7 +176,8 @@ extern "C" {
     /// * `ctx_id` - The configuration context ID.
     /// * `virgl_flags` - Flags to pass to virglrenderer.
     /// * `shm_size` - The size of the SHM host window in bytes.
-    fn krun_set_gpu_options2(ctx_id: u32, virgl_flags: u32, shm_size: u64) -> i32;
+    #[allow(dead_code)]
+    pub(crate) fn krun_set_gpu_options2(ctx_id: u32, virgl_flags: u32, shm_size: u64) -> i32;
 
     /// Enables or disables a virtio-snd device.
     ///
@@ -167,15 +185,17 @@ extern "C" {
     ///
     /// * `ctx_id` - The configuration context ID.
     /// * `enable` - Whether to enable the sound device.
-    fn krun_set_snd_device(ctx_id: u32, enable: bool) -> i32;
+    #[allow(dead_code)]
+    pub(crate) fn krun_set_snd_device(ctx_id: u32, enable: bool) -> i32;
 
     /// Configures a map of rlimits to be set in the guest before starting the isolated binary.
     ///
     /// ## Arguments
     ///
     /// * `ctx_id` - The configuration context ID.
-    /// * `c_rlimits` - An array of string pointers with format "RESOURCE=RLIM_CUR:RLIM_MAX".
-    fn krun_set_rlimits(ctx_id: u32, c_rlimits: *const *const c_char) -> i32;
+    /// * `c_rlimits` - A **null-terminated** array of string pointers with format
+    ///   "<RESOURCE_NUMBER>=RLIM_CUR:RLIM_MAX" (e.g., "6=1024:1024").
+    pub(crate) fn krun_set_rlimits(ctx_id: u32, c_rlimits: *const *const c_char) -> i32;
 
     /// Sets the SMBIOS OEM strings for the microVM.
     ///
@@ -184,7 +204,11 @@ extern "C" {
     /// * `ctx_id` - The configuration context ID.
     /// * `c_oem_strings` - An array of string pointers. Must be terminated with an additional NULL
     ///   pointer.
-    fn krun_set_smbios_oem_strings(ctx_id: u32, c_oem_strings: *const *const c_char) -> i32;
+    #[allow(dead_code)]
+    pub(crate) fn krun_set_smbios_oem_strings(
+        ctx_id: u32,
+        c_oem_strings: *const *const c_char,
+    ) -> i32;
 
     /// Sets the working directory for the executable to be run inside the microVM.
     ///
@@ -193,7 +217,7 @@ extern "C" {
     /// * `ctx_id` - The configuration context ID.
     /// * `c_workdir_path` - The path to the working directory, relative to the root configured with
     ///   "krun_set_root".
-    fn krun_set_workdir(ctx_id: u32, c_workdir_path: *const c_char) -> i32;
+    pub(crate) fn krun_set_workdir(ctx_id: u32, c_workdir_path: *const c_char) -> i32;
 
     /// Sets the path to the executable to be run inside the microVM, the arguments to be passed to
     /// the executable, and the environment variables to be configured in the context of the
@@ -204,11 +228,15 @@ extern "C" {
     /// * `ctx_id` - The configuration context ID.
     /// * `c_exec_path` - The path to the executable, relative to the root configured with
     ///   "krun_set_root".
-    /// * `c_argv` - An array of string pointers to be passed as arguments.
-    /// * `c_envp` - An array of string pointers to be injected as environment variables into the
-    ///   context of the executable. If NULL, it will auto-generate an array collecting the the
-    ///   variables currently present in the environment.
-    fn krun_set_exec(
+    /// * `c_argv` - A **null-terminated** array of string pointers to be passed as arguments.
+    /// * `c_envp` - A **null-terminated** array of string pointers to be injected as environment
+    ///   variables into the context of the executable.
+    ///
+    /// ## Note
+    ///
+    /// Passing NULL for `c_envp` will auto-generate an array collecting the the variables currently
+    /// present in the environment.
+    pub(crate) fn krun_set_exec(
         ctx_id: u32,
         c_exec_path: *const c_char,
         c_argv: *const *const c_char,
@@ -220,10 +248,14 @@ extern "C" {
     /// ## Arguments
     ///
     /// * `ctx_id` - The configuration context ID.
-    /// * `c_envp` - An array of string pointers to be injected as environment variables into the
-    ///   context of the executable. If NULL, it will auto-generate an array collecting the the
-    ///   variables currently present in the environment.
-    fn krun_set_env(ctx_id: u32, c_envp: *const *const c_char) -> i32;
+    /// * `c_envp` - A **null-terminated** array of string pointers to be injected as environment
+    ///   variables into the context of the executable.
+    ///
+    /// ## Note
+    ///
+    /// Passing NULL for `c_envp` will auto-generate an array collecting the the variables currently
+    /// present in the environment.
+    pub(crate) fn krun_set_env(ctx_id: u32, c_envp: *const *const c_char) -> i32;
 
     /// Sets the filepath to the TEE configuration file for the microVM. Only available in
     /// libkrun-sev.
@@ -232,7 +264,8 @@ extern "C" {
     ///
     /// * `ctx_id` - The configuration context ID.
     /// * `c_filepath` - The filepath to the TEE configuration file.
-    fn krun_set_tee_config_file(ctx_id: u32, c_filepath: *const c_char) -> i32;
+    #[allow(dead_code)]
+    pub(crate) fn krun_set_tee_config_file(ctx_id: u32, c_filepath: *const c_char) -> i32;
 
     /// Adds a port-path pairing for guest IPC with a process in the host.
     ///
@@ -241,7 +274,8 @@ extern "C" {
     /// * `ctx_id` - The configuration context ID.
     /// * `port` - The port that the guest will connect to for IPC.
     /// * `c_filepath` - The path of the UNIX socket in the host.
-    fn krun_add_vsock_port(ctx_id: u32, port: u32, c_filepath: *const c_char) -> i32;
+    #[allow(dead_code)]
+    pub(crate) fn krun_add_vsock_port(ctx_id: u32, port: u32, c_filepath: *const c_char) -> i32;
 
     /// Gets the eventfd file descriptor to signal the guest to shut down orderly. This must be
     /// called before starting the microVM with "krun_start_enter". Only available in libkrun-efi.
@@ -253,7 +287,8 @@ extern "C" {
     /// ## Returns
     ///
     /// Returns the eventfd file descriptor on success or a negative error number on failure.
-    fn krun_get_shutdown_eventfd(ctx_id: u32) -> i32;
+    #[allow(dead_code)]
+    pub(crate) fn krun_get_shutdown_eventfd(ctx_id: u32) -> i32;
 
     /// Sets the path to the file to write the console output for the microVM.
     ///
@@ -261,7 +296,7 @@ extern "C" {
     ///
     /// * `ctx_id` - The configuration context ID.
     /// * `c_filepath` - The path of the file to write the console output.
-    fn krun_set_console_output(ctx_id: u32, c_filepath: *const c_char) -> i32;
+    pub(crate) fn krun_set_console_output(ctx_id: u32, c_filepath: *const c_char) -> i32;
 
     /// Starts and enters the microVM with the configured parameters. The VMM will attempt to take over
     /// stdin/stdout to manage them on behalf of the process running inside the isolated environment,
@@ -278,5 +313,5 @@ extern "C" {
     /// This function only returns if an error happens before starting the microVM. Otherwise, the
     /// VMM assumes it has full control of the process, and will call to exit() once the microVM shuts
     /// down.
-    fn krun_start_enter(ctx_id: u32) -> i32;
+    pub(crate) fn krun_start_enter(ctx_id: u32) -> i32;
 }

@@ -1,7 +1,3 @@
-//--------------------------------------------------------------------------------------------------
-// Types
-//--------------------------------------------------------------------------------------------------
-
 use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -9,8 +5,12 @@ use typed_path::UnixPathBuf;
 
 use crate::MonocoreError;
 
+//--------------------------------------------------------------------------------------------------
+// Types
+//--------------------------------------------------------------------------------------------------
+
 /// Represents a path on the host and the guest.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PathPair {
     /// The guest path and host path are distinct.
     Distinct {
@@ -87,12 +87,13 @@ impl FromStr for PathPair {
 }
 
 impl fmt::Display for PathPair {
+    /// Formats the path pair following the format "<guest>:<host>".
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Distinct { guest, host } => {
                 write!(f, "{}:{}", guest.to_string_lossy(), host.to_string_lossy())
             }
-            Self::Same(path) => write!(f, "{}", path.to_string_lossy()),
+            Self::Same(path) => write!(f, "{}:{}", path.to_string_lossy(), path.to_string_lossy()),
         }
     }
 }

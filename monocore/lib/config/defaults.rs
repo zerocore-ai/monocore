@@ -1,7 +1,6 @@
 //--------------------------------------------------------------------------------------------------
-// Main
+// Constants
 //--------------------------------------------------------------------------------------------------
 
-fn main() {
-    println!("Monocore Proxy coming soon!");
-}
+/// The default number of vCPUs to use for the microVM.
+pub const DEFAULT_NUM_VCPUS: u8 = 1;
