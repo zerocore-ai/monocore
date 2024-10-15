@@ -5,6 +5,13 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ '**' ]
+  workflow_dispatch:
+    inputs:
+      force_build_libkrun:
+        description: 'Force build libkrun'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -14,30 +21,45 @@ jobs:
   check-libkrun-changes:
     runs-on: ubuntu-latest
     outputs:
-      should_build: ${{ steps.check_files.outputs.should_build }}
+      should_build: ${{ steps.check_build.outputs.should_build }}
       libkrun_hash: ${{ steps.hash_libkrun.outputs.hash }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Check if relevant files have changed
-        id: check_files
+      - name: Hash build_libkrun.sh
+        id: hash_libkrun
         run: |
-          if [ $(git rev-list --count HEAD) -lt 2 ]; then
+          HASH=$(sha256sum build_libkrun.sh | awk '{ print $1 }')
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Calculated hash: $HASH"
+
+      - name: Check if cache exists
+        id: check_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/libkrunfw/libkrunfw*.so*
+            build/libkrun/target/release/libkrun*.so*
+          key: ${{ runner.os }}-libkrun-${{ steps.hash_libkrun.outputs.hash }}
+
+      - name: Check if build is needed
+        id: check_build
+        run: |
+          if [ "${{ steps.check_cache.outputs.cache-hit }}" == 'true' ]; then
+            echo "Cache hit, no need to build"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          elif [ $(git rev-list --count HEAD) -lt 2 ]; then
             echo "Only one commit in the repository, building libkrun"
             echo "should_build=true" >> $GITHUB_OUTPUT
           else
             git diff --name-only HEAD^ HEAD | grep -q 'build_libkrun.sh' && echo "should_build=true" >> $GITHUB_OUTPUT || echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Hash build_libkrun.sh
-        id: hash_libkrun
-        run: echo "hash=$(sha256sum build_libkrun.sh | awk '{ print $1 }')" >> $GITHUB_OUTPUT
-
   build-libkrun:
     needs: check-libkrun-changes
-    if: needs.check-libkrun-changes.outputs.should_build == 'true'
+    if: needs.check-libkrun-changes.outputs.should_build == 'true' || github.event.inputs.force_build_libkrun == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -127,12 +149,21 @@ jobs:
         with:
           command: check bans licenses sources
 
+      # A hack to make `ld` find the libkrunfw because right now it seems to only look for libkrunfw.so.x
+      # and not libkrunfw.so or libkrunfw.so.x.x.x even though their SONAME is libkrunfw.so.x
+      - name: Create symlinks
+        run: |
+          cd build/libkrunfw
+          objdump -p libkrunfw.so.4.4.2 | grep SONAME # sanity check
+          ln -sf libkrunfw.so.4.4.2 libkrunfw.so.4
+          ln -sf libkrunfw.so.4 libkrunfw.so
+
       - name: Test Release
         if: ${{ matrix.rust-toolchain == 'stable'  && github.event_name == 'push' }}
-        run: cargo build --release
-        env:
-          LIBRARY_PATH: ${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LIBRARY_PATH }}
-          LD_LIBRARY_PATH: ${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LD_LIBRARY_PATH }}
+        run: |
+          LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LIBRARY_PATH }} \
+          LD_LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LD_LIBRARY_PATH }} \
+          cargo build --release
 
   run-tests:
     needs: [check-libkrun-changes, build-libkrun]
@@ -164,15 +195,26 @@ jobs:
             build/libkrun/target/release/libkrun*.so*
           key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-changes.outputs.libkrun_hash }}
 
+      - name: Print Cache
+        run: tree -L 2 build/
+
       - name: Install Rust Toolchain
         uses: actions-rs/toolchain@v1
         with:
           override: true
           toolchain: ${{ matrix.rust-toolchain }}
 
+      # A hack to make `ld` find the libkrunfw because right now it seems to only look for libkrunfw.so.x
+      # and not libkrunfw.so or libkrunfw.so.x.x.x even though their SONAME is libkrunfw.so.x
+      - name: Create symlinks
+        run: |
+          cd build/libkrunfw
+          objdump -p libkrunfw.so.4.4.2 | grep SONAME # sanity check
+          ln -sf libkrunfw.so.4.4.2 libkrunfw.so.4
+          ln -sf libkrunfw.so.4 libkrunfw.so
+
       - name: Run Tests
         run: |
+          LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LIBRARY_PATH }} \
+          LD_LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LD_LIBRARY_PATH }} \
           cargo test --all-features
-        env:
-          LIBRARY_PATH: ${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LIBRARY_PATH }}
-          LD_LIBRARY_PATH: ${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LD_LIBRARY_PATH }}

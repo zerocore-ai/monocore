@@ -13,7 +13,7 @@ LIBKRUN_REPO="https://github.com/appcypher/libkrun.git"
 LIB_DIR="/usr/local/lib"
 LIB64_DIR="/usr/local/lib64"
 NO_CLEANUP=false
-FORCE_BUILD=false  # Added variable for force build
+FORCE_BUILD=false
 
 # Color variables
 RED="\033[1;31m"
