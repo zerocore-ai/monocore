@@ -67,7 +67,7 @@ pub enum LinuxRLimitResource {
 /// The soft limit is the value that the kernel enforces for the corresponding resource.
 /// The hard limit acts as a ceiling for the soft limit.
 ///
-/// # Examples
+/// ## Examples
 ///
 /// ```
 /// use monocore::runtime::{LinuxRlimit, LinuxRLimitResource};
@@ -87,7 +87,7 @@ pub enum LinuxRLimitResource {
 /// assert_eq!(nofile_limit.hard(), &2000);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
-#[getset(get = "pub")]
+#[getset(get = "pub with_prefix")]
 pub struct LinuxRlimit {
     /// The resource to limit.
     resource: LinuxRLimitResource,
@@ -123,7 +123,7 @@ impl LinuxRlimit {
     /// * `soft` - The soft limit value.
     /// * `hard` - The hard limit value.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```
     /// use monocore::runtime::{LinuxRlimit, LinuxRLimitResource};

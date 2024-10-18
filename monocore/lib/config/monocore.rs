@@ -18,7 +18,7 @@ use super::{PathPair, PortPair};
 strike! {
     /// The monocore configuration.
     #[strikethrough[derive(Debug, Deserialize, Serialize, TypedBuilder, PartialEq, Getters, Setters)]]
-    #[getset(get_mut = "pub", get = "pub", set = "pub")]
+    #[getset(get_mut = "pub", get = "pub with_prefix", set = "pub with_prefix")]
     pub struct Monocore {
         /// The services to run.
         #[serde(rename = "service")]

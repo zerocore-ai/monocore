@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check-libkrun-changes:
+  check-libkrun-cache-changes:
     runs-on: ubuntu-latest
     outputs:
       should_build: ${{ steps.check_build.outputs.should_build }}
@@ -53,13 +53,17 @@ jobs:
           elif [ $(git rev-list --count HEAD) -lt 2 ]; then
             echo "Only one commit in the repository, building libkrun"
             echo "should_build=true" >> $GITHUB_OUTPUT
+          elif git diff --name-only HEAD^ HEAD | grep -qE 'build_libkrun.sh|.github/workflows/tests_and_checks.yml'; then
+            echo "build_libkrun.sh or workflow file has changed, building libkrun"
+            echo "should_build=true" >> $GITHUB_OUTPUT
           else
-            git diff --name-only HEAD^ HEAD | grep -q 'build_libkrun.sh' && echo "should_build=true" >> $GITHUB_OUTPUT || echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "No relevant changes, no need to build"
+            echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
   build-libkrun:
-    needs: check-libkrun-changes
-    if: needs.check-libkrun-changes.outputs.should_build == 'true' || github.event.inputs.force_build_libkrun == 'true'
+    needs: check-libkrun-cache-changes
+    if: needs.check-libkrun-cache-changes.outputs.should_build == 'true' || github.event.inputs.force_build_libkrun == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -88,10 +92,10 @@ jobs:
           path: |
             build/libkrunfw/libkrunfw*.so*
             build/libkrun/target/release/libkrun*.so*
-          key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-changes.outputs.libkrun_hash }}
+          key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-cache-changes.outputs.libkrun_hash }}
 
   run-checks:
-    needs: [check-libkrun-changes, build-libkrun]
+    needs: [check-libkrun-cache-changes, build-libkrun]
     if: always()
     runs-on: ubuntu-latest
     strategy:
@@ -113,7 +117,7 @@ jobs:
           path: |
             build/libkrunfw/libkrunfw*.so*
             build/libkrun/target/release/libkrun*.so*
-          key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-changes.outputs.libkrun_hash }}
+          key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-cache-changes.outputs.libkrun_hash }}
 
       - name: Install Rust Toolchain
         uses: actions-rs/toolchain@v1
@@ -166,7 +170,7 @@ jobs:
           cargo build --release
 
   run-tests:
-    needs: [check-libkrun-changes, build-libkrun]
+    needs: [check-libkrun-cache-changes, build-libkrun]
     if: always()
     runs-on: ubuntu-latest
     strategy:
@@ -193,7 +197,7 @@ jobs:
           path: |
             build/libkrunfw/libkrunfw*.so*
             build/libkrun/target/release/libkrun*.so*
-          key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-changes.outputs.libkrun_hash }}
+          key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-cache-changes.outputs.libkrun_hash }}
 
       - name: Print Cache
         run: tree -L 2 build/

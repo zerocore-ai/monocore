@@ -65,7 +65,7 @@ const DOCKER_CONFIG_MIME_TYPE: &str = "application/vnd.docker.container.image.v1
 /// [OCI Distribution Spec]: https://distribution.github.io/distribution/spec/manifest-v2-2/#image-manifest-version-2-schema-2
 /// [Docker Registry API]: https://distribution.github.io/distribution/spec/api/#introduction
 #[derive(Debug, Getters, Setters)]
-#[getset(get = "pub", set = "pub")]
+#[getset(get = "pub with_prefix", set = "pub with_prefix")]
 pub struct DockerRegistry {
     /// The HTTP client used to make requests to the Docker registry.
     client: ClientWithMiddleware,
@@ -76,7 +76,7 @@ pub struct DockerRegistry {
 
 /// Stores authentication credentials obtained from the Docker registry, including tokens and expiration details.
 #[derive(Debug, Serialize, Deserialize, Getters, Setters)]
-#[getset(get = "pub", set = "pub")]
+#[getset(get = "pub with_prefix", set = "pub with_prefix")]
 pub struct DockerAuthMaterial {
     /// The token used to authenticate requests to the Docker registry.
     token: String,

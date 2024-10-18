@@ -1,3 +1,6 @@
+//! If you are trying to run this example, please make sure to run `make example microvm_shell` from
+//! the `monocore` subdirectory
+
 use monocore::runtime::MicroVM;
 
 //--------------------------------------------------------------------------------------------------

@@ -12,7 +12,7 @@ use std::{ffi::OsString, fmt, str::FromStr};
 /// This struct encapsulates a variable name and its corresponding value.
 /// It is used to manage environment variables for processes.
 ///
-/// # Examples
+/// ## Examples
 ///
 /// ```
 /// use monocore::runtime::EnvPair;
@@ -31,7 +31,7 @@ use std::{ffi::OsString, fmt, str::FromStr};
 /// assert_eq!(env_pair.value().to_str().unwrap(), "alice");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
-#[getset(get = "pub")]
+#[getset(get = "pub with_prefix")]
 pub struct EnvPair {
     /// The environment variable name.
     var: OsString,
@@ -52,7 +52,7 @@ impl EnvPair {
     /// * `var` - The name of the environment variable.
     /// * `value` - The value of the environment variable.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```
     /// use monocore::runtime::EnvPair;

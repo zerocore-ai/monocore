@@ -89,8 +89,14 @@ Follow these steps to set up monocore for development:
    make example microvm_shell
    ```
 
-## Contributing
+5. **Run benchmarks**
 
+   ```sh
+   cd monocore # Ensure you are in the monocore subdirectory
+   make bench microvm_provision
+   ```
+
+## Contributing
 
 1. **Read the [CONTRIBUTING.md](./CONTRIBUTING.md) file**
 
