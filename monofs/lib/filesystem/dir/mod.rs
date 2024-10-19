@@ -11,10 +11,6 @@ mod segment;
 //--------------------------------------------------------------------------------------------------
 
 pub use dir::*;
-#[allow(unused)] // TODO: Remove this
-pub(crate) use find::*;
-#[allow(unused)] // TODO: Remove this
+pub use find::*;
 pub use io::*;
-#[allow(unused)] // TODO: Remove this
-pub use ops::*;
 pub use segment::*;

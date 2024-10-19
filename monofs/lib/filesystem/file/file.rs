@@ -17,7 +17,7 @@ use crate::{filesystem::kind::EntityType, FsError, FsResult, Metadata};
 // Types
 //--------------------------------------------------------------------------------------------------
 
-/// Represents a file node in the `monofs` file system.
+/// Represents a file node in the `monofs` _immutable_ file system.
 ///
 /// ## Important
 ///

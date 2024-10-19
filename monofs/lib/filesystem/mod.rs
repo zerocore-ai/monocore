@@ -5,7 +5,6 @@ mod error;
 mod kind;
 mod link;
 mod metadata;
-mod pathdirs;
 mod traits;
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -18,5 +17,4 @@ pub mod symlink;
 pub use error::*;
 pub use link::*;
 pub use metadata::*;
-pub use pathdirs::*;
 pub use traits::*;

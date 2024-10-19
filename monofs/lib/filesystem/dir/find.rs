@@ -1,9 +1,9 @@
-use std::fmt::{self, Debug};
+use std::fmt::Debug;
 
 use monoutils_store::IpldStore;
 use typed_path::{Utf8UnixComponent, Utf8UnixPath};
 
-use crate::{file::File, filesystem::entity::Entity, FsError, FsResult, PathDirs};
+use crate::{filesystem::entity::Entity, FsError, FsResult};
 
 use super::{Dir, Utf8UnixPathSegment};
 
@@ -11,28 +11,19 @@ use super::{Dir, Utf8UnixPathSegment};
 // Types
 //--------------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
-pub(crate) enum FindResult<S>
-where
-    S: IpldStore,
-{
-    /// The entity was found.
+/// Result type for `find_dir*` functions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FindResult<T> {
+    /// The directory was found.
     Found {
-        /// The entity found.
-        entity: Entity<S>,
-
-        /// The name of the entity in its parent directory entries. `None` if the handle has
-        /// no parent directory.
-        name: Option<Utf8UnixPathSegment>,
-
-        /// The directories along the path to the entity.
-        pathdirs: PathDirs<S>,
+        /// The directory containing the entity.
+        dir: T,
     },
 
-    /// The entity was not found.
-    Incomplete {
-        /// The directories along the path to the entity.
-        pathdirs: PathDirs<S>,
+    /// The directory was not found.
+    NotFound {
+        /// The last found directory in the path.
+        dir: T,
 
         /// The depth of the path to the entity.
         depth: usize,
@@ -40,29 +31,32 @@ where
 
     /// Intermediate path is not a directory.
     NotADir {
-        /// The directories along the path to the entity.
-        pathdirs: PathDirs<S>,
-
         /// The depth of the path to the entity.
         depth: usize,
     },
 }
 
+/// Result type for `find_dir` function.
+pub type FindResultDir<'a, S> = FindResult<&'a Dir<S>>;
+
+/// Result type for `find_dir_mut` function.
+pub type FindResultDirMut<'a, S> = FindResult<&'a mut Dir<S>>;
+
 //--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------
 
-/// Finds an existing entity at the specified path within a directory structure.
+/// Looks for a directory at the specified path.
 ///
 /// This function navigates through the directory structure starting from the given directory,
 /// following the path specified by `path`. It attempts to resolve each component of the path
-/// until it either finds the target entity, encounters an error, or determines that the path
-/// is incomplete or invalid.
+/// until it either finds the target directory, encounters an error, or determines that the path
+/// is not found or invalid.
 ///
 /// ## Examples
 ///
 /// ```
-/// use monocore::filesystem::dir::{Dir, find_entity};
+/// use monofs::dir::{Dir, find_dir};
 /// use monoutils_store::MemoryStore;
 /// use typed_path::Utf8UnixPath;
 ///
@@ -70,7 +64,7 @@ where
 /// let store = MemoryStore::default();
 /// let root_dir = Dir::new(store);
 /// let path = Utf8UnixPath::new("some/path/to/entity");
-/// let result = find_entity(&root_dir, path).await?;
+/// let result = find_dir(&root_dir, path).await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -83,160 +77,169 @@ where
 /// - `/`
 ///
 /// If any of these components are present in the path, the function will return an error.
-#[allow(unused)] // TODO: Remove this once the function is used
-pub(crate) async fn find_entity<'a, S>(
-    mut dir: &Dir<S>,
+pub async fn find_dir<'a, S>(
+    mut dir: &'a Dir<S>,
     path: &Utf8UnixPath,
-) -> FsResult<FindResult<S>>
+) -> FsResult<FindResultDir<'a, S>>
 where
     S: IpldStore + Send + Sync,
 {
-    if path.components().any(|c| {
-        matches!(
-            c,
-            Utf8UnixComponent::RootDir | Utf8UnixComponent::CurDir | Utf8UnixComponent::ParentDir
-        )
-    }) {
-        return Err(FsError::InvalidSearchPath(path.to_string()));
-    }
-
     // Convert path components to Utf8UnixPathSegment and collect them
     let components = path
         .components()
-        .map(|ref c| Utf8UnixPathSegment::try_from(c))
+        .map(|ref c| match c {
+            Utf8UnixComponent::RootDir => Err(FsError::InvalidSearchPath(path.to_string())),
+            Utf8UnixComponent::CurDir => Err(FsError::InvalidSearchPath(path.to_string())),
+            Utf8UnixComponent::ParentDir => Err(FsError::InvalidSearchPath(path.to_string())),
+            _ => Ok(Utf8UnixPathSegment::try_from(c)?),
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Split the components into intermediate and final parts
-    let (intermediate_components, final_component) = match components.len() {
-        0 => return Err(FsError::InvalidSearchPathEmpty),
-        1 => (None, &components[0]),
-        _ => {
-            let (intermediates, last) = components.split_at(components.len() - 1);
-            (Some(intermediates), &last[0])
+    // Process intermediate components (if any)
+    for (depth, segment) in components.iter().enumerate() {
+        match dir.get_entity(segment).await? {
+            Some(Entity::Dir(d)) => {
+                dir = d;
+            }
+            Some(Entity::Symlink(_)) => {
+                // Symlinks are not supported yet, so we return an error
+                return Err(FsError::SymLinkNotSupportedYet(components.clone()));
+            }
+            Some(_) => {
+                // If we encounter a non-directory entity in the middle of the path,
+                // we return NotADir result
+                return Ok(FindResult::NotADir { depth });
+            }
+            None => {
+                // If an intermediate component doesn't exist,
+                // we return NotFound result
+                return Ok(FindResult::NotFound { dir, depth });
+            }
         }
-    };
+    }
+
+    Ok(FindResult::Found { dir })
+}
+
+/// Looks for a directory at the specified path. This is a mutable version of `find_dir`.
+///
+/// This function navigates through the directory structure starting from the given directory,
+/// following the path specified by `path`. It attempts to resolve each component of the path
+/// until it either finds the target directory, encounters an error, or determines that the path
+/// is not found or invalid.
+///
+/// ## Examples
+///
+/// ```
+/// use monofs::dir::{Dir, find_dir_mut};
+/// use monoutils_store::MemoryStore;
+/// use typed_path::Utf8UnixPath;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// let store = MemoryStore::default();
+/// let mut root_dir = Dir::new(store);
+/// let path = Utf8UnixPath::new("some/path/to/entity");
+/// let result = find_dir_mut(&mut root_dir, path).await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// ## Note
+///
+/// The function does not support the following path components:
+/// - `.`
+/// - `..`
+/// - `/`
+///
+/// If any of these components are present in the path, the function will return an error.
+pub async fn find_dir_mut<'a, S>(
+    mut dir: &'a mut Dir<S>,
+    path: &Utf8UnixPath,
+) -> FsResult<FindResultDirMut<'a, S>>
+where
+    S: IpldStore + Send + Sync,
+{
+    // Convert path components to Utf8UnixPathSegment and collect them
+    let components = path
+        .components()
+        .map(|ref c| match c {
+            Utf8UnixComponent::RootDir => Err(FsError::InvalidSearchPath(path.to_string())),
+            Utf8UnixComponent::CurDir => Err(FsError::InvalidSearchPath(path.to_string())),
+            Utf8UnixComponent::ParentDir => Err(FsError::InvalidSearchPath(path.to_string())),
+            _ => Ok(Utf8UnixPathSegment::try_from(c)?),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     // Process intermediate components (if any)
-    let mut pathdirs = PathDirs::new();
-    let mut depth = 0;
-    if let Some(intermediates) = intermediate_components {
-        for segment in intermediates.iter() {
-            // Keep track of the path we've traversed so far
-            pathdirs.push((dir.clone(), segment.clone()));
-
-            match dir.get_entity(segment).await? {
-                Some(Entity::Dir(d)) => {
-                    dir = d;
-                }
-                Some(Entity::Symlink(_)) => {
-                    // Symlinks are not supported yet, so we return an error
-                    return Err(FsError::SymLinkNotSupportedYet(components.clone()));
-                }
-                Some(_) => {
-                    // If we encounter a non-directory entity in the middle of the path,
-                    // we return NotADir result
-                    return Ok(FindResult::NotADir { pathdirs, depth });
-                }
-                None => {
-                    // If an intermediate component doesn't exist,
-                    // we return Incomplete result
-                    return Ok(FindResult::Incomplete { pathdirs, depth });
-                }
+    for (depth, segment) in components.iter().enumerate() {
+        match dir.get_entity(segment).await? {
+            Some(Entity::Dir(_)) => {
+                // A hack to get a mutable reference to the directory
+                dir = dir.get_dir_mut(segment).await?.unwrap();
             }
-
-            depth += 1;
+            Some(Entity::Symlink(_)) => {
+                // Symlinks are not supported yet, so we return an error
+                return Err(FsError::SymLinkNotSupportedYet(components.clone()));
+            }
+            Some(_) => {
+                // If we encounter a non-directory entity in the middle of the path,
+                // we return NotADir result
+                return Ok(FindResult::NotADir { depth });
+            }
+            None => {
+                // If an intermediate component doesn't exist,
+                // we return NotFound result
+                return Ok(FindResult::NotFound { dir, depth });
+            }
         }
     }
 
-    // Push the final component to the pathdirs
-    pathdirs.push((dir.clone(), final_component.clone()));
-
-    // Process the final component
-    match dir.get_entity(final_component).await? {
-        Some(entity) => Ok(FindResult::Found {
-            entity: entity.clone(),
-            name: Some(final_component.clone()),
-            pathdirs,
-        }),
-        None => Ok(FindResult::Incomplete { pathdirs, depth }),
-    }
+    Ok(FindResult::Found { dir })
 }
 
 /// Retrieves an existing entity or creates a new one at the specified path.
 ///
 /// This function checks the existence of an entity at the given path. If the entity
-/// exists, it returns the entity and its corresponding path directories. If the
-/// entity does not exist, it creates a new directory hierarchy and returns the new
-/// entity and its corresponding path directories.
+/// exists, it returns the entity. If the entity does not exist, it creates a new
+/// directory hierarchy and returns the new entity.
 ///
-/// `file` argument indicates whether to create a file (`true`) or a directory (`false`)
-/// if the entity does not exist.
+/// ## Examples
 ///
-/// ## Returns
+/// ```
+/// use monofs::dir::{Dir, find_or_create_dir};
+/// use monoutils_store::MemoryStore;
+/// use typed_path::Utf8UnixPath;
 ///
-///  Function returns `(Entity<S>, Option<PathSegment>, PathDirs<S>)` on `Ok` result.
-///  - **Entity\<S\>**: The entity found or created.
-///  - **Option\<PathSegment\>**: The name of the entity in its parent directory.
-///  - **PathDirs\<S\>**: The directories along the path to the entity.
-#[allow(unused)] // TODO: Remove this once the function is used
-pub(crate) async fn find_or_create_entity<S>(
-    dir: &Dir<S>,
+/// # async fn example() -> anyhow::Result<()> {
+/// let store = MemoryStore::default();
+/// let mut root_dir = Dir::new(store);
+/// let path = Utf8UnixPath::new("new/nested/directory");
+/// let new_dir = find_or_create_dir(&mut root_dir, &path).await?;
+/// assert!(new_dir.is_empty());
+/// # Ok(())
+/// # }
+/// ```
+pub async fn find_or_create_dir<'a, S>(
+    dir: &'a mut Dir<S>,
     path: &Utf8UnixPath,
-    file: bool,
-) -> FsResult<(Entity<S>, Option<Utf8UnixPathSegment>, PathDirs<S>)>
+) -> FsResult<&'a mut Dir<S>>
 where
     S: IpldStore + Send + Sync,
 {
-    match find_entity(dir, path).await {
-        Ok(FindResult::Found {
-            entity,
-            name,
-            pathdirs,
-        }) => Ok((entity, name, pathdirs)),
-        Ok(FindResult::Incomplete {
-            mut pathdirs,
-            depth,
-        }) => {
-            let components: Vec<_> = path.components().collect();
-            let total_components = components.len();
+    match find_dir_mut(dir, path).await {
+        Ok(FindResult::Found { dir }) => Ok(dir),
+        Ok(FindResult::NotFound { mut dir, depth }) => {
+            for component in path.components().skip(depth) {
+                let new_dir = Dir::new(dir.get_store().clone());
+                let segment = Utf8UnixPathSegment::try_from(&component)?;
 
-            // Set the last directory in the pathdirs as the current directory.
-            let mut current_dir = pathdirs.last().unwrap().0.clone();
-
-            // Add the remaining path components to the directory, except for the last one
-            for segment in components
-                .iter()
-                .skip(depth)
-                .take(total_components - depth - 1)
-            {
-                let child_dir = Dir::new(dir.get_store().clone());
-                let name = Utf8UnixPathSegment::try_from(segment)?;
-
-                current_dir.put_dir(name.clone(), child_dir.clone()).await?;
-                pathdirs.push((current_dir, name));
-
-                current_dir = child_dir;
+                dir.put_dir(segment.clone(), new_dir).await?;
+                dir = dir.get_dir_mut(&segment).await?.unwrap();
             }
 
-            // Create the final entity (file or directory)
-            let last_segment = Utf8UnixPathSegment::try_from(components.last().unwrap())?;
-            let entity = if file {
-                let new_file = File::new(dir.get_store().clone());
-                current_dir
-                    .put_file(last_segment.clone(), new_file.clone())
-                    .await?;
-                Entity::File(new_file)
-            } else {
-                let new_dir = Dir::new(dir.get_store().clone());
-                current_dir
-                    .put_dir(last_segment.clone(), new_dir.clone())
-                    .await?;
-                Entity::Dir(new_dir)
-            };
-
-            Ok((entity, Some(last_segment), pathdirs))
+            Ok(dir)
         }
-        Ok(FindResult::NotADir { depth, .. }) => {
+        Ok(FindResult::NotADir { depth }) => {
             let components = path
                 .components()
                 .take(depth + 1)
@@ -250,89 +253,12 @@ where
 }
 
 //--------------------------------------------------------------------------------------------------
-// Trait Implementations
-//--------------------------------------------------------------------------------------------------
-
-impl<S> Debug for FindResult<S>
-where
-    S: IpldStore,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FindResult::Found {
-                entity,
-                name,
-                pathdirs,
-            } => f
-                .debug_struct("Found")
-                .field("entity", entity)
-                .field("name", name)
-                .field("pathdirs", pathdirs)
-                .finish(),
-            FindResult::NotADir { pathdirs, depth } => f
-                .debug_struct("NotADir")
-                .field("pathdirs", pathdirs)
-                .field("depth", depth)
-                .finish(),
-            FindResult::Incomplete { pathdirs, depth } => f
-                .debug_struct("Incomplete")
-                .field("pathdirs", pathdirs)
-                .field("depth", depth)
-                .finish(),
-        }
-    }
-}
-
-impl<S> PartialEq for FindResult<S>
-where
-    S: IpldStore,
-{
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (
-                FindResult::Found {
-                    entity: e1,
-                    name: n1,
-                    pathdirs: p1,
-                },
-                FindResult::Found {
-                    entity: e2,
-                    name: n2,
-                    pathdirs: p2,
-                },
-            ) => e1 == e2 && n1 == n2 && p1 == p2,
-            (
-                FindResult::Incomplete {
-                    pathdirs: p1,
-                    depth: d1,
-                },
-                FindResult::Incomplete {
-                    pathdirs: p2,
-                    depth: d2,
-                },
-            ) => p1 == p2 && d1 == d2,
-            (
-                FindResult::NotADir {
-                    pathdirs: p1,
-                    depth: d1,
-                },
-                FindResult::NotADir {
-                    pathdirs: p2,
-                    depth: d2,
-                },
-            ) => p1 == p2 && d1 == d2,
-            _ => false,
-        }
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
 // Tests
 //--------------------------------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
-    use monoutils_store::{MemoryStore, Storable};
+    use monoutils_store::MemoryStore;
     use typed_path::Utf8UnixPathBuf;
 
     use crate::file::File;
@@ -340,13 +266,14 @@ mod tests {
     use super::*;
 
     mod fixtures {
+        use monoutils_store::Storable;
+
         use super::*;
 
         pub(super) async fn setup_test_filesystem() -> anyhow::Result<Dir<MemoryStore>> {
             let store = MemoryStore::default();
             let mut root = Dir::new(store.clone());
 
-            // Create a directory structure
             let mut subdir1 = Dir::new(store.clone());
             let mut subdir2 = Dir::new(store.clone());
 
@@ -370,140 +297,99 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_find_entity() -> anyhow::Result<()> {
+    async fn test_find_dir() -> anyhow::Result<()> {
         let root = fixtures::setup_test_filesystem().await?;
 
-        let subdir1 = root
-            .get_entity(&"subdir1".parse()?)
-            .await?
-            .cloned()
-            .unwrap()
-            .into_dir()
-            .unwrap();
+        // Test finding existing directories
+        let result = find_dir(&root, &Utf8UnixPathBuf::from("subdir1")).await?;
+        assert!(matches!(result, FindResult::Found { .. }));
 
-        let file1 = subdir1
-            .get_entity(&"file1.txt".parse()?)
-            .await?
-            .cloned()
-            .unwrap()
-            .into_file()
-            .unwrap();
+        let result = find_dir(&root, &Utf8UnixPathBuf::from("subdir1/subdir2")).await?;
+        assert!(matches!(result, FindResult::Found { .. }));
 
-        let subdir2 = subdir1
-            .get_entity(&"subdir2".parse()?)
-            .await?
-            .cloned()
-            .unwrap()
-            .into_dir()
-            .unwrap();
+        // Test finding non-existent directories
+        let result = find_dir(&root, &Utf8UnixPathBuf::from("nonexistent")).await?;
+        assert!(matches!(result, FindResult::NotFound { depth: 0, .. }));
 
-        let file2 = subdir2
-            .get_entity(&"file2.txt".parse()?)
-            .await?
-            .cloned()
-            .unwrap()
-            .into_file()
-            .unwrap();
+        let result = find_dir(&root, &Utf8UnixPathBuf::from("subdir1/nonexistent")).await?;
+        assert!(matches!(result, FindResult::NotFound { depth: 1, .. }));
 
-        // Test cases
-        let test_cases = vec![
-            // Positive cases
-            (
-                "subdir1",
-                FindResult::Found {
-                    entity: Entity::Dir(subdir1.clone()),
-                    name: Some("subdir1".parse()?),
-                    pathdirs: {
-                        let mut pd = PathDirs::new();
-                        pd.push((root.clone(), "subdir1".parse()?));
-                        pd
-                    },
-                },
-            ),
-            (
-                "subdir1/file1.txt",
-                FindResult::Found {
-                    entity: Entity::File(file1.clone()),
-                    name: Some("file1.txt".parse()?),
-                    pathdirs: {
-                        let mut pd = PathDirs::new();
-                        pd.push((root.clone(), "subdir1".parse()?));
-                        pd.push((subdir1.clone(), "file1.txt".parse()?));
-                        pd
-                    },
-                },
-            ),
-            (
-                "subdir1/subdir2/file2.txt",
-                FindResult::Found {
-                    entity: Entity::File(file2.clone()),
-                    name: Some("file2.txt".parse()?),
-                    pathdirs: {
-                        let mut pd = PathDirs::new();
-                        pd.push((root.clone(), "subdir1".parse()?));
-                        pd.push((subdir1.clone(), "subdir2".parse()?));
-                        pd.push((subdir2.clone(), "file2.txt".parse()?));
-                        pd
-                    },
-                },
-            ),
-            // Negative cases
-            (
-                "nonexistent",
-                FindResult::Incomplete {
-                    pathdirs: {
-                        let mut pd = PathDirs::new();
-                        pd.push((root.clone(), "nonexistent".parse()?));
-                        pd
-                    },
-                    depth: 0,
-                },
-            ),
-            (
-                "subdir1/nonexistent",
-                FindResult::Incomplete {
-                    pathdirs: {
-                        let mut pd = PathDirs::new();
-                        pd.push((root.clone(), "subdir1".parse()?));
-                        pd.push((subdir1.clone(), "nonexistent".parse()?));
-                        pd
-                    },
-                    depth: 1,
-                },
-            ),
-            (
-                "subdir1/file1.txt/invalid",
-                FindResult::NotADir {
-                    pathdirs: {
-                        let mut pd = PathDirs::new();
-                        pd.push((root.clone(), "subdir1".parse()?));
-                        pd.push((subdir1.clone(), "file1.txt".parse()?));
-                        pd
-                    },
-                    depth: 1,
-                },
-            ),
-        ];
+        // Test finding a path that contains a file
+        let result = find_dir(&root, &Utf8UnixPathBuf::from("subdir1/file1.txt/invalid")).await?;
+        assert!(matches!(result, FindResult::NotADir { depth: 1 }));
 
-        for (path, expected_result) in test_cases {
-            let result = find_entity(&root, &Utf8UnixPathBuf::from(path)).await?;
-            assert_eq!(result, expected_result, "Failed for path: {}", path);
-        }
-
-        // Test case for invalid path with root
-        let invalid_path = "/invalid/path";
-        let result = find_entity(&root, &Utf8UnixPathBuf::from(invalid_path)).await;
+        // Test invalid paths
+        let result = find_dir(&root, &Utf8UnixPathBuf::from("/invalid/path")).await;
         assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
 
-        // Test case for invalid path with ".."
-        let invalid_path = "invalid/../path";
-        let result = find_entity(&root, &Utf8UnixPathBuf::from(invalid_path)).await;
+        let result = find_dir(&root, &Utf8UnixPathBuf::from("invalid/../path")).await;
         assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
 
-        // Test case for invalid path with "."
-        let invalid_path = "./invalid/path";
-        let result = find_entity(&root, &Utf8UnixPathBuf::from(invalid_path)).await;
+        let result = find_dir(&root, &Utf8UnixPathBuf::from("./invalid/path")).await;
         assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_find_dir_mut() -> anyhow::Result<()> {
+        let mut root = fixtures::setup_test_filesystem().await?;
+
+        // Test finding existing directories
+        let result = find_dir_mut(&mut root, &Utf8UnixPathBuf::from("subdir1")).await?;
+        assert!(matches!(result, FindResult::Found { .. }));
+
+        let result = find_dir_mut(&mut root, &Utf8UnixPathBuf::from("subdir1/subdir2")).await?;
+        assert!(matches!(result, FindResult::Found { .. }));
+
+        // Test finding non-existent directories
+        let result = find_dir_mut(&mut root, &Utf8UnixPathBuf::from("nonexistent")).await?;
+        assert!(matches!(result, FindResult::NotFound { depth: 0, .. }));
+
+        let result = find_dir_mut(&mut root, &Utf8UnixPathBuf::from("subdir1/nonexistent")).await?;
+        assert!(matches!(result, FindResult::NotFound { depth: 1, .. }));
+
+        // Test finding a path that contains a file
+        let result = find_dir_mut(
+            &mut root,
+            &Utf8UnixPathBuf::from("subdir1/file1.txt/invalid"),
+        )
+        .await?;
+        assert!(matches!(result, FindResult::NotADir { depth: 1 }));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_find_or_create_dir() -> anyhow::Result<()> {
+        let mut root = fixtures::setup_test_filesystem().await?;
+
+        // Test creating a new directory
+        let new_dir = find_or_create_dir(&mut root, &Utf8UnixPathBuf::from("new_dir")).await?;
+        assert!(new_dir.is_empty());
+
+        // Verify the new directory exists
+        let result = find_dir(&root, &Utf8UnixPathBuf::from("new_dir")).await?;
+        assert!(matches!(result, FindResult::Found { .. }));
+
+        // Test creating a nested structure
+        let nested_dir =
+            find_or_create_dir(&mut root, &Utf8UnixPathBuf::from("parent/child/grandchild"))
+                .await?;
+        assert!(nested_dir.is_empty());
+
+        // Verify the nested structure exists
+        let result = find_dir(&root, &Utf8UnixPathBuf::from("parent/child/grandchild")).await?;
+        assert!(matches!(result, FindResult::Found { .. }));
+
+        // Test getting an existing directory
+        let existing_dir = find_or_create_dir(&mut root, &Utf8UnixPathBuf::from("subdir1")).await?;
+        assert!(!existing_dir.is_empty());
+
+        // Test creating a directory where a file already exists
+        let result =
+            find_or_create_dir(&mut root, &Utf8UnixPathBuf::from("subdir1/file1.txt")).await;
+        assert!(matches!(result, Err(FsError::NotADirectory(_))));
 
         Ok(())
     }

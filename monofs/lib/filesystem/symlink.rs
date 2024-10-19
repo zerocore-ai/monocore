@@ -21,7 +21,7 @@ use super::kind::EntityType;
 // Types
 //--------------------------------------------------------------------------------------------------
 
-/// Represents a [`symbolic link`][symlink] to a file or directory in the `monofs` file system.
+/// Represents a [`symbolic link`][symlink] to a file or directory in the `monofs` _immutable_ file system.
 ///
 /// ## Important
 ///

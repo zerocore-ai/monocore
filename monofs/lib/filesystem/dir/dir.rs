@@ -25,7 +25,7 @@ use super::Utf8UnixPathSegment;
 // Types: Dir
 //--------------------------------------------------------------------------------------------------
 
-/// Represents a directory node in the `monofs` file system.
+/// Represents a directory node in the `monofs` _immutable_ file system.
 ///
 /// ## Important
 ///
@@ -140,7 +140,14 @@ where
         self.inner.entries.get(name)
     }
 
-    /// Gets the entity with the provided name from the directory's entries, resolving it if necessary.
+    /// Gets the [`EntityCidLink`] with the given name from the directory's entries.
+    #[inline]
+    pub fn get_mut(&mut self, name: &Utf8UnixPathSegment) -> Option<&mut EntityCidLink<S>> {
+        let inner = Arc::make_mut(&mut self.inner);
+        inner.entries.get_mut(name)
+    }
+
+    /// Gets the [`Entity`] with the provided name from the directory's entries, resolving it if necessary.
     pub async fn get_entity(&self, name: &Utf8UnixPathSegment) -> FsResult<Option<&Entity<S>>>
     where
         S: Send + Sync,
@@ -151,12 +158,38 @@ where
         }
     }
 
+    /// Gets the [`Entity`] with the provided name from the directory's entries, resolving it if necessary.
+    pub async fn get_entity_mut(
+        &mut self,
+        name: &Utf8UnixPathSegment,
+    ) -> FsResult<Option<&mut Entity<S>>>
+    where
+        S: Send + Sync,
+    {
+        let store = self.inner.store.clone();
+        match self.get_mut(name) {
+            Some(link) => Ok(Some(link.resolve_mut(store).await?)),
+            None => Ok(None),
+        }
+    }
+
     /// Gets the [`Dir`] with the provided name from the directory's entries, resolving it if necessary.
     pub async fn get_dir(&self, name: &Utf8UnixPathSegment) -> FsResult<Option<&Dir<S>>>
     where
         S: Send + Sync,
     {
         match self.get_entity(name).await? {
+            Some(Entity::Dir(dir)) => Ok(Some(dir)),
+            _ => Ok(None),
+        }
+    }
+
+    /// Gets the [`Dir`] with the provided name from the directory's entries, resolving it if necessary.
+    pub async fn get_dir_mut(&mut self, name: &Utf8UnixPathSegment) -> FsResult<Option<&mut Dir<S>>>
+    where
+        S: Send + Sync,
+    {
+        match self.get_entity_mut(name).await? {
             Some(Entity::Dir(dir)) => Ok(Some(dir)),
             _ => Ok(None),
         }
@@ -173,12 +206,40 @@ where
         }
     }
 
+    /// Gets the [`File`] with the provided name from the directory's entries, resolving it if necessary.
+    pub async fn get_file_mut(
+        &mut self,
+        name: &Utf8UnixPathSegment,
+    ) -> FsResult<Option<&mut File<S>>>
+    where
+        S: Send + Sync,
+    {
+        match self.get_entity_mut(name).await? {
+            Some(Entity::File(file)) => Ok(Some(file)),
+            _ => Ok(None),
+        }
+    }
+
     /// Gets the [`Symlink`] with the provided name from the directory's entries, resolving it if necessary.
     pub async fn get_symlink(&self, name: &Utf8UnixPathSegment) -> FsResult<Option<&Symlink<S>>>
     where
         S: Send + Sync,
     {
         match self.get_entity(name).await? {
+            Some(Entity::Symlink(symlink)) => Ok(Some(symlink)),
+            _ => Ok(None),
+        }
+    }
+
+    /// Gets the [`Symlink`] with the provided name from the directory's entries, resolving it if necessary.
+    pub async fn get_symlink_mut(
+        &mut self,
+        name: &Utf8UnixPathSegment,
+    ) -> FsResult<Option<&mut Symlink<S>>>
+    where
+        S: Send + Sync,
+    {
+        match self.get_entity_mut(name).await? {
             Some(Entity::Symlink(symlink)) => Ok(Some(symlink)),
             _ => Ok(None),
         }

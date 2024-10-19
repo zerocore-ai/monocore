@@ -30,6 +30,15 @@ where
             .await
             .map_err(Into::into)
     }
+
+    /// Resolves the [`EntityCidLink`] to a mutable [`Entity`].
+    async fn resolve_mut(&'a mut self, store: S) -> FsResult<&'a mut Self::Target> {
+        self.cached
+            .get_or_try_init(Entity::load(&self.identifier, store))
+            .await?;
+
+        Ok(self.cached.get_mut().unwrap())
+    }
 }
 
 impl<S> EntityCidLink<S>

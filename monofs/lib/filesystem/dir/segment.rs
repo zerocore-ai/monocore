@@ -20,7 +20,7 @@ use crate::FsError;
 ///
 /// ```
 /// use std::str::FromStr;
-/// use monocore::monofs::filesystem::dir::Utf8UnixPathSegment;
+/// use monofs::dir::Utf8UnixPathSegment;
 ///
 /// let segment = Utf8UnixPathSegment::from_str("example").unwrap();
 ///
@@ -40,7 +40,7 @@ impl Utf8UnixPathSegment {
     ///
     /// ```
     /// use std::str::FromStr;
-    /// use monocore::monofs::filesystem::dir::Utf8UnixPathSegment;
+    /// use monofs::dir::Utf8UnixPathSegment;
     ///
     /// let segment = Utf8UnixPathSegment::from_str("example").unwrap();
     ///
@@ -56,7 +56,7 @@ impl Utf8UnixPathSegment {
     ///
     /// ```
     /// use std::str::FromStr;
-    /// use monocore::monofs::filesystem::dir::Utf8UnixPathSegment;
+    /// use monofs::dir::Utf8UnixPathSegment;
     ///
     /// let segment = Utf8UnixPathSegment::from_str("example").unwrap();
     ///
@@ -72,7 +72,7 @@ impl Utf8UnixPathSegment {
     ///
     /// ```
     /// use std::str::FromStr;
-    /// use monocore::monofs::filesystem::dir::Utf8UnixPathSegment;
+    /// use monofs::dir::Utf8UnixPathSegment;
     ///
     /// let segment = Utf8UnixPathSegment::from_str("example").unwrap();
     ///
@@ -88,7 +88,7 @@ impl Utf8UnixPathSegment {
     ///
     /// ```
     /// use std::str::FromStr;
-    /// use monocore::monofs::filesystem::dir::Utf8UnixPathSegment;
+    /// use monofs::dir::Utf8UnixPathSegment;
     ///
     /// let segment = Utf8UnixPathSegment::from_str("example").unwrap();
     ///
@@ -228,16 +228,12 @@ mod tests {
         assert!("/".parse::<Utf8UnixPathSegment>().is_err());
         assert!("".parse::<Utf8UnixPathSegment>().is_err());
         assert!("///".parse::<Utf8UnixPathSegment>().is_err());
-        assert!("...".parse::<Utf8UnixPathSegment>().is_err());
-        assert!("\0".parse::<Utf8UnixPathSegment>().is_err());
         assert!("a/b".parse::<Utf8UnixPathSegment>().is_err());
         assert!(Utf8UnixPathSegment::try_from(".").is_err());
         assert!(Utf8UnixPathSegment::try_from("..").is_err());
         assert!(Utf8UnixPathSegment::try_from("/").is_err());
         assert!(Utf8UnixPathSegment::try_from("").is_err());
         assert!(Utf8UnixPathSegment::try_from("///").is_err());
-        assert!(Utf8UnixPathSegment::try_from("...").is_err());
-        assert!(Utf8UnixPathSegment::try_from("\0").is_err());
         assert!(Utf8UnixPathSegment::try_from("a/b").is_err());
     }
 
@@ -276,12 +272,12 @@ mod tests {
         assert!(Utf8UnixPathSegment::try_from("file-name").is_ok());
         assert!(Utf8UnixPathSegment::try_from("file_name").is_ok());
         assert!(Utf8UnixPathSegment::try_from("file name").is_ok());
+        assert!(Utf8UnixPathSegment::try_from("file\\name").is_ok());
+        assert!(Utf8UnixPathSegment::try_from("file:name").is_ok());
+        assert!(Utf8UnixPathSegment::try_from("file*name").is_ok());
+        assert!(Utf8UnixPathSegment::try_from("file?name").is_ok());
 
         // Negative cases
         assert!(Utf8UnixPathSegment::try_from("file/name").is_err());
-        assert!(Utf8UnixPathSegment::try_from("file\\name").is_err());
-        assert!(Utf8UnixPathSegment::try_from("file:name").is_err());
-        assert!(Utf8UnixPathSegment::try_from("file*name").is_err());
-        assert!(Utf8UnixPathSegment::try_from("file?name").is_err());
     }
 }

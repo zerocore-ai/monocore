@@ -18,4 +18,7 @@ where
 
     /// Resolves to a target type
     fn resolve(&'a self, store: S) -> impl Future<Output = FsResult<&'a Self::Target>>;
+
+    /// Resolves to a mutable target type
+    fn resolve_mut(&'a mut self, store: S) -> impl Future<Output = FsResult<&'a mut Self::Target>>;
 }

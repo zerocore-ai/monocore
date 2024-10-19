@@ -47,7 +47,7 @@ Follow these steps to set up monocore for development:
 ### Prerequisites
 
 - [Git][git_home]
-- [Rust toolchain (latest stable version)][rustup_home]
+- [Rust toolchain][rustup_home] (latest stable version)
 - On macOS: [Homebrew][brew_home]
 
 ### Setup
