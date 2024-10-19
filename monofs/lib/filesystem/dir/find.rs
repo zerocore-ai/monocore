@@ -101,9 +101,9 @@ where
             Some(Entity::Dir(d)) => {
                 dir = d;
             }
-            Some(Entity::Symlink(_)) => {
-                // Symlinks are not supported yet, so we return an error
-                return Err(FsError::SymLinkNotSupportedYet(components.clone()));
+            Some(Entity::SoftLink(_)) => {
+                // SoftLinks are not supported yet, so we return an error
+                return Err(FsError::SoftLinkNotSupportedYet(components.clone()));
             }
             Some(_) => {
                 // If we encounter a non-directory entity in the middle of the path,
@@ -177,9 +177,9 @@ where
                 // A hack to get a mutable reference to the directory
                 dir = dir.get_dir_mut(segment).await?.unwrap();
             }
-            Some(Entity::Symlink(_)) => {
-                // Symlinks are not supported yet, so we return an error
-                return Err(FsError::SymLinkNotSupportedYet(components.clone()));
+            Some(Entity::SoftLink(_)) => {
+                // SoftLinks are not supported yet, so we return an error
+                return Err(FsError::SoftLinkNotSupportedYet(components.clone()));
             }
             Some(_) => {
                 // If we encounter a non-directory entity in the middle of the path,
@@ -233,7 +233,7 @@ where
                 let new_dir = Dir::new(dir.get_store().clone());
                 let segment = Utf8UnixPathSegment::try_from(&component)?;
 
-                dir.put_dir(segment.clone(), new_dir).await?;
+                dir.put_dir(segment.clone(), new_dir)?;
                 dir = dir.get_dir_mut(&segment).await?.unwrap();
             }
 
@@ -281,16 +281,16 @@ mod tests {
             let file2 = File::new(store.clone());
 
             let file1_cid = file1.store().await?;
-            subdir1.put("file1.txt".parse()?, file1_cid.into())?;
+            subdir1.put_entry("file1.txt".parse()?, file1_cid.into())?;
 
             let file2_cid = file2.store().await?;
-            subdir2.put("file2.txt".parse()?, file2_cid.into())?;
+            subdir2.put_entry("file2.txt".parse()?, file2_cid.into())?;
 
             let subdir2_cid = subdir2.store().await?;
-            subdir1.put("subdir2".parse()?, subdir2_cid.into())?;
+            subdir1.put_entry("subdir2".parse()?, subdir2_cid.into())?;
 
             let subdir1_cid = subdir1.store().await?;
-            root.put("subdir1".parse()?, subdir1_cid.into())?;
+            root.put_entry("subdir1".parse()?, subdir1_cid.into())?;
 
             Ok(root)
         }

@@ -1,6 +1,5 @@
 mod cidlink;
 mod link;
-mod resolvable;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -8,4 +7,3 @@ mod resolvable;
 
 pub use cidlink::*;
 pub use link::*;
-pub use resolvable::*;

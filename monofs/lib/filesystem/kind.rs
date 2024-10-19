@@ -17,19 +17,5 @@ pub enum EntityType {
     Dir,
 
     /// The entity is a symbolic link.
-    Symlink,
+    SoftLink,
 }
-
-// /// The kind of timestamp.
-// ///
-// /// This corresponds to `new-timestamp` in the WASI.
-// pub enum TimestampType {
-//     /// Do not change the timestamp.
-//     NoChange,
-
-//     /// Set the timestamp to the current time.
-//     Now,
-
-//     /// Set the timestamp to the provided time.
-//     Timestamp(SystemTime),
-// }

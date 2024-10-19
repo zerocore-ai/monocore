@@ -13,8 +13,53 @@ impl<S> Dir<S>
 where
     S: IpldStore,
 {
-    /// Copies a directory from a source directory.
-    pub fn copy_from(&self, _src: &Dir<S>) -> FsResult<()> {
+    /// ...
+    pub fn find(&self) -> FsResult<()> {
         unimplemented!()
+    }
+
+    /// ...
+    pub fn finsert(&self) -> FsResult<()> {
+        unimplemented!()
+    }
+
+    /// ...
+    pub fn copy(&self) -> FsResult<()> {
+        unimplemented!()
+    }
+
+    /// ...
+    pub fn r#move(&self) -> FsResult<()> {
+        unimplemented!()
+    }
+
+    /// ...
+    #[inline]
+    pub fn mv(&self) -> FsResult<()> {
+        unimplemented!()
+    }
+
+    /// ...
+    pub fn remove(&self) -> FsResult<()> {
+        unimplemented!()
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Tests
+//--------------------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use monoutils_store::MemoryStore;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_find() -> FsResult<()> {
+        let store = MemoryStore::default();
+        let _dir = Dir::new(store.clone());
+
+        Ok(())
     }
 }

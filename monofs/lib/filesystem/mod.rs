@@ -1,20 +1,25 @@
 //! Filesystem implementation.
 
 mod entity;
+mod eq;
 mod error;
 mod kind;
 mod link;
 mod metadata;
-mod traits;
+mod resolvable;
+mod storechange;
+
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
 pub mod dir;
 pub mod file;
-pub mod symlink;
+pub mod softlink;
 
+pub use eq::*;
 pub use error::*;
 pub use link::*;
 pub use metadata::*;
-pub use traits::*;
+pub use resolvable::*;
+pub use storechange::*;

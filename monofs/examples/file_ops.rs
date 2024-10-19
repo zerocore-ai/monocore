@@ -1,14 +1,7 @@
-//! Directory implementation.
-
-mod dir;
-mod find;
-mod ops;
-mod segment;
-
 //--------------------------------------------------------------------------------------------------
-// Exports
+// Function: main
 //--------------------------------------------------------------------------------------------------
 
-pub use dir::*;
-pub use find::*;
-pub use segment::*;
+fn main() {
+    println!("Hello, world!");
+}

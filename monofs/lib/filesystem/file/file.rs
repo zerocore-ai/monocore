@@ -8,7 +8,7 @@ use monoutils_store::{
 };
 use serde::{
     de::{self, DeserializeSeed},
-    Deserialize, Deserializer, Serialize, Serializer,
+    Deserialize, Deserializer, Serialize,
 };
 
 use crate::{filesystem::kind::EntityType, FsError, FsResult, Metadata};
@@ -82,6 +82,12 @@ where
     /// Returns the content of the file.
     pub fn get_content(&self) -> Option<&Cid> {
         self.inner.content.as_ref()
+    }
+
+    /// Sets the content of the file.
+    pub fn set_content(&mut self, content: Option<Cid>) {
+        let inner = Arc::make_mut(&mut self.inner);
+        inner.content = content;
     }
 
     /// Returns the metadata for the directory.
@@ -163,41 +169,17 @@ impl<S> FileDeserializeSeed<S> {
 // Trait Implementations: File
 //--------------------------------------------------------------------------------------------------
 
-impl<S> IpldReferences for File<S>
-where
-    S: IpldStore,
-{
-    fn get_references<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Cid> + Send + 'a> {
-        match self.inner.content.as_ref() {
-            Some(cid) => Box::new(std::iter::once(cid)),
-            None => Box::new(std::iter::empty()),
-        }
-    }
-}
-
-impl<S> Serialize for File<S>
-where
-    S: IpldStore,
-{
-    fn serialize<T>(&self, serializer: T) -> Result<T::Ok, T::Error>
-    where
-        T: Serializer,
-    {
-        let serializable = FileSerializable {
-            metadata: self.inner.metadata.clone(),
-            content: self.inner.content,
-        };
-
-        serializable.serialize(serializer)
-    }
-}
-
 impl<S> Storable<S> for File<S>
 where
     S: IpldStore + Send + Sync,
 {
     async fn store(&self) -> StoreResult<Cid> {
-        self.inner.store.put_node(self).await
+        let serializable = FileSerializable {
+            metadata: self.inner.metadata.clone(),
+            content: self.inner.content,
+        };
+
+        self.inner.store.put_node(&serializable).await
     }
 
     async fn load(cid: &Cid, store: S) -> StoreResult<Self> {
@@ -224,6 +206,15 @@ where
 {
     fn eq(&self, other: &Self) -> bool {
         self.inner.metadata == other.inner.metadata && self.inner.content == other.inner.content
+    }
+}
+
+impl IpldReferences for FileSerializable {
+    fn get_references<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Cid> + Send + 'a> {
+        match self.content.as_ref() {
+            Some(cid) => Box::new(std::iter::once(cid)),
+            None => Box::new(std::iter::empty()),
+        }
     }
 }
 

@@ -12,7 +12,7 @@ use super::kind::EntityType;
 
 /// Relevant metadata for a file system entity.
 ///
-/// This mostly corresponds to the `descriptor-stat` structure in the WASI. `monofs` does not support
+/// This mostly corresponds to the `fd-stat` in POSIX. `monofs` does not support
 /// hard links, so there is no `link-count` field. Also `size` is not stored here, but rather
 /// requested when needed.
 ///
@@ -31,6 +31,9 @@ pub struct Metadata {
 
     /// The size of the entity in bytes.
     sync_type: SyncType,
+    // /// The maximum depth of a softlink.
+    // softlink_depth: u32,
+
     // /// Extended attributes.
     // #[serde(skip)]
     // extended_attrs: Option<AttributeCidLink<S>>,
@@ -38,18 +41,18 @@ pub struct Metadata {
 
 /// The method of syncing to use for the entity used by the filesystem
 /// service.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
 pub enum SyncType {
     /// Use the [RAFT consensus algorithm][raft] to sync the entity.
     ///
     /// [raft]: https://raft.github.io/
-    #[serde(rename = "raft")]
+    #[default]
     RAFT,
 
     /// Use [Merkle-CRDT][crdt] as the method of syncing.
     ///
     /// [crdt]: https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type
-    #[serde(rename = "crdt")]
     CRDT,
 }
 
@@ -75,7 +78,8 @@ impl Metadata {
             entity_type,
             created_at: now,
             modified_at: now,
-            sync_type: SyncType::RAFT,
+            sync_type: SyncType::default(),
+            // softlink_depth: 40,
             // extended_attrs: None,
         }
     }

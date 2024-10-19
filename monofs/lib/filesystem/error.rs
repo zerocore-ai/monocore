@@ -28,9 +28,9 @@ pub enum FsError {
     #[error("Not a directory: {0:?}")]
     NotADirectory(String),
 
-    /// Not a symlink.
-    #[error("Not a symlink: {0:?}")]
-    NotASymlink(String),
+    /// Not a softlink.
+    #[error("Not a softlink: {0:?}")]
+    NotASoftLink(String),
 
     /// Not found.
     #[error("Not found: {0:?}")]
@@ -70,9 +70,9 @@ pub enum FsError {
     #[error("Invalid search path: {0}")]
     InvalidSearchPath(String),
 
-    /// Symlink not supported yet.
-    #[error("Symlink not supported yet: path: {0:?}")]
-    SymLinkNotSupportedYet(Vec<Utf8UnixPathSegment>),
+    /// SoftLink not supported yet.
+    #[error("SoftLink not supported yet: path: {0:?}")]
+    SoftLinkNotSupportedYet(Vec<Utf8UnixPathSegment>),
 
     /// Invalid search path empty.
     #[error("Invalid search path empty")]

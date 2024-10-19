@@ -64,12 +64,18 @@ where
     }
 
     /// Prints all the blocks in the store.
-    // TODO: Probably change to display implementation with tokio spawn.
-    pub async fn print(&self) {
-        let blocks = self.blocks.read().await;
-        for (cid, (size, bytes)) in blocks.iter() {
-            println!("\ncid: {} ({:?})\nkey: {}", cid, size, hex::encode(bytes));
-        }
+    pub fn debug(&self)
+    where
+        C: Clone + Send,
+        L: Clone + Send,
+    {
+        let store = self.clone();
+        tokio::spawn(async move {
+            let blocks = store.blocks.read().await;
+            for (cid, (size, bytes)) in blocks.iter() {
+                println!("\ncid: {} ({:?})\nkey: {}", cid, size, hex::encode(bytes));
+            }
+        });
     }
 
     /// Increments the reference count of the blocks with the given `Cid`s.
