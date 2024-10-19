@@ -8,8 +8,10 @@ use super::IpldReferences;
 //--------------------------------------------------------------------------------------------------
 
 /// A `MerkleNode` is a simple data structure for constructing a Directed Acyclic Graph (DAG) out of
-/// multiple leaf data. It is a non-leaf data structure containing references (CIDs) its direct
-/// dependencies which can be either leaf or non-leaf data structures.
+/// multiple leaf data.
+///
+/// It is a non-leaf data structure containing references (CIDs) to its direct dependencies which
+/// can be either leaf or non-leaf data structures.
 ///
 /// This data structure is usually used internally by `IpldStore`s to store chunked data in a way that
 /// preserves the original order of the data. See [`MemoryStore`] for an example of how this is
