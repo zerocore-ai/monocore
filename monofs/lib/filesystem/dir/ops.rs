@@ -179,7 +179,7 @@ where
     /// # }
     /// ```
     pub fn list(&self) -> FsResult<Vec<Utf8UnixPathSegment>> {
-        Ok(self.inner.entries.keys().cloned().collect())
+        Ok(self.get_entries().map(|(k, _)| k.clone()).collect())
     }
 
     /// Copies an entity from the source path to the target **directory**.

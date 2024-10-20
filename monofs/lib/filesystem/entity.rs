@@ -77,6 +77,24 @@ where
         }
     }
 
+    /// Returns the CID of the entity when it was initially loaded from the store.
+    pub fn get_initial_load_cid(&self) -> Option<&Cid> {
+        match self {
+            Entity::File(file) => file.get_initial_load_cid(),
+            Entity::Dir(dir) => dir.get_initial_load_cid(),
+            Entity::SoftLink(softlink) => softlink.get_initial_load_cid(),
+        }
+    }
+
+    /// Returns the CID of the previous version of the entity if there is one.
+    pub fn get_previous(&self) -> Option<&Cid> {
+        match self {
+            Entity::File(file) => file.get_previous(),
+            Entity::Dir(dir) => dir.get_previous(),
+            Entity::SoftLink(softlink) => softlink.get_previous(),
+        }
+    }
+
     /// Returns the store used to persist the entity.
     pub fn get_store(&self) -> &S {
         match self {

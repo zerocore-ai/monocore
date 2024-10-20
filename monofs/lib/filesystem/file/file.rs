@@ -1,18 +1,15 @@
 use std::{
     fmt::{self, Debug},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use bytes::Bytes;
 use monoutils_store::{
     ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
 };
-use serde::{
-    de::{self, DeserializeSeed},
-    Deserialize, Deserializer, Serialize,
-};
+use serde::{Deserialize, Serialize};
 
-use crate::filesystem::{kind::EntityType, FsError, FsResult, Metadata};
+use crate::filesystem::{kind::EntityType, FsResult, Metadata};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -37,14 +34,22 @@ struct FileInner<S>
 where
     S: IpldStore,
 {
+    /// The CID of the file when it is initially loaded from the store.
+    ///
+    /// It is not initialized if the file was not loaded from the store.
+    initial_load_cid: OnceLock<Cid>,
+
+    /// The CID of the previous version of the directory if there is one.
+    previous: Option<Cid>,
+
     /// File metadata.
-    pub(crate) metadata: Metadata,
+    metadata: Metadata,
 
     /// File content. If the file is empty, this will be `None`.
-    pub(crate) content: Option<Cid>,
+    content: Option<Cid>,
 
     /// The store used to persist blocks in the file.
-    pub(crate) store: S,
+    store: S,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -55,10 +60,7 @@ where
 pub(crate) struct FileSerializable {
     metadata: Metadata,
     content: Option<Cid>,
-}
-
-pub(crate) struct FileDeserializeSeed<S> {
-    pub(crate) store: S,
+    previous: Option<Cid>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -85,6 +87,8 @@ where
     pub fn new(store: S) -> Self {
         Self {
             inner: Arc::new(FileInner {
+                initial_load_cid: OnceLock::new(),
+                previous: None,
                 metadata: Metadata::new(EntityType::File),
                 content: None,
                 store,
@@ -115,11 +119,86 @@ where
 
         Self {
             inner: Arc::new(FileInner {
+                initial_load_cid: OnceLock::new(),
+                previous: None,
                 metadata: Metadata::new(EntityType::File),
                 content: Some(cid),
                 store,
             }),
         }
+    }
+
+    /// Returns the CID of the file when it was initially loaded from the store.
+    ///
+    /// It returns `None` if the file was not loaded from the store.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::File;
+    /// use monoutils_store::{MemoryStore, Storable};
+    /// use monoutils_store::ipld::cid::Cid;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let file = File::new(store.clone());
+    ///
+    /// // Initially, the CID is not set
+    /// assert!(file.get_initial_load_cid().is_none());
+    ///
+    /// // Store the file
+    /// let stored_cid = file.store().await?;
+    ///
+    /// // Load the file
+    /// let loaded_file = File::load(&stored_cid, store).await?;
+    ///
+    /// // Now the initial load CID is set
+    /// assert_eq!(loaded_file.get_initial_load_cid(), Some(&stored_cid));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_initial_load_cid(&self) -> Option<&Cid> {
+        self.inner.initial_load_cid.get()
+    }
+
+    /// Returns the CID of the previous version of the file if there is one.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::File;
+    /// use monoutils_store::{MemoryStore, Storable};
+    /// use monoutils_store::ipld::cid::Cid;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut file = File::new(store.clone());
+    ///
+    /// // Initially, there's no previous version
+    /// assert!(file.get_previous().is_none());
+    ///
+    /// // Store the file
+    /// let first_cid = file.store().await?;
+    ///
+    /// // Load the file and create a new version
+    /// let mut loaded_file = File::load(&first_cid, store.clone()).await?;
+    /// loaded_file.set_content(Some(Cid::default()));
+    ///
+    /// // Store the new version
+    /// let second_cid = loaded_file.store().await?;
+    ///
+    /// // Load the new version
+    /// let new_version = File::load(&second_cid, store).await?;
+    ///
+    /// // Now the previous CID is set
+    /// assert_eq!(new_version.get_previous(), Some(&first_cid));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_previous(&self) -> Option<&Cid> {
+        self.inner.previous.as_ref()
     }
 
     /// Returns the content of the file.
@@ -247,38 +326,21 @@ where
         inner.content = None;
     }
 
-    /// Deserializes to a `Dir` using an arbitrary deserializer and store.
-    pub fn deserialize_with<'de>(
-        deserializer: impl Deserializer<'de, Error: Into<FsError>>,
-        store: S,
-    ) -> FsResult<Self> {
-        FileDeserializeSeed::new(store)
-            .deserialize(deserializer)
-            .map_err(Into::into)
-    }
-
     /// Tries to create a new `Dir` from a serializable representation.
-    pub(crate) fn try_from_serializable(
+    pub(crate) fn from_serializable(
         serializable: FileSerializable,
         store: S,
+        load_cid: Cid,
     ) -> FsResult<Self> {
         Ok(File {
             inner: Arc::new(FileInner {
+                initial_load_cid: OnceLock::from(load_cid),
+                previous: serializable.previous,
                 metadata: serializable.metadata,
                 content: serializable.content,
                 store,
             }),
         })
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
-// Methods: FileDeserializeSeed
-//--------------------------------------------------------------------------------------------------
-
-impl<S> FileDeserializeSeed<S> {
-    fn new(store: S) -> Self {
-        Self { store }
     }
 }
 
@@ -293,6 +355,7 @@ where
     async fn store(&self) -> StoreResult<Cid> {
         let serializable = FileSerializable {
             metadata: self.inner.metadata.clone(),
+            previous: self.inner.initial_load_cid.get().cloned(),
             content: self.inner.content,
         };
 
@@ -301,7 +364,7 @@ where
 
     async fn load(cid: &Cid, store: S) -> StoreResult<Self> {
         let serializable = store.get_node(cid).await?;
-        File::try_from_serializable(serializable, store).map_err(StoreError::custom)
+        File::from_serializable(serializable, store, *cid).map_err(StoreError::custom)
     }
 }
 
@@ -336,31 +399,12 @@ impl IpldReferences for FileSerializable {
 }
 
 //--------------------------------------------------------------------------------------------------
-// Trait Implementations: FileDeserializeSeed
-//--------------------------------------------------------------------------------------------------
-
-impl<'de, S> DeserializeSeed<'de> for FileDeserializeSeed<S>
-where
-    S: IpldStore,
-{
-    type Value = File<S>;
-
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let serializable = FileSerializable::deserialize(deserializer)?;
-        File::try_from_serializable(serializable, self.store).map_err(de::Error::custom)
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
 // Tests
 //--------------------------------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
-    use monoutils_store::MemoryStore;
+    use monoutils_store::{MemoryStore, Storable};
 
     use super::*;
 
@@ -424,5 +468,53 @@ mod tests {
         let loaded_file = File::load(&stored_cid, store).await.unwrap();
 
         assert_eq!(file, loaded_file);
+    }
+
+    #[tokio::test]
+    async fn test_file_get_initial_load_cid() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let file = File::new(store.clone());
+
+        // Initially, the CID is not set
+        assert!(file.get_initial_load_cid().is_none());
+
+        // Store the file
+        let stored_cid = file.store().await?;
+
+        // Load the file
+        let loaded_file = File::load(&stored_cid, store).await?;
+
+        // Now the initial load CID is set
+        assert_eq!(loaded_file.get_initial_load_cid(), Some(&stored_cid));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_file_get_previous() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let file = File::new(store.clone());
+
+        // Initially, there's no previous version
+        assert!(file.get_previous().is_none());
+
+        // Store the file
+        let first_cid = file.store().await?;
+
+        // Load the file and create a new version
+        let mut loaded_file = File::load(&first_cid, store.clone()).await?;
+        loaded_file.set_content(Some(Cid::default()));
+
+        // Store the new version
+        let second_cid = loaded_file.store().await?;
+
+        // Load the new version
+        let new_version = File::load(&second_cid, store).await?;
+
+        // Now the previous and initial load CIDs are set
+        assert_eq!(new_version.get_previous(), Some(&first_cid));
+        assert_eq!(new_version.get_initial_load_cid(), Some(&second_cid));
+
+        Ok(())
     }
 }
