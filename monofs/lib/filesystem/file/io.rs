@@ -79,7 +79,7 @@ where
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
-impl<'a> AsyncRead for FileInputStream<'a> {
+impl AsyncRead for FileInputStream<'_> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -89,7 +89,7 @@ impl<'a> AsyncRead for FileInputStream<'a> {
     }
 }
 
-impl<'a, S> AsyncWrite for FileOutputStream<'a, S>
+impl<S> AsyncWrite for FileOutputStream<'_, S>
 where
     S: IpldStore + Send + Sync + 'static,
 {

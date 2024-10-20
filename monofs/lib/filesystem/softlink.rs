@@ -220,7 +220,7 @@ where
     }
 
     #[async_recursion]
-    async fn follow_recursive(&self, remaining_depth: u32) -> FsResult<FollowResult<'_, S>>
+    async fn follow_recursive(&self, remaining_depth: u32) -> FsResult<FollowResult<S>>
     where
         S: Send + Sync,
     {

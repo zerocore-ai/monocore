@@ -33,7 +33,7 @@ getset.workspace = true
 hex.workspace = true
 lazy_static.workspace = true
 libc.workspace = true
-oci-spec = { git = "https://github.com/containers/oci-spec-rs.git", branch = "main" }
+oci-spec = { git = "https://github.com/containers/oci-spec-rs", branch = "main" }
 reqwest.workspace = true
 reqwest-middleware.workspace = true
 reqwest-retry.workspace = true

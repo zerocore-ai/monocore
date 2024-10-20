@@ -50,9 +50,9 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
     "RUSTSEC-2021-0145", # atty on windows only
     "RUSTSEC-2023-0071", # Impacts rsa crate, which is only used in dev, see
-                         # https://github.com/RustCrypto/RSA/pull/394 for remediation
+    # https://github.com/RustCrypto/RSA/pull/394 for remediation
     "RUSTSEC-2024-0336", # Ignore a DOS issue w/ rustls-0.20.9. This will go
-                         # away when we update opentelemetry-otlp soon.
+    # away when we update opentelemetry-otlp soon.
     { id = "RUSTSEC-2020-0168", reason = "Not planning to force upgrade to mach2 yet" },
     { id = "RUSTSEC-2024-0320", reason = "Not planning to force upgrade to rust-yaml2 yet" },
 ]
@@ -83,13 +83,13 @@ allow = [
     "BSD-3-Clause",
     "MPL-2.0",
     "ISC",
-    "Zlib"
+    "Zlib",
 ]
 # List of explicitly disallowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
 # [possible values: any SPDX 3.7 short identifier (+ optional exception)].
 # deny = [
-    #"Nokia",
+#"Nokia",
 # ]
 # Lint level for licenses considered copyleft
 # copyleft = "deny"
@@ -117,9 +117,15 @@ exceptions = [
     # use data from the unicode tables to generate the tables which are
     # included in the application. We do not distribute those data files so
     # this is not a problem for us. See https://github.com/dtolnay/unicode-ident/pull/9/files
-    { allow = ["Unicode-DFS-2016"], name = "unicode-ident", version = "*"},
-    { allow = ["OpenSSL"], name = "ring", version = "*" },
-    { allow = ["MPL-2.0"], name = "webpki-roots", version = "*"},
+    { allow = [
+        "Unicode-DFS-2016",
+    ], name = "unicode-ident", version = "*" },
+    { allow = [
+        "OpenSSL",
+    ], name = "ring", version = "*" },
+    { allow = [
+        "MPL-2.0",
+    ], name = "webpki-roots", version = "*" },
 ]
 
 # Some crates don't have (easily) machine readable licensing information,
@@ -128,9 +134,7 @@ exceptions = [
 [[licenses.clarify]]
 name = "ring"
 expression = "MIT AND ISC AND OpenSSL"
-license-files = [
-    { path = "LICENSE", hash = 0xbd0eed23 }
-]
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
 
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
@@ -189,7 +193,7 @@ unknown-git = "deny"
 # if not specified. If it is specified but empty, no registries are allowed.
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # List of URLs for allowed Git repositories
-allow-git = []
+allow-git = ["https://github.com/containers/oci-spec-rs"]
 
 #[sources.allow-org]
 # 1 or more github.com organizations to allow git sources for

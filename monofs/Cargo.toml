@@ -24,4 +24,4 @@ typed-path.workspace = true
 bytes.workspace = true
 aliasable = "0.1.3"
 async-recursion = "1.1.1"
-serde_json = "1.0.132"
+serde_json.workspace = true
