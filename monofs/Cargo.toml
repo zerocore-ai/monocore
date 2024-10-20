@@ -1,11 +1,27 @@
 [package]
 name = "monofs"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
 license.workspace = true
+repository.workspace = true
+authors.workspace = true
+edition.workspace = true
 
 [lib]
 name = "monofs"
 path = "lib/lib.rs"
 
 [dependencies]
+monoutils-store.workspace = true
+serde.workspace = true
+chrono = { workspace = true, features = ["serde"] }
+getset.workspace = true
+async-once-cell = "0.5.4"
+anyhow.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+futures.workspace = true
+typed-path.workspace = true
+bytes.workspace = true
+aliasable = "0.1.3"
+async-recursion = "1.1.1"
+serde_json.workspace = true

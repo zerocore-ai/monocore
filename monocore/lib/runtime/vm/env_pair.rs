@@ -1,7 +1,7 @@
 use crate::MonocoreError;
 use getset::Getters;
 use serde::{Deserialize, Serialize};
-use std::{ffi::OsString, fmt, str::FromStr};
+use std::{fmt, str::FromStr};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -12,7 +12,7 @@ use std::{ffi::OsString, fmt, str::FromStr};
 /// This struct encapsulates a variable name and its corresponding value.
 /// It is used to manage environment variables for processes.
 ///
-/// # Examples
+/// ## Examples
 ///
 /// ```
 /// use monocore::runtime::EnvPair;
@@ -21,23 +21,23 @@ use std::{ffi::OsString, fmt, str::FromStr};
 /// // Create a new environment variable pair
 /// let env_pair = EnvPair::new("PATH", "/usr/local/bin:/usr/bin");
 ///
-/// assert_eq!(env_pair.var().to_str().unwrap(), "PATH");
-/// assert_eq!(env_pair.value().to_str().unwrap(), "/usr/local/bin:/usr/bin");
+/// assert_eq!(env_pair.get_var(), "PATH");
+/// assert_eq!(env_pair.get_value(), "/usr/local/bin:/usr/bin");
 ///
 /// // Parse an environment variable pair from a string
 /// let env_pair = EnvPair::from_str("USER=alice").unwrap();
 ///
-/// assert_eq!(env_pair.var().to_str().unwrap(), "USER");
-/// assert_eq!(env_pair.value().to_str().unwrap(), "alice");
+/// assert_eq!(env_pair.get_var(), "USER");
+/// assert_eq!(env_pair.get_value(), "alice");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
-#[getset(get = "pub")]
+#[getset(get = "pub with_prefix")]
 pub struct EnvPair {
     /// The environment variable name.
-    var: OsString,
+    var: String,
 
     /// The value of the environment variable.
-    value: OsString,
+    value: String,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -52,16 +52,16 @@ impl EnvPair {
     /// * `var` - The name of the environment variable.
     /// * `value` - The value of the environment variable.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```
     /// use monocore::runtime::EnvPair;
     ///
     /// let env_pair = EnvPair::new("HOME", "/home/user");
-    /// assert_eq!(env_pair.var().to_str().unwrap(), "HOME");
-    /// assert_eq!(env_pair.value().to_str().unwrap(), "/home/user");
+    /// assert_eq!(env_pair.get_var(), "HOME");
+    /// assert_eq!(env_pair.get_value(), "/home/user");
     /// ```
-    pub fn new<S: Into<OsString>>(var: S, value: S) -> Self {
+    pub fn new<S: Into<String>>(var: S, value: S) -> Self {
         Self {
             var: var.into(),
             value: value.into(),
@@ -92,12 +92,7 @@ impl FromStr for EnvPair {
 impl fmt::Display for EnvPair {
     /// Formats the environment variable pair following the format "<var>=<value>".
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}={}",
-            self.var.to_string_lossy(),
-            self.value.to_string_lossy()
-        )
+        write!(f, "{}={}", self.var, self.value)
     }
 }
 
@@ -131,19 +126,19 @@ mod tests {
     #[test]
     fn test_env_pair_new() {
         let env_pair = EnvPair::new("VAR", "VALUE");
-        assert_eq!(env_pair.var, OsString::from("VAR"));
-        assert_eq!(env_pair.value, OsString::from("VALUE"));
+        assert_eq!(env_pair.var, String::from("VAR"));
+        assert_eq!(env_pair.value, String::from("VALUE"));
     }
 
     #[test]
     fn test_env_pair_from_str() -> anyhow::Result<()> {
         let env_pair: EnvPair = "VAR=VALUE".parse()?;
-        assert_eq!(env_pair.var, OsString::from("VAR"));
-        assert_eq!(env_pair.value, OsString::from("VALUE"));
+        assert_eq!(env_pair.var, String::from("VAR"));
+        assert_eq!(env_pair.value, String::from("VALUE"));
 
         let env_pair: EnvPair = "VAR=".parse()?;
-        assert_eq!(env_pair.var, OsString::from("VAR"));
-        assert_eq!(env_pair.value, OsString::from(""));
+        assert_eq!(env_pair.var, String::from("VAR"));
+        assert_eq!(env_pair.value, String::from(""));
 
         assert!("VAR".parse::<EnvPair>().is_err());
         assert!("=VALUE".parse::<EnvPair>().is_err());
@@ -182,12 +177,12 @@ mod tests {
     #[test]
     fn test_env_pair_with_special_characters() -> anyhow::Result<()> {
         let env_pair: EnvPair = "VAR_WITH_UNDERSCORE=VALUE WITH SPACES".parse()?;
-        assert_eq!(env_pair.var, OsString::from("VAR_WITH_UNDERSCORE"));
-        assert_eq!(env_pair.value, OsString::from("VALUE WITH SPACES"));
+        assert_eq!(env_pair.get_var(), "VAR_WITH_UNDERSCORE");
+        assert_eq!(env_pair.get_value(), "VALUE WITH SPACES");
 
         let env_pair: EnvPair = "VAR.WITH.DOTS=VALUE_WITH_UNDERSCORE".parse()?;
-        assert_eq!(env_pair.var, OsString::from("VAR.WITH.DOTS"));
-        assert_eq!(env_pair.value, OsString::from("VALUE_WITH_UNDERSCORE"));
+        assert_eq!(env_pair.get_var(), "VAR.WITH.DOTS");
+        assert_eq!(env_pair.get_value(), "VALUE_WITH_UNDERSCORE");
 
         Ok(())
     }

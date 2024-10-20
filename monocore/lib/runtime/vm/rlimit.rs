@@ -67,7 +67,7 @@ pub enum LinuxRLimitResource {
 /// The soft limit is the value that the kernel enforces for the corresponding resource.
 /// The hard limit acts as a ceiling for the soft limit.
 ///
-/// # Examples
+/// ## Examples
 ///
 /// ```
 /// use monocore::runtime::{LinuxRlimit, LinuxRLimitResource};
@@ -75,19 +75,19 @@ pub enum LinuxRLimitResource {
 /// // Create a new resource limit for CPU time
 /// let cpu_limit = LinuxRlimit::new(LinuxRLimitResource::RLIMIT_CPU, 10, 20);
 ///
-/// assert_eq!(cpu_limit.resource(), &LinuxRLimitResource::RLIMIT_CPU);
-/// assert_eq!(cpu_limit.soft(), &10);
-/// assert_eq!(cpu_limit.hard(), &20);
+/// assert_eq!(cpu_limit.get_resource(), &LinuxRLimitResource::RLIMIT_CPU);
+/// assert_eq!(cpu_limit.get_soft(), &10);
+/// assert_eq!(cpu_limit.get_hard(), &20);
 ///
 /// // Parse a resource limit from a string
 /// let nofile_limit: LinuxRlimit = "RLIMIT_NOFILE=1000:2000".parse().unwrap();
 ///
-/// assert_eq!(nofile_limit.resource(), &LinuxRLimitResource::RLIMIT_NOFILE);
-/// assert_eq!(nofile_limit.soft(), &1000);
-/// assert_eq!(nofile_limit.hard(), &2000);
+/// assert_eq!(nofile_limit.get_resource(), &LinuxRLimitResource::RLIMIT_NOFILE);
+/// assert_eq!(nofile_limit.get_soft(), &1000);
+/// assert_eq!(nofile_limit.get_hard(), &2000);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
-#[getset(get = "pub")]
+#[getset(get = "pub with_prefix")]
 pub struct LinuxRlimit {
     /// The resource to limit.
     resource: LinuxRLimitResource,
@@ -123,15 +123,15 @@ impl LinuxRlimit {
     /// * `soft` - The soft limit value.
     /// * `hard` - The hard limit value.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```
     /// use monocore::runtime::{LinuxRlimit, LinuxRLimitResource};
     ///
     /// let cpu_limit = LinuxRlimit::new(LinuxRLimitResource::RLIMIT_CPU, 10, 20);
-    /// assert_eq!(cpu_limit.resource(), &LinuxRLimitResource::RLIMIT_CPU);
-    /// assert_eq!(cpu_limit.soft(), &10);
-    /// assert_eq!(cpu_limit.hard(), &20);
+    /// assert_eq!(cpu_limit.get_resource(), &LinuxRLimitResource::RLIMIT_CPU);
+    /// assert_eq!(cpu_limit.get_soft(), &10);
+    /// assert_eq!(cpu_limit.get_hard(), &20);
     /// ```
     pub fn new(resource: LinuxRLimitResource, soft: u64, hard: u64) -> Self {
         Self {

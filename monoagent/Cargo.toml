@@ -1,0 +1,13 @@
+[package]
+name = "monoagent"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[lib]
+name = "monoagent"
+path = "lib/lib.rs"
+
+[dependencies]

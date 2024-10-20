@@ -1,7 +1,10 @@
+//! If you are trying to run this example, please make sure to run `make example microvm_shell` from
+//! the `monocore` subdirectory
+
 use monocore::runtime::MicroVM;
 
 //--------------------------------------------------------------------------------------------------
-// Main
+// Function: main
 //--------------------------------------------------------------------------------------------------
 
 fn main() -> anyhow::Result<()> {
@@ -29,6 +32,10 @@ fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+//--------------------------------------------------------------------------------------------------
+// Function: *
+//--------------------------------------------------------------------------------------------------
 
 // Set an extended attribute on a file
 fn set_xattr(path: impl AsRef<std::path::Path>, name: &str, value: &[u8]) -> anyhow::Result<()> {

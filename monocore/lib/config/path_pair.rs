@@ -1,7 +1,7 @@
 use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use typed_path::UnixPathBuf;
+use typed_path::Utf8UnixPathBuf;
 
 use crate::MonocoreError;
 
@@ -15,13 +15,13 @@ pub enum PathPair {
     /// The guest path and host path are distinct.
     Distinct {
         /// The guest path.
-        guest: UnixPathBuf,
+        guest: Utf8UnixPathBuf,
 
         /// The host path.
-        host: UnixPathBuf,
+        host: Utf8UnixPathBuf,
     },
     /// The guest path and host path are the same.
-    Same(UnixPathBuf),
+    Same(Utf8UnixPathBuf),
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -30,24 +30,24 @@ pub enum PathPair {
 
 impl PathPair {
     /// Creates a new `PathPair` with the same host and guest path.
-    pub fn with_same(path: UnixPathBuf) -> Self {
+    pub fn with_same(path: Utf8UnixPathBuf) -> Self {
         Self::Same(path)
     }
 
     /// Creates a new `PathPair` with distinct guest and host paths.
-    pub fn with_distinct(guest: UnixPathBuf, host: UnixPathBuf) -> Self {
+    pub fn with_distinct(guest: Utf8UnixPathBuf, host: Utf8UnixPathBuf) -> Self {
         Self::Distinct { guest, host }
     }
 
     /// Returns the host path.
-    pub fn host(&self) -> &UnixPathBuf {
+    pub fn get_host(&self) -> &Utf8UnixPathBuf {
         match self {
             Self::Distinct { host, .. } | Self::Same(host) => host,
         }
     }
 
     /// Returns the guest path.
-    pub fn guest(&self) -> &UnixPathBuf {
+    pub fn get_guest(&self) -> &Utf8UnixPathBuf {
         match self {
             Self::Distinct { guest, .. } | Self::Same(guest) => guest,
         }
@@ -91,9 +91,9 @@ impl fmt::Display for PathPair {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Distinct { guest, host } => {
-                write!(f, "{}:{}", guest.to_string_lossy(), host.to_string_lossy())
+                write!(f, "{}:{}", guest, host)
             }
-            Self::Same(path) => write!(f, "{}:{}", path.to_string_lossy(), path.to_string_lossy()),
+            Self::Same(path) => write!(f, "{}:{}", path, path),
         }
     }
 }

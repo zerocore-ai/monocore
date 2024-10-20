@@ -1,7 +1,7 @@
 use std::{ffi::CString, path::PathBuf};
 
 use getset::Getters;
-use typed_path::UnixPathBuf;
+use typed_path::Utf8UnixPathBuf;
 
 use crate::{
     config::{PathPair, PortPair},
@@ -22,7 +22,7 @@ pub struct MicroVM {
     ctx_id: u32,
 
     /// The configuration for the microVM.
-    #[get = "pub"]
+    #[get = "pub with_prefix"]
     config: MicroVMConfig,
 }
 
@@ -51,10 +51,10 @@ pub struct MicroVMConfig {
     pub rlimits: Vec<LinuxRlimit>,
 
     /// The working directory path to use for the microVM.
-    pub workdir_path: Option<UnixPathBuf>,
+    pub workdir_path: Option<Utf8UnixPathBuf>,
 
     /// The executable path to use for the microVM.
-    pub exec_path: Option<UnixPathBuf>,
+    pub exec_path: Option<Utf8UnixPathBuf>,
 
     /// The arguments to pass to the executable.
     pub argv: Vec<String>,
@@ -63,7 +63,7 @@ pub struct MicroVMConfig {
     pub env: Vec<EnvPair>,
 
     /// The console output path to use for the microVM.
-    pub console_output: Option<UnixPathBuf>,
+    pub console_output: Option<Utf8UnixPathBuf>,
 }
 
 /// The log level to use for the microVM.
@@ -144,8 +144,8 @@ impl MicroVM {
 
         // Add virtio-fs mounts
         for mount in &config.virtiofs {
-            let tag = CString::new(mount.guest().to_str().unwrap().as_bytes()).unwrap();
-            let path = CString::new(mount.host().to_str().unwrap().as_bytes()).unwrap();
+            let tag = CString::new(mount.get_guest().to_string().as_bytes()).unwrap();
+            let path = CString::new(mount.get_host().to_string().as_bytes()).unwrap();
             unsafe {
                 let status = ffi::krun_add_virtiofs(ctx_id, tag.as_ptr(), path.as_ptr());
                 assert!(status >= 0, "Failed to add virtio-fs mount: {}", status);
@@ -181,7 +181,7 @@ impl MicroVM {
 
         // Set working directory
         if let Some(workdir) = &config.workdir_path {
-            let c_workdir = CString::new(workdir.to_str().unwrap().as_bytes()).unwrap();
+            let c_workdir = CString::new(workdir.to_string().as_bytes()).unwrap();
             unsafe {
                 let status = ffi::krun_set_workdir(ctx_id, c_workdir.as_ptr());
                 assert!(status >= 0, "Failed to set working directory: {}", status);
@@ -190,7 +190,7 @@ impl MicroVM {
 
         // Set executable path, arguments, and environment variables
         if let Some(exec_path) = &config.exec_path {
-            let c_exec_path = CString::new(exec_path.to_str().unwrap().as_bytes()).unwrap();
+            let c_exec_path = CString::new(exec_path.to_string().as_bytes()).unwrap();
 
             let c_argv: Vec<_> = config
                 .argv
@@ -240,8 +240,7 @@ impl MicroVM {
 
         // Set console output
         if let Some(console_output) = &config.console_output {
-            let c_console_output =
-                CString::new(console_output.to_str().unwrap().as_bytes()).unwrap();
+            let c_console_output = CString::new(console_output.to_string().as_bytes()).unwrap();
             unsafe {
                 let status = ffi::krun_set_console_output(ctx_id, c_console_output.as_ptr());
                 assert!(status >= 0, "Failed to set console output: {}", status);

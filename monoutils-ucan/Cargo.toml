@@ -1,0 +1,13 @@
+[package]
+name = "monoutils-ucan"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[lib]
+name = "monoutils_ucan"
+path = "lib/lib.rs"
+
+[dependencies]

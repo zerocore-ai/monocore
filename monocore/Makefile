@@ -9,31 +9,32 @@ ifeq ($(ARCH),x86_64)
 endif
 
 PREFIX ?= /usr/local
-RELEASE_BIN := ../target/release/monocore
-EXAMPLES_DIR := ../target/debug/examples
+MONOCORE_RELEASE_BIN := ../target/release/monocore
+EXAMPLES_DIR := ../target/release/examples
 FIXTURES_DIR := fixtures
 DISTRO_ROOTFS := rootfs-alpine
 BUILD_DIR := build
+BENCHES_DIR := ../target/release
 
 # Library paths
 DARWIN_LIB_PATH := /usr/local/lib
 LINUX_LIB_PATH := /usr/local/lib64
 
 # Phony targets
-.PHONY: all install clean example unpack_rootfs
+.PHONY: all install clean example unpack_rootfs bench
 
 # Default target
-all: $(RELEASE_BIN)
+all: $(MONOCORE_RELEASE_BIN)
 
 # Build the release binary
-$(RELEASE_BIN):
+$(MONOCORE_RELEASE_BIN):
 	cargo build --release -p monocore
 ifeq ($(OS),Darwin)
 	codesign --entitlements monocore.entitlements --force -s - $@
 endif
 
 # Install the binary
-install: $(RELEASE_BIN)
+install: $(MONOCORE_RELEASE_BIN)
 	install -d $(DESTDIR)$(PREFIX)/bin
 	install -m 755 $< $(DESTDIR)$(PREFIX)/bin
 
@@ -60,12 +61,23 @@ example: unpack_rootfs
 
 _run_example:
 ifeq ($(OS),Darwin)
-	cargo build --example $(EXAMPLE_NAME)
+	cargo build --example $(EXAMPLE_NAME) --release
 	codesign --entitlements monocore.entitlements --force -s - $(EXAMPLES_DIR)/$(EXAMPLE_NAME)
 	DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME)
 else
-	LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --example $(EXAMPLE_NAME)
+	LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --example $(EXAMPLE_NAME) --release
 endif
+
+# Run benchmarks
+bench:
+	@if [ -z "$(word 2,$(MAKECMDGOALS))" ]; then \
+		echo "Usage: make bench <benchmark_name>"; \
+		exit 1; \
+	fi
+	@$(MAKE) _run_bench BENCH_NAME=$(word 2,$(MAKECMDGOALS))
+
+_run_bench:
+	cargo bench --bench $(BENCH_NAME)
 
 # Catch-all target to allow example names
 %:

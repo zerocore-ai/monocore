@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use typed_path::UnixPathBuf;
+use typed_path::Utf8UnixPathBuf;
 
 use crate::{
     config::{PathPair, PortPair, DEFAULT_NUM_VCPUS},
@@ -20,7 +20,7 @@ use super::{EnvPair, LinuxRlimit, LogLevel, MicroVM, MicroVMConfig};
 /// RAM size, virtio-fs mounts, port mappings, resource limits, working directory, executable path,
 /// arguments, environment variables, and console output.
 ///
-/// # Examples
+/// ## Examples
 ///
 /// ```rust
 /// use monocore::runtime::{MicroVMBuilder, LogLevel};
@@ -52,11 +52,11 @@ pub struct MicroVMBuilder<RootPath, RamMib> {
     virtiofs: Vec<PathPair>,
     port_map: Vec<PortPair>,
     rlimits: Vec<LinuxRlimit>,
-    workdir_path: Option<UnixPathBuf>,
-    exec_path: Option<UnixPathBuf>,
+    workdir_path: Option<Utf8UnixPathBuf>,
+    exec_path: Option<Utf8UnixPathBuf>,
     argv: Vec<String>,
     env: Vec<EnvPair>,
-    console_output: Option<UnixPathBuf>,
+    console_output: Option<Utf8UnixPathBuf>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -204,7 +204,7 @@ impl<RootPath, RamMib> MicroVMBuilder<RootPath, RamMib> {
     ///
     /// MicroVMBuilder::default().workdir_path("/path/to/workdir");
     /// ```
-    pub fn workdir_path(mut self, workdir_path: impl Into<UnixPathBuf>) -> Self {
+    pub fn workdir_path(mut self, workdir_path: impl Into<Utf8UnixPathBuf>) -> Self {
         self.workdir_path = Some(workdir_path.into());
         self
     }
@@ -218,7 +218,7 @@ impl<RootPath, RamMib> MicroVMBuilder<RootPath, RamMib> {
     ///
     /// MicroVMBuilder::default().exec_path("/path/to/exec");
     /// ```
-    pub fn exec_path(mut self, exec_path: impl Into<UnixPathBuf>) -> Self {
+    pub fn exec_path(mut self, exec_path: impl Into<Utf8UnixPathBuf>) -> Self {
         self.exec_path = Some(exec_path.into());
         self
     }
@@ -263,7 +263,7 @@ impl<RootPath, RamMib> MicroVMBuilder<RootPath, RamMib> {
     ///
     /// MicroVMBuilder::default().console_output("/tmp/console.log");
     /// ```
-    pub fn console_output(mut self, console_output: impl Into<UnixPathBuf>) -> Self {
+    pub fn console_output(mut self, console_output: impl Into<Utf8UnixPathBuf>) -> Self {
         self.console_output = Some(console_output.into());
         self
     }
@@ -278,7 +278,7 @@ impl MicroVMBuilder<PathBuf, u32> {
     ///
     /// Returns a `Result` containing the built `MicroVM` instance if successful, or a `MonocoreError` if there was an error.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```rust
     /// # use monocore::runtime::MicroVMBuilder;
@@ -366,8 +366,11 @@ mod tests {
         assert_eq!(builder.virtiofs, ["/guest/mount:/host/mount".parse()?]);
         assert_eq!(builder.port_map, ["8080:80".parse()?]);
         assert_eq!(builder.rlimits, ["RLIMIT_NOFILE=1024:1024".parse()?]);
-        assert_eq!(builder.workdir_path, Some(UnixPathBuf::from(workdir_path)));
-        assert_eq!(builder.exec_path, Some(UnixPathBuf::from(exec_path)));
+        assert_eq!(
+            builder.workdir_path,
+            Some(Utf8UnixPathBuf::from(workdir_path))
+        );
+        assert_eq!(builder.exec_path, Some(Utf8UnixPathBuf::from(exec_path)));
         assert_eq!(builder.argv, ["arg1".to_string(), "arg2".to_string()]);
         assert_eq!(
             builder.env,
@@ -375,7 +378,7 @@ mod tests {
         );
         assert_eq!(
             builder.console_output,
-            Some(UnixPathBuf::from("/tmp/console.log"))
+            Some(Utf8UnixPathBuf::from("/tmp/console.log"))
         );
         Ok(())
     }

@@ -40,14 +40,14 @@ impl PortPair {
     }
 
     /// Returns the host port.
-    pub fn host(&self) -> u16 {
+    pub fn get_host(&self) -> u16 {
         match self {
             Self::Distinct { host, .. } | Self::Same(host) => *host,
         }
     }
 
     /// Returns the guest port.
-    pub fn guest(&self) -> u16 {
+    pub fn get_guest(&self) -> u16 {
         match self {
             Self::Distinct { guest, .. } | Self::Same(guest) => *guest,
         }

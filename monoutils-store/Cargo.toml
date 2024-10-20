@@ -1,0 +1,27 @@
+[package]
+name = "monoutils-store"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+edition.workspace = true
+readme = "README.md"
+
+[lib]
+name = "monoutils_store"
+path = "lib/lib.rs"
+
+[dependencies]
+aliasable = "0.1.3"
+anyhow.workspace = true
+async-stream.workspace = true
+bytes.workspace = true
+futures.workspace = true
+hex = "0.4.3"
+libipld = { workspace = true, features = ["serde-codec"] }
+lru = "0.12.3"
+serde = { workspace = true, features = ["derive"] }
+serde_ipld_dagcbor = "0.6.1"
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tokio-util = { workspace = true, features = ["io"] }
