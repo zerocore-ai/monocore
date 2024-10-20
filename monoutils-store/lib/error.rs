@@ -1,4 +1,7 @@
-use std::{error::Error, fmt::Display};
+use std::{
+    error::Error,
+    fmt::{self, Display},
+};
 
 use libipld::Cid;
 use thiserror::Error;
@@ -68,6 +71,16 @@ impl StoreError {
         StoreError::Custom(AnyError {
             error: error.into(),
         })
+    }
+}
+
+impl AnyError {
+    /// Downcasts the error to a `T`.
+    pub fn downcast<T>(&self) -> Option<&T>
+    where
+        T: Display + fmt::Debug + Send + Sync + 'static,
+    {
+        self.error.downcast_ref::<T>()
     }
 }
 

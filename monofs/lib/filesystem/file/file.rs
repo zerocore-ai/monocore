@@ -412,21 +412,6 @@ mod tests {
         assert!(file.get_content().is_none());
     }
 
-    #[test]
-    fn test_file_equality() {
-        let store = MemoryStore::default();
-        let file1 = File::new(store.clone());
-        let file2 = File::new(store.clone());
-        let mut file3 = File::new(store);
-
-        assert_eq!(file1, file2);
-
-        let content_cid = Cid::default();
-        file3.set_content(Some(content_cid));
-
-        assert_ne!(file1, file3);
-    }
-
     #[tokio::test]
     async fn test_file_store_and_load() {
         let store = MemoryStore::default();

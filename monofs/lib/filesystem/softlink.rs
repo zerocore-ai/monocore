@@ -72,7 +72,7 @@ where
     MaxDepthReached,
 
     /// A broken link was encountered during resolution.
-    BrokenLink(String),
+    BrokenLink(Cid),
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -235,7 +235,15 @@ where
                 }
                 _ => Ok(FollowResult::Resolved(entity)),
             },
-            Err(FsError::PathNotFound(path)) => Ok(FollowResult::BrokenLink(path)),
+            // We find the error `get_entity` returns that deals with not being able to load an entity
+            // from the store and return a `FollowResult::BrokenLink`.
+            Err(FsError::IpldStore(StoreError::Custom(any_err))) => {
+                if let Some(FsError::UnableToLoadEntity(cid)) = any_err.downcast::<FsError>() {
+                    return Ok(FollowResult::BrokenLink(*cid));
+                }
+
+                return Err(StoreError::custom(any_err).into());
+            }
             Err(e) => Err(e),
         }
     }
@@ -251,7 +259,7 @@ where
         match self.follow().await? {
             FollowResult::Resolved(entity) => Ok(entity),
             FollowResult::MaxDepthReached => Err(FsError::MaxFollowDepthReached),
-            FollowResult::BrokenLink(path) => Err(FsError::BrokenSoftLink(path)),
+            FollowResult::BrokenLink(cid) => Err(FsError::BrokenSoftLink(cid)),
         }
     }
 }
@@ -516,22 +524,25 @@ mod tests {
         Ok(())
     }
 
-    // #[tokio::test]
-    // async fn test_broken_softlink() -> FsResult<()> {
-    //     let store = MemoryStore::default();
-    //     let non_existent_cid = Cid::default();  // This CID doesn't exist in the store
+    #[tokio::test]
+    async fn test_broken_softlink() -> FsResult<()> {
+        let store = MemoryStore::default();
+        let non_existent_cid = Cid::default(); // This CID doesn't exist in the store
 
-    //     let softlink = SoftLink::with_cid(store, non_existent_cid);
+        let softlink = SoftLink::with_cid(store, non_existent_cid);
 
-    //     match softlink.follow().await? {
-    //         FollowResult::BrokenLink(_) => {},
-    //         _ => panic!("Expected BrokenLink, got something else"),
-    //     }
+        match softlink.follow().await? {
+            FollowResult::BrokenLink(_) => {}
+            _ => panic!("Expected BrokenLink, got something else"),
+        }
 
-    //     assert!(matches!(softlink.resolve().await, Err(FsError::BrokenSoftLink(_))));
+        assert!(matches!(
+            softlink.resolve().await,
+            Err(FsError::BrokenSoftLink(_))
+        ));
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_softlink_resolve() -> FsResult<()> {

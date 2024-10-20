@@ -21,14 +21,14 @@ use std::{fmt, str::FromStr};
 /// // Create a new environment variable pair
 /// let env_pair = EnvPair::new("PATH", "/usr/local/bin:/usr/bin");
 ///
-/// assert_eq!(env_pair.var().to_str().unwrap(), "PATH");
-/// assert_eq!(env_pair.value().to_str().unwrap(), "/usr/local/bin:/usr/bin");
+/// assert_eq!(env_pair.get_var(), "PATH");
+/// assert_eq!(env_pair.get_value(), "/usr/local/bin:/usr/bin");
 ///
 /// // Parse an environment variable pair from a string
 /// let env_pair = EnvPair::from_str("USER=alice").unwrap();
 ///
-/// assert_eq!(env_pair.var().to_str().unwrap(), "USER");
-/// assert_eq!(env_pair.value().to_str().unwrap(), "alice");
+/// assert_eq!(env_pair.get_var(), "USER");
+/// assert_eq!(env_pair.get_value(), "alice");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
@@ -58,8 +58,8 @@ impl EnvPair {
     /// use monocore::runtime::EnvPair;
     ///
     /// let env_pair = EnvPair::new("HOME", "/home/user");
-    /// assert_eq!(env_pair.var().to_str().unwrap(), "HOME");
-    /// assert_eq!(env_pair.value().to_str().unwrap(), "/home/user");
+    /// assert_eq!(env_pair.get_var(), "HOME");
+    /// assert_eq!(env_pair.get_value(), "/home/user");
     /// ```
     pub fn new<S: Into<String>>(var: S, value: S) -> Self {
         Self {
@@ -177,12 +177,12 @@ mod tests {
     #[test]
     fn test_env_pair_with_special_characters() -> anyhow::Result<()> {
         let env_pair: EnvPair = "VAR_WITH_UNDERSCORE=VALUE WITH SPACES".parse()?;
-        assert_eq!(env_pair.var, String::from("VAR_WITH_UNDERSCORE"));
-        assert_eq!(env_pair.value, String::from("VALUE WITH SPACES"));
+        assert_eq!(env_pair.get_var(), "VAR_WITH_UNDERSCORE");
+        assert_eq!(env_pair.get_value(), "VALUE WITH SPACES");
 
         let env_pair: EnvPair = "VAR.WITH.DOTS=VALUE_WITH_UNDERSCORE".parse()?;
-        assert_eq!(env_pair.var, String::from("VAR.WITH.DOTS"));
-        assert_eq!(env_pair.value, String::from("VALUE_WITH_UNDERSCORE"));
+        assert_eq!(env_pair.get_var(), "VAR.WITH.DOTS");
+        assert_eq!(env_pair.get_value(), "VALUE_WITH_UNDERSCORE");
 
         Ok(())
     }

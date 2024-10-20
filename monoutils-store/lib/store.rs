@@ -53,9 +53,9 @@ pub enum Codec {
 pub trait IpldStore: Clone {
     /// Saves an IPLD serializable object to the store and returns the `Cid` to it.
     ///
-    /// # Errors
+    /// ## Errors
     ///
-    /// If the serialized data is too large, `StoreError::NodeBlockTooLarge` is returned.
+    /// If the serialized data is too large, `StoreError::NodeBlockTooLarge` error is returned.
     fn put_node<T>(&self, data: &T) -> impl Future<Output = StoreResult<Cid>> + Send
     where
         T: Serialize + IpldReferences + Sync;
@@ -65,9 +65,9 @@ pub trait IpldStore: Clone {
     /// This method allows the store to chunk large amounts of data into smaller blocks to fit the
     /// storage medium and it may also involve creation of merkle nodes to represent the chunks.
     ///
-    /// # Errors
+    /// ## Errors
     ///
-    /// If the bytes are too large, `StoreError::RawBlockTooLarge` is returned.
+    /// If the bytes are too large, `StoreError::RawBlockTooLarge` error is returned.
     fn put_bytes<'a>(
         &'a self,
         reader: impl AsyncRead + Send + Sync + 'a,
@@ -76,20 +76,28 @@ pub trait IpldStore: Clone {
     /// Tries to save `bytes` as a single block to the store. Unlike `put_bytes`, this method does
     /// not chunk the data and does not create intermediate merkle nodes.
     ///
-    /// # Errors
+    /// ## Errors
     ///
-    /// If the bytes are too large, `StoreError::RawBlockTooLarge` is returned.
+    /// If the bytes are too large, `StoreError::RawBlockTooLarge` error is returned.
     fn put_raw_block(
         &self,
         bytes: impl Into<Bytes> + Send,
     ) -> impl Future<Output = StoreResult<Cid>> + Send;
 
     /// Gets a type stored as an IPLD data from the store by its `Cid`.
+    ///
+    /// ## Errors
+    ///
+    /// If the block is not found, `StoreError::BlockNotFound` error is returned.
     fn get_node<D>(&self, cid: &Cid) -> impl Future<Output = StoreResult<D>> + Send
     where
         D: DeserializeOwned + Send;
 
     /// Gets a reader for the underlying bytes associated with the given `Cid`.
+    ///
+    /// ## Errors
+    ///
+    /// If the block is not found, `StoreError::BlockNotFound` error is returned.
     fn get_bytes<'a>(
         &'a self,
         cid: &'a Cid,
@@ -100,9 +108,9 @@ pub trait IpldStore: Clone {
     /// Unlike `get_stream`, this method does not expect chunked data and does not have to retrieve
     /// intermediate merkle nodes.
     ///
-    /// # Errors
+    /// ## Errors
     ///
-    /// If the block is not found, `StoreError::BlockNotFound` is returned.
+    /// If the block is not found, `StoreError::BlockNotFound` error is returned.
     fn get_raw_block(&self, cid: &Cid) -> impl Future<Output = StoreResult<Bytes>> + Send + Sync;
 
     /// Checks if the store has a block with the given `Cid`.

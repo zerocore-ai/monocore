@@ -107,7 +107,7 @@ pub enum FsError {
 
     /// Broken softlink.
     #[error("Broken softlink: {0}")]
-    BrokenSoftLink(String),
+    BrokenSoftLink(Cid),
 }
 
 // /// Permission error.
