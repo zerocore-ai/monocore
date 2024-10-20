@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// This corresponds to `descriptor-type` in the WASI. `monofs` does not support all the types that WASI
 /// supports.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EntityType {
     /// The entity is a regular file.
     File,

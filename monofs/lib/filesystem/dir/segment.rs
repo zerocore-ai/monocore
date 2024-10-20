@@ -5,7 +5,7 @@ use std::{
 
 use typed_path::{Utf8UnixComponent, Utf8UnixPath, Utf8UnixPathBuf};
 
-use crate::FsError;
+use crate::filesystem::FsError;
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -20,7 +20,7 @@ use crate::FsError;
 ///
 /// ```
 /// use std::str::FromStr;
-/// use monofs::dir::Utf8UnixPathSegment;
+/// use monofs::filesystem::Utf8UnixPathSegment;
 ///
 /// let segment = Utf8UnixPathSegment::from_str("example").unwrap();
 ///
@@ -40,7 +40,7 @@ impl Utf8UnixPathSegment {
     ///
     /// ```
     /// use std::str::FromStr;
-    /// use monofs::dir::Utf8UnixPathSegment;
+    /// use monofs::filesystem::Utf8UnixPathSegment;
     ///
     /// let segment = Utf8UnixPathSegment::from_str("example").unwrap();
     ///
@@ -56,7 +56,7 @@ impl Utf8UnixPathSegment {
     ///
     /// ```
     /// use std::str::FromStr;
-    /// use monofs::dir::Utf8UnixPathSegment;
+    /// use monofs::filesystem::Utf8UnixPathSegment;
     ///
     /// let segment = Utf8UnixPathSegment::from_str("example").unwrap();
     ///
@@ -72,7 +72,7 @@ impl Utf8UnixPathSegment {
     ///
     /// ```
     /// use std::str::FromStr;
-    /// use monofs::dir::Utf8UnixPathSegment;
+    /// use monofs::filesystem::Utf8UnixPathSegment;
     ///
     /// let segment = Utf8UnixPathSegment::from_str("example").unwrap();
     ///
@@ -88,7 +88,7 @@ impl Utf8UnixPathSegment {
     ///
     /// ```
     /// use std::str::FromStr;
-    /// use monofs::dir::Utf8UnixPathSegment;
+    /// use monofs::filesystem::Utf8UnixPathSegment;
     ///
     /// let segment = Utf8UnixPathSegment::from_str("example").unwrap();
     ///
@@ -132,6 +132,14 @@ impl TryFrom<&str> for Utf8UnixPathSegment {
             Utf8UnixComponent::Normal(component) => Ok(Utf8UnixPathSegment(component.to_string())),
             _ => Err(FsError::InvalidPathComponent(value.to_string())),
         }
+    }
+}
+
+impl<'a> TryFrom<Utf8UnixComponent<'a>> for Utf8UnixPathSegment {
+    type Error = FsError;
+
+    fn try_from(component: Utf8UnixComponent<'a>) -> Result<Self, Self::Error> {
+        Utf8UnixPathSegment::try_from(&component)
     }
 }
 
@@ -189,31 +197,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_as_str() {
+    fn test_segment_as_str() {
         let segment = Utf8UnixPathSegment::from_str("example").unwrap();
         assert_eq!(segment.as_str(), "example");
     }
 
     #[test]
-    fn test_as_bytes() {
+    fn test_segment_as_bytes() {
         let segment = Utf8UnixPathSegment::from_str("example").unwrap();
         assert_eq!(segment.as_bytes(), b"example");
     }
 
     #[test]
-    fn test_len() {
+    fn test_segment_len() {
         let segment = Utf8UnixPathSegment::from_str("example").unwrap();
         assert_eq!(segment.len(), 7);
     }
 
     #[test]
-    fn test_display() {
+    fn test_segment_display() {
         let segment = Utf8UnixPathSegment::from_str("example").unwrap();
         assert_eq!(format!("{}", segment), "example");
     }
 
     #[test]
-    fn test_try_from_str() {
+    fn test_segment_try_from_str() {
         assert!(Utf8UnixPathSegment::try_from("example").is_ok());
         assert!(Utf8UnixPathSegment::from_str("example").is_ok());
         assert!("example".parse::<Utf8UnixPathSegment>().is_ok());
@@ -238,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn test_utf8_characters() {
+    fn test_segment_utf8_characters() {
         assert!(Utf8UnixPathSegment::try_from("файл").is_ok());
         assert!(Utf8UnixPathSegment::try_from("文件").is_ok());
         assert!(Utf8UnixPathSegment::try_from("🚀").is_ok());
@@ -249,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn test_from_utf8_unix_path_segment_to_utf8_unix_component() {
+    fn test_segment_from_utf8_unix_path_segment_to_utf8_unix_component() {
         let segment = Utf8UnixPathSegment::from_str("example").unwrap();
         assert_eq!(
             Utf8UnixComponent::from(&segment),
@@ -258,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn test_from_utf8_unix_path_segment_to_utf8_unix_path_buf() {
+    fn test_segment_from_utf8_unix_path_segment_to_utf8_unix_path_buf() {
         let segment = Utf8UnixPathSegment::from_str("example").unwrap();
         assert_eq!(
             Utf8UnixPathBuf::from(segment),
@@ -267,7 +275,7 @@ mod tests {
     }
 
     #[test]
-    fn test_normal_with_special_characters() {
+    fn test_segment_normal_with_special_characters() {
         assert!(Utf8UnixPathSegment::try_from("file.txt").is_ok());
         assert!(Utf8UnixPathSegment::try_from("file-name").is_ok());
         assert!(Utf8UnixPathSegment::try_from("file_name").is_ok());

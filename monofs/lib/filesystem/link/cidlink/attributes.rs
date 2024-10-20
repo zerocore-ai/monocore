@@ -1,4 +1,4 @@
-use crate::{CidLink, ExtendedAttributes};
+use crate::filesystem::{CidLink, ExtendedAttributes};
 
 //--------------------------------------------------------------------------------------------------
 // Types

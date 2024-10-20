@@ -106,4 +106,12 @@ where
     fn get_raw_block_max_size(&self) -> Option<u64> {
         self.inner.get_raw_block_max_size()
     }
+
+    async fn is_empty(&self) -> StoreResult<bool> {
+        self.inner.is_empty().await
+    }
+
+    async fn get_size(&self) -> StoreResult<u64> {
+        self.inner.get_size().await
+    }
 }

@@ -1,13 +1,9 @@
-//! `monofs` is an immutable distributed file system.
+//! Configuration types and helpers.
 
-#![warn(missing_docs)]
-#![allow(clippy::module_inception)]
+mod default;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub mod config;
-pub mod filesystem;
-pub mod store;
-pub mod utils;
+pub use default::*;

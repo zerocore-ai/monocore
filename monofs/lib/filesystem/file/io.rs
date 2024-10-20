@@ -4,51 +4,27 @@ use std::{
     task::{Context, Poll},
 };
 
-use aliasable::boxed::AliasableBox;
 use futures::Future;
 use monoutils_store::IpldStore;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use crate::FsResult;
-
-use super::File;
+use crate::filesystem::{File, FsResult};
 
 //--------------------------------------------------------------------------------------------------
 // Types
 //--------------------------------------------------------------------------------------------------
 
 /// A stream for reading from a `File` asynchronously.
-pub struct FileInputStream<S>
-where
-    S: IpldStore,
-{
-    /// An async reader for the file content.
-    ///
-    /// ## Important
-    ///
-    /// SAFETY: Holds a reference to other fields in this struct. Declared first to ensure it is
-    /// dropped before the other fields.
-    reader: Pin<Box<dyn AsyncRead + Send + Sync + 'static>>,
-
-    /// The store.
-    ///
-    /// ## Warning
-    ///
-    /// SAFETY: Field must not be moved as it is referenced by `reader`.
-    #[allow(dead_code)]
-    store: AliasableBox<S>,
+pub struct FileInputStream<'a> {
+    reader: Pin<Box<dyn AsyncRead + Send + Sync + 'a>>,
 }
 
 /// A stream for writing to a `File` asynchronously.
-pub struct FileOutputStream<S>
+pub struct FileOutputStream<'a, S>
 where
     S: IpldStore,
 {
-    /// The file being written to.
-    file: File<S>,
-
-    /// Buffer to accumulate written data.
-    // TODO: Use a ring buffer instead
+    file: &'a mut File<S>,
     buffer: Vec<u8>,
 }
 
@@ -56,35 +32,31 @@ where
 // Methods
 //--------------------------------------------------------------------------------------------------
 
-impl<S> FileInputStream<S>
-where
-    S: IpldStore + Send + Sync + 'static,
-{
+impl<'a> FileInputStream<'a> {
     /// Creates a new `FileInputStream` from a `File`.
-    pub async fn from(file: &File<S>) -> Self {
-        // Store the handle in the heap and make it aliasable.
-        let store = AliasableBox::from_unique(Box::new(file.get_store().clone()));
-
-        // If the file contains a Cid for its content, create a reader for it.
-        let reader: Pin<Box<dyn AsyncRead + Send + Sync>> = match file.get_content() {
-            Some(cid) => store.get_bytes(cid).await.unwrap(),
-            None => Box::pin(tokio::io::empty()),
+    pub async fn new<S>(file: &'a File<S>) -> io::Result<Self>
+    where
+        S: IpldStore + Send + Sync + 'static,
+    {
+        let store = file.get_store();
+        let reader = match file.get_content() {
+            Some(cid) => store
+                .get_bytes(cid)
+                .await
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
+            None => Box::pin(tokio::io::empty()) as Pin<Box<dyn AsyncRead + Send + Sync>>,
         };
 
-        // SAFETY: Unsafe magic to escape Rust ownership grip.
-        let reader: Pin<Box<dyn AsyncRead + Send + Sync + 'static>> =
-            unsafe { std::mem::transmute(reader) };
-
-        Self { reader, store }
+        Ok(Self { reader })
     }
 }
 
-impl<S> FileOutputStream<S>
+impl<'a, S> FileOutputStream<'a, S>
 where
     S: IpldStore + Send + Sync + 'static,
 {
     /// Creates a new `FileOutputStream` for a `File`.
-    pub fn new(file: File<S>) -> Self {
+    pub fn new(file: &'a mut File<S>) -> Self {
         Self {
             file,
             buffer: Vec::new(),
@@ -95,13 +67,8 @@ where
     async fn finalize(&mut self) -> FsResult<()> {
         if !self.buffer.is_empty() {
             let store = self.file.get_store();
-
             let cid = store.put_bytes(&self.buffer[..]).await.map(Into::into)?;
-
-            // Update the file's content with the new CID
             self.file.set_content(Some(cid));
-
-            // Clear the buffer
             self.buffer.clear();
         }
         Ok(())
@@ -112,10 +79,7 @@ where
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
-impl<S> AsyncRead for FileInputStream<S>
-where
-    S: IpldStore + Send + Sync + 'static,
-{
+impl<'a> AsyncRead for FileInputStream<'a> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -125,7 +89,7 @@ where
     }
 }
 
-impl<S> AsyncWrite for FileOutputStream<S>
+impl<'a, S> AsyncWrite for FileOutputStream<'a, S>
 where
     S: IpldStore + Send + Sync + 'static,
 {
@@ -161,52 +125,56 @@ where
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Result;
     use monoutils_store::MemoryStore;
     use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
-    use crate::file::File;
+    use crate::filesystem::File;
 
     use super::*;
 
     #[tokio::test]
-    async fn test_file_input_stream() {
+    async fn test_file_input_stream() -> Result<()> {
         let store = MemoryStore::default();
         let mut file = File::new(store.clone());
 
         // Create some content for the file
         let content = b"Hello, world!";
-        let cid = store.put_bytes(content.as_slice()).await.unwrap();
+        let cid = store.put_bytes(content.as_slice()).await?;
         file.set_content(Some(cid));
 
         // Create an input stream from the file
-        let mut input_stream = FileInputStream::from(&file).await;
+        let mut input_stream = FileInputStream::new(&file).await?;
 
         // Read the content from the input stream
         let mut buffer = Vec::new();
-        let n = input_stream.read_to_end(&mut buffer).await.unwrap();
+        let n = input_stream.read_to_end(&mut buffer).await?;
 
         // Verify the content
         assert_eq!(n, content.len());
         assert_eq!(buffer, content);
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_file_output_stream() {
+    async fn test_file_output_stream() -> Result<()> {
         let store = MemoryStore::default();
-        let file = File::new(store);
-        let mut output_stream = FileOutputStream::new(file);
+        let mut file = File::new(store);
+        let mut output_stream = FileOutputStream::new(&mut file);
 
         let data = b"Hello, world!";
-        output_stream.write_all(data).await.unwrap();
-        output_stream.shutdown().await.unwrap();
+        output_stream.write_all(data).await?;
+        output_stream.shutdown().await?;
 
         // Now read the file to verify the content
-        let updated_file = output_stream.file;
-        let input_stream = FileInputStream::from(&updated_file).await;
+        let input_stream = FileInputStream::new(&file).await?;
         let mut buf = BufReader::new(input_stream);
         let mut content = Vec::new();
-        buf.read_to_end(&mut content).await.unwrap();
+        buf.read_to_end(&mut content).await?;
 
         assert_eq!(content, data);
+
+        Ok(())
     }
 }

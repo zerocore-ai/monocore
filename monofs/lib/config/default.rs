@@ -1,13 +1,6 @@
-//! `monofs` is an immutable distributed file system.
-
-#![warn(missing_docs)]
-#![allow(clippy::module_inception)]
-
 //--------------------------------------------------------------------------------------------------
-// Exports
+// Constants
 //--------------------------------------------------------------------------------------------------
 
-pub mod config;
-pub mod filesystem;
-pub mod store;
-pub mod utils;
+/// The default maximum depth of a softlink.
+pub const DEFAULT_SOFTLINK_DEPTH: u32 = 10;

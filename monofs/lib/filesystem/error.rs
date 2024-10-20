@@ -2,9 +2,8 @@ use std::{error::Error, fmt::Display};
 
 use monoutils_store::ipld::cid::Cid;
 use thiserror::Error;
-use typed_path::Utf8UnixPathBuf;
 
-use crate::dir::Utf8UnixPathSegment;
+use crate::filesystem::Utf8UnixPathSegment;
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -32,9 +31,9 @@ pub enum FsError {
     #[error("Not a softlink: {0:?}")]
     NotASoftLink(String),
 
-    /// Not found.
-    #[error("Not found: {0:?}")]
-    NotFound(Utf8UnixPathBuf),
+    /// Path not found.
+    #[error("Path not found: {0}")]
+    PathNotFound(String),
 
     // /// UCAN error.
     // #[error("UCAN error: {0}")]
@@ -85,6 +84,30 @@ pub enum FsError {
     /// CID error.
     #[error("CID error: {0}")]
     CidError(#[from] monoutils_store::ipld::cid::Error),
+
+    /// Path has root.
+    #[error("Path has root: {0}")]
+    PathHasRoot(String),
+
+    /// Source is not a directory.
+    #[error("Source is not a directory: {0}")]
+    SourceIsNotADir(String),
+
+    /// Target is not a directory.
+    #[error("Target is not a directory: {0}")]
+    TargetIsNotADir(String),
+
+    /// Path is empty.
+    #[error("Path is empty")]
+    PathIsEmpty,
+
+    /// Maximum follow depth reached.
+    #[error("Maximum follow depth reached")]
+    MaxFollowDepthReached,
+
+    /// Broken softlink.
+    #[error("Broken softlink: {0}")]
+    BrokenSoftLink(String),
 }
 
 // /// Permission error.

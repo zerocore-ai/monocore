@@ -69,4 +69,12 @@ impl IpldStore for PlaceholderStore {
     fn get_raw_block_max_size(&self) -> Option<u64> {
         unimplemented!("placeholder")
     }
+
+    async fn is_empty(&self) -> StoreResult<bool> {
+        unimplemented!("placeholder")
+    }
+
+    async fn get_size(&self) -> StoreResult<u64> {
+        unimplemented!("placeholder")
+    }
 }

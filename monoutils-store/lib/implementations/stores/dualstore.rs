@@ -231,6 +231,14 @@ where
             .get_raw_block_max_size()
             .max(self.store_b.get_raw_block_max_size())
     }
+
+    async fn is_empty(&self) -> StoreResult<bool> {
+        Ok(self.store_a.is_empty().await? && self.store_b.is_empty().await?)
+    }
+
+    async fn get_size(&self) -> StoreResult<u64> {
+        Ok(self.store_a.get_size().await? + self.store_b.get_size().await?)
+    }
 }
 
 impl Default for DualStoreConfig {

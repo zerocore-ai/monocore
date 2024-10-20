@@ -1,7 +1,7 @@
 use futures::Future;
 use monoutils_store::IpldStore;
 
-use crate::FsResult;
+use crate::filesystem::FsResult;
 
 //--------------------------------------------------------------------------------------------------
 // Traits

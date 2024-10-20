@@ -7,7 +7,7 @@ use async_once_cell::OnceCell;
 use async_recursion::async_recursion;
 use monoutils_store::{ipld::cid::Cid, IpldStore, Storable};
 
-use crate::{FsError, FsResult};
+use crate::filesystem::{FsError, FsResult};
 
 //--------------------------------------------------------------------------------------------------
 // Types

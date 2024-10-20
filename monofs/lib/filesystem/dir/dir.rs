@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     fmt::{self, Debug},
+    str::FromStr,
     sync::Arc,
 };
 
@@ -12,11 +13,8 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 
-use crate::{
-    file::File,
-    filesystem::{entity::Entity, kind::EntityType},
-    softlink::SoftLink,
-    EntityCidLink, FsError, FsResult, Link, Metadata,
+use crate::filesystem::{
+    kind::EntityType, Entity, EntityCidLink, File, FsError, FsResult, Link, Metadata, SoftLink,
 };
 
 use super::Utf8UnixPathSegment;
@@ -36,11 +34,11 @@ pub struct Dir<S>
 where
     S: IpldStore,
 {
-    inner: Arc<DirInner<S>>,
+    pub(super) inner: Arc<DirInner<S>>,
 }
 
 #[derive(Clone)]
-struct DirInner<S>
+pub(super) struct DirInner<S>
 where
     S: IpldStore,
 {
@@ -77,6 +75,18 @@ where
     S: IpldStore,
 {
     /// Creates a new directory with the given store.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::Dir;
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// let store = MemoryStore::default();
+    /// let dir = Dir::new(store);
+    ///
+    /// assert!(dir.is_empty());
+    /// ```
     pub fn new(store: S) -> Self {
         Self {
             inner: Arc::new(DirInner {
@@ -87,16 +97,68 @@ where
         }
     }
 
+    /// Checks if an [`EntityCidLink`] with the given name exists in the directory.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, Utf8UnixPathSegment};
+    /// use monoutils_store::MemoryStore;
+    /// use monoutils_store::ipld::cid::Cid;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store);
+    ///
+    /// let file_name = "example.txt";
+    /// let file_cid: Cid = "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
+    ///
+    /// dir.put_entry(file_name, file_cid.into())?;
+    ///
+    /// assert!(dir.has_entry(file_name).await?);
+    /// assert!(!dir.has_entry("nonexistent.txt").await?);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn has_entry(&self, name: impl AsRef<str>) -> FsResult<bool> {
+        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
+        Ok(self.inner.entries.contains_key(&name))
+    }
+
     /// Adds a [`EntityCidLink`] and its associated name in the directory's entries.
-    pub fn put_entry(&mut self, name: Utf8UnixPathSegment, link: EntityCidLink<S>) -> FsResult<()> {
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, Utf8UnixPathSegment};
+    /// use monoutils_store::MemoryStore;
+    /// use monoutils_store::ipld::cid::Cid;
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store);
+    ///
+    /// let file_name = "example.txt";
+    /// let file_cid: Cid = "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
+    ///
+    /// dir.put_entry(file_name, file_cid.into())?;
+    ///
+    /// assert!(dir.get_entry(file_name)?.is_some());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn put_entry(&mut self, name: impl AsRef<str>, link: EntityCidLink<S>) -> FsResult<()> {
+        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
         let inner = Arc::make_mut(&mut self.inner);
         inner.entries.insert(name, link);
+
         Ok(())
     }
 
     /// Adds an [`Entity`] and its associated name in the directory's entries.
     #[inline]
-    pub fn put_entity(&mut self, name: Utf8UnixPathSegment, entity: Entity<S>) -> FsResult<()>
+    pub fn put_entity(&mut self, name: impl AsRef<str>, entity: Entity<S>) -> FsResult<()>
     where
         S: Send + Sync,
     {
@@ -105,7 +167,7 @@ where
 
     /// Adds a [`Dir`] and its associated name in the directory's entries.
     #[inline]
-    pub fn put_dir(&mut self, name: Utf8UnixPathSegment, dir: Dir<S>) -> FsResult<()>
+    pub fn put_dir(&mut self, name: impl AsRef<str>, dir: Dir<S>) -> FsResult<()>
     where
         S: Send + Sync,
     {
@@ -114,7 +176,7 @@ where
 
     /// Adds a [`File`] and its associated name in the directory's entries.
     #[inline]
-    pub fn put_file(&mut self, name: Utf8UnixPathSegment, file: File<S>) -> FsResult<()>
+    pub fn put_file(&mut self, name: impl AsRef<str>, file: File<S>) -> FsResult<()>
     where
         S: Send + Sync,
     {
@@ -123,7 +185,7 @@ where
 
     /// Adds a [`SoftLink`] and its associated name in the directory's entries.
     #[inline]
-    pub fn put_softlink(&mut self, name: Utf8UnixPathSegment, softlink: SoftLink<S>) -> FsResult<()>
+    pub fn put_softlink(&mut self, name: impl AsRef<str>, softlink: SoftLink<S>) -> FsResult<()>
     where
         S: Send + Sync,
     {
@@ -131,24 +193,52 @@ where
     }
 
     /// Gets the [`EntityCidLink`] with the given name from the directory's entries.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, Utf8UnixPathSegment};
+    /// use monoutils_store::MemoryStore;
+    /// use monoutils_store::ipld::cid::Cid;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store);
+    ///
+    /// let file_name = "example.txt";
+    /// let file_cid: Cid = "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
+    ///
+    /// dir.put_entry(file_name, file_cid.clone().into())?;
+    ///
+    /// let entry = dir.get_entry(file_name)?.unwrap();
+    /// assert_eq!(entry.resolve_cid().await?, file_cid);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline]
-    pub fn get_entry(&self, name: &Utf8UnixPathSegment) -> Option<&EntityCidLink<S>> {
-        self.inner.entries.get(name)
+    pub fn get_entry(&self, name: impl AsRef<str>) -> FsResult<Option<&EntityCidLink<S>>> {
+        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
+        Ok(self.inner.entries.get(&name))
     }
 
     /// Gets the [`EntityCidLink`] with the given name from the directory's entries.
     #[inline]
-    pub fn get_entry_mut(&mut self, name: &Utf8UnixPathSegment) -> Option<&mut EntityCidLink<S>> {
+    pub fn get_entry_mut(
+        &mut self,
+        name: impl AsRef<str>,
+    ) -> FsResult<Option<&mut EntityCidLink<S>>> {
+        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
         let inner = Arc::make_mut(&mut self.inner);
-        inner.entries.get_mut(name)
+        Ok(inner.entries.get_mut(&name))
     }
 
     /// Gets the [`Entity`] with the associated name from the directory's entries.
-    pub async fn get_entity(&self, name: &Utf8UnixPathSegment) -> FsResult<Option<&Entity<S>>>
+    pub async fn get_entity(&self, name: impl AsRef<str>) -> FsResult<Option<&Entity<S>>>
     where
         S: Send + Sync,
     {
-        match self.get_entry(name) {
+        match self.get_entry(name)? {
             Some(link) => Ok(Some(link.resolve_entity(self.inner.store.clone()).await?)),
             None => Ok(None),
         }
@@ -157,20 +247,20 @@ where
     /// Gets the [`Entity`] with the associated name from the directory's entries.
     pub async fn get_entity_mut(
         &mut self,
-        name: &Utf8UnixPathSegment,
+        name: impl AsRef<str>,
     ) -> FsResult<Option<&mut Entity<S>>>
     where
         S: Send + Sync,
     {
         let store = self.inner.store.clone();
-        match self.get_entry_mut(name) {
+        match self.get_entry_mut(name)? {
             Some(link) => Ok(Some(link.resolve_entity_mut(store).await?)),
             None => Ok(None),
         }
     }
 
     /// Gets the [`Dir`] with the associated name from the directory's entries.
-    pub async fn get_dir(&self, name: &Utf8UnixPathSegment) -> FsResult<Option<&Dir<S>>>
+    pub async fn get_dir(&self, name: impl AsRef<str>) -> FsResult<Option<&Dir<S>>>
     where
         S: Send + Sync,
     {
@@ -181,7 +271,7 @@ where
     }
 
     /// Gets the [`Dir`] with the associated name from the directory's entries.
-    pub async fn get_dir_mut(&mut self, name: &Utf8UnixPathSegment) -> FsResult<Option<&mut Dir<S>>>
+    pub async fn get_dir_mut(&mut self, name: impl AsRef<str>) -> FsResult<Option<&mut Dir<S>>>
     where
         S: Send + Sync,
     {
@@ -192,7 +282,7 @@ where
     }
 
     /// Gets the [`File`] with the associated name from the directory's entries.
-    pub async fn get_file(&self, name: &Utf8UnixPathSegment) -> FsResult<Option<&File<S>>>
+    pub async fn get_file(&self, name: impl AsRef<str>) -> FsResult<Option<&File<S>>>
     where
         S: Send + Sync,
     {
@@ -203,10 +293,7 @@ where
     }
 
     /// Gets the [`File`] with the associated name from the directory's entries.
-    pub async fn get_file_mut(
-        &mut self,
-        name: &Utf8UnixPathSegment,
-    ) -> FsResult<Option<&mut File<S>>>
+    pub async fn get_file_mut(&mut self, name: impl AsRef<str>) -> FsResult<Option<&mut File<S>>>
     where
         S: Send + Sync,
     {
@@ -217,7 +304,7 @@ where
     }
 
     /// Gets the [`SoftLink`] with the associated name from the directory's entries.
-    pub async fn get_softlink(&self, name: &Utf8UnixPathSegment) -> FsResult<Option<&SoftLink<S>>>
+    pub async fn get_softlink(&self, name: impl AsRef<str>) -> FsResult<Option<&SoftLink<S>>>
     where
         S: Send + Sync,
     {
@@ -230,7 +317,7 @@ where
     /// Gets the [`SoftLink`] with the associated name from the directory's entries.
     pub async fn get_softlink_mut(
         &mut self,
-        name: &Utf8UnixPathSegment,
+        name: impl AsRef<str>,
     ) -> FsResult<Option<&mut SoftLink<S>>>
     where
         S: Send + Sync,
@@ -239,6 +326,16 @@ where
             Some(Entity::SoftLink(softlink)) => Ok(Some(softlink)),
             _ => Ok(None),
         }
+    }
+
+    /// Removes the [`EntityCidLink`] with the given name from the directory's entries.
+    pub fn remove_entry(&mut self, name: impl AsRef<str>) -> FsResult<EntityCidLink<S>> {
+        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
+        let inner = Arc::make_mut(&mut self.inner);
+        inner
+            .entries
+            .remove(&name)
+            .ok_or(FsError::PathNotFound(name.to_string()))
     }
 
     /// Returns the metadata for the directory.
@@ -257,6 +354,30 @@ where
     }
 
     /// Returns `true` if the directory is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, Utf8UnixPathSegment};
+    /// use monoutils_store::MemoryStore;
+    /// use monoutils_store::ipld::cid::Cid;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store);
+    ///
+    /// assert!(dir.is_empty());
+    ///
+    /// let file_name = "example.txt";
+    /// let file_cid: Cid = "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
+    ///
+    /// dir.put_entry(file_name, file_cid.into())?;
+    ///
+    /// assert!(!dir.is_empty());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.inner.entries.is_empty()
     }
@@ -378,6 +499,8 @@ mod tests {
     use anyhow::Ok;
     use monoutils_store::MemoryStore;
 
+    use crate::{config::DEFAULT_SOFTLINK_DEPTH, filesystem::SyncType};
+
     use super::*;
 
     #[tokio::test]
@@ -392,27 +515,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_dir_put_get_entries() -> anyhow::Result<()> {
-        let store = MemoryStore::default();
-        let mut dir = Dir::new(store);
+        let mut dir = Dir::new(MemoryStore::default());
 
         let file1_cid: Cid =
             "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
         let file2_cid: Cid =
             "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
 
-        let file1_name: Utf8UnixPathSegment = "file1".parse()?;
-        let file2_name: Utf8UnixPathSegment = "file2".parse()?;
+        let file1_name = "file1";
+        let file2_name = "file2";
 
-        dir.put_entry(file1_name.clone(), file1_cid.clone().into())?;
-        dir.put_entry(file2_name.clone(), file2_cid.clone().into())?;
+        dir.put_entry(file1_name, file1_cid.into())?;
+        dir.put_entry(file2_name, file2_cid.into())?;
 
         assert_eq!(dir.inner.entries.len(), 2);
         assert_eq!(
-            dir.get_entry(&file1_name).unwrap().get_cid(),
+            dir.get_entry(&file1_name)?.unwrap().get_cid(),
             Some(&file1_cid)
         );
         assert_eq!(
-            dir.get_entry(&file2_name).unwrap().get_cid(),
+            dir.get_entry(&file2_name)?.unwrap().get_cid(),
             Some(&file2_cid)
         );
 
@@ -424,11 +546,11 @@ mod tests {
         let store = MemoryStore::default();
         let mut dir = Dir::new(store.clone());
 
-        let file_name: Utf8UnixPathSegment = "file1".parse()?;
+        let file_name = "file1";
         let file_cid: Cid =
             "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
 
-        dir.put_entry(file_name.clone(), file_cid.clone().into())?;
+        dir.put_entry(file_name, file_cid.into())?;
 
         let cid = dir.store().await?;
         let loaded_dir = Dir::load(&cid, store.clone()).await?;
@@ -441,10 +563,105 @@ mod tests {
 
         // Assert that the entry we added exists in the loaded directory
         let loaded_entry = loaded_dir
-            .get_entry(&file_name)
+            .get_entry(&file_name)?
             .expect("Entry should exist");
 
         assert_eq!(loaded_entry.get_cid(), Some(&file_cid));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_dir_has_entry() -> anyhow::Result<()> {
+        let mut dir = Dir::new(MemoryStore::default());
+        let file_name = "example.txt";
+        let file_cid: Cid =
+            "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
+
+        dir.put_entry(file_name, file_cid.into())?;
+
+        assert!(dir.has_entry(file_name).await?);
+        assert!(!dir.has_entry("nonexistent.txt").await?);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_dir_remove_entry() -> anyhow::Result<()> {
+        let mut dir = Dir::new(MemoryStore::default());
+        let file_name = "example.txt";
+        let file_cid: Cid =
+            "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
+
+        dir.put_entry(file_name, file_cid.clone().into())?;
+        assert!(dir.has_entry(file_name).await?);
+
+        let removed_entry = dir.remove_entry(file_name)?;
+        assert_eq!(removed_entry.get_cid(), Some(&file_cid));
+        assert!(!dir.has_entry(file_name).await?);
+
+        assert!(dir.remove_entry("nonexistent.txt").is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_dir_get_metadata() -> anyhow::Result<()> {
+        let dir = Dir::new(MemoryStore::default());
+        let metadata = dir.get_metadata();
+
+        assert_eq!(*metadata.get_entity_type(), EntityType::Dir);
+        assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
+        assert_eq!(*metadata.get_softlink_depth(), DEFAULT_SOFTLINK_DEPTH);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_dir_is_empty() -> anyhow::Result<()> {
+        let mut dir = Dir::new(MemoryStore::default());
+        assert!(dir.is_empty());
+
+        let file_name = "example.txt";
+        let file_cid: Cid =
+            "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
+
+        dir.put_entry(file_name, file_cid.into())?;
+        assert!(!dir.is_empty());
+
+        dir.remove_entry(file_name)?;
+        assert!(dir.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_dir_get_entries() -> anyhow::Result<()> {
+        let mut dir = Dir::new(MemoryStore::default());
+        let file1_name = "file1.txt";
+        let file2_name = "file2.txt";
+        let file1_cid: Cid =
+            "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
+        let file2_cid: Cid =
+            "bafkreihwsnuregceqh263vgdaatvch6micl2phrh2tdwkaqsch7jpo5nuu".parse()?;
+
+        dir.put_entry(file1_name, file1_cid.clone().into())?;
+        dir.put_entry(file2_name, file2_cid.clone().into())?;
+
+        let entries: Vec<_> = dir.get_entries().collect();
+        assert_eq!(entries.len(), 2);
+
+        let entry1 = entries
+            .iter()
+            .find(|(name, _)| name.as_str() == file1_name)
+            .unwrap();
+        let entry2 = entries
+            .iter()
+            .find(|(name, _)| name.as_str() == file2_name)
+            .unwrap();
+
+        assert_eq!(entry1.1.get_cid(), Some(&file1_cid));
+        assert_eq!(entry2.1.get_cid(), Some(&file2_cid));
 
         Ok(())
     }

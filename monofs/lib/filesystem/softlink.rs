@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use async_recursion::async_recursion;
 use monoutils_store::{
     ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
 };
@@ -13,7 +14,7 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 
-use crate::{dir::Dir, file::File, CidLink, EntityCidLink, FsError, FsResult, Metadata};
+use crate::filesystem::{CidLink, Dir, EntityCidLink, File, FsError, FsResult, Metadata};
 
 use super::{entity::Entity, kind::EntityType};
 
@@ -43,19 +44,35 @@ where
     S: IpldStore,
 {
     /// The metadata of the softlink.
-    pub(crate) metadata: Metadata,
+    metadata: Metadata,
 
     /// The store of the softlink.
-    pub(crate) store: S,
+    store: S,
 
-    /// The link to the target of the softlink.
-    ///
-    /// ## Note
-    ///
-    /// Because `SoftLink` refers to an entity by its Cid, it's behavior is a bit different from
-    /// typical location-addressable file systems where softlinks break if the target entity is moved
-    /// from its original location.
-    pub(crate) link: EntityCidLink<S>,
+    /// The (weak) link to some target [`Entity`].
+    // TODO: Because `SoftLink` refers to an entity by its Cid, it's behavior is a bit different from
+    // typical location-addressable file systems where softlinks break if the target entity is moved
+    // from its original location. `SoftLink` only breaks if the Cid to the target entity is deleted
+    // not the target entity itself. This is bad.
+    //
+    // In order to maintain compatibility with Unix-like systems, we may need to change this to an
+    // `EntityPathLink<S>` in the future, where the path is relative to the location of the softlink.
+    link: EntityCidLink<S>,
+}
+
+/// Represents the result of following a softlink.
+pub enum FollowResult<'a, S>
+where
+    S: IpldStore,
+{
+    /// The softlink was successfully resolved to a non-softlink entity.
+    Resolved(&'a Entity<S>),
+
+    /// The maximum follow depth was reached without resolving to a non-softlink entity.
+    MaxDepthReached,
+
+    /// A broken link was encountered during resolution.
+    BrokenLink(String),
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -81,7 +98,7 @@ where
     S: IpldStore,
 {
     /// Creates a new softlink.
-    pub fn new(store: S, target: Cid) -> Self {
+    pub fn with_cid(store: S, target: Cid) -> Self {
         Self {
             inner: Arc::new(SoftLinkInner {
                 metadata: Metadata::new(EntityType::SoftLink),
@@ -96,17 +113,22 @@ where
         &self.inner.metadata
     }
 
+    /// Returns the store used to persist the softlink.
+    pub fn get_store(&self) -> &S {
+        &self.inner.store
+    }
+
+    /// Gets the [`EntityCidLink`] of the target of the softlink.
+    pub fn get_link(&self) -> &EntityCidLink<S> {
+        &self.inner.link
+    }
+
     /// Gets the [`Cid`] of the target of the softlink.
     pub async fn get_cid(&self) -> FsResult<Cid>
     where
         S: Send + Sync,
     {
         self.inner.link.resolve_cid().await
-    }
-
-    /// Gets the [`EntityCidLink`] of the target of the softlink.
-    pub fn get_link(&self) -> &EntityCidLink<S> {
-        &self.inner.link
     }
 
     /// Gets the [`Entity`] that the softlink points to.
@@ -116,7 +138,7 @@ where
     {
         self.inner
             .link
-            .resolve_value(self.inner.store.clone())
+            .resolve_entity(self.inner.store.clone())
             .await
     }
 
@@ -176,6 +198,62 @@ where
             }),
         })
     }
+
+    /// Follows the softlink to resolve the target entity.
+    ///
+    /// This method will follow the chain of softlinks up to the maximum depth specified in the metadata.
+    /// If the maximum depth is reached without resolving to a non-softlink entity, it returns `MaxDepthReached`.
+    /// If a broken link is encountered, it returns `BrokenLink`.
+    ///
+    /// ## Returns
+    ///
+    /// - `Ok(FollowResult::Resolved(entity))` if the softlink resolves to a non-softlink entity.
+    /// - `Ok(FollowResult::MaxDepthReached)` if the maximum follow depth is reached.
+    /// - `Ok(FollowResult::BrokenLink)` if a broken link is encountered.
+    /// - `Err(FsError)` if there's an error during the resolution process.
+    pub async fn follow(&self) -> FsResult<FollowResult<'_, S>>
+    where
+        S: Send + Sync,
+    {
+        let max_depth = *self.inner.metadata.get_softlink_depth();
+        self.follow_recursive(max_depth).await
+    }
+
+    #[async_recursion]
+    async fn follow_recursive(&self, remaining_depth: u32) -> FsResult<FollowResult<'_, S>>
+    where
+        S: Send + Sync,
+    {
+        if remaining_depth == 0 {
+            return Ok(FollowResult::MaxDepthReached);
+        }
+
+        match self.get_entity().await {
+            Ok(entity) => match entity {
+                Entity::SoftLink(next_softlink) => {
+                    next_softlink.follow_recursive(remaining_depth - 1).await
+                }
+                _ => Ok(FollowResult::Resolved(entity)),
+            },
+            Err(FsError::PathNotFound(path)) => Ok(FollowResult::BrokenLink(path)),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Resolves the softlink to its target entity.
+    ///
+    /// This method will follow the chain of softlinks up to the maximum depth specified in the metadata.
+    /// It will return an error if the maximum depth is reached or if a broken link is encountered.
+    pub async fn resolve(&self) -> FsResult<&Entity<S>>
+    where
+        S: Send + Sync,
+    {
+        match self.follow().await? {
+            FollowResult::Resolved(entity) => Ok(entity),
+            FollowResult::MaxDepthReached => Err(FsError::MaxFollowDepthReached),
+            FollowResult::BrokenLink(path) => Err(FsError::BrokenSoftLink(path)),
+        }
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -190,6 +268,48 @@ impl<S> SoftLinkDeserializeSeed<S> {
 //--------------------------------------------------------------------------------------------------
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
+
+impl<S> From<Entity<S>> for SoftLink<S>
+where
+    S: IpldStore + Clone,
+{
+    fn from(entity: Entity<S>) -> Self {
+        Self {
+            inner: Arc::new(SoftLinkInner {
+                metadata: Metadata::new(EntityType::SoftLink),
+                store: entity.get_store().clone(),
+                link: EntityCidLink::from(entity),
+            }),
+        }
+    }
+}
+
+impl<S> From<Dir<S>> for Entity<S>
+where
+    S: IpldStore + Clone,
+{
+    fn from(dir: Dir<S>) -> Self {
+        Entity::Dir(dir)
+    }
+}
+
+impl<S> From<File<S>> for Entity<S>
+where
+    S: IpldStore + Clone,
+{
+    fn from(file: File<S>) -> Self {
+        Entity::File(file)
+    }
+}
+
+impl<S> From<SoftLink<S>> for Entity<S>
+where
+    S: IpldStore + Clone,
+{
+    fn from(softlink: SoftLink<S>) -> Self {
+        Entity::SoftLink(softlink)
+    }
+}
 
 impl<'de, S> DeserializeSeed<'de> for SoftLinkDeserializeSeed<S>
 where
@@ -248,11 +368,185 @@ impl IpldReferences for SoftLinkSerializable {
     }
 }
 
-// impl<S> PartialEq for SoftLink<S>
-// where
-//     S: IpldStore,
-// {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.inner.metadata == other.inner.metadata && self.inner.link == other.inner.link
-//     }
-// }
+//--------------------------------------------------------------------------------------------------
+// Tests
+//--------------------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        config::DEFAULT_SOFTLINK_DEPTH,
+        filesystem::{Dir, Entity, File},
+    };
+    use monoutils_store::MemoryStore;
+
+    mod fixtures {
+        use super::*;
+
+        pub async fn setup_test_env() -> (MemoryStore, Dir<MemoryStore>, File<MemoryStore>) {
+            let store = MemoryStore::default();
+            let mut root_dir = Dir::new(store.clone());
+
+            let file_content = b"Hello, World!".to_vec();
+            let file = File::with_content(store.clone(), file_content).await;
+
+            root_dir.put_file("test_file.txt", file.clone()).unwrap();
+
+            (store, root_dir, file)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_softlink_creation() -> FsResult<()> {
+        let (store, root_dir, _) = fixtures::setup_test_env().await;
+
+        let file_cid = root_dir
+            .get_entry("test_file.txt")?
+            .unwrap()
+            .resolve_cid()
+            .await?;
+        let softlink = SoftLink::with_cid(store, file_cid);
+
+        assert_eq!(
+            softlink.get_metadata().get_entity_type(),
+            &EntityType::SoftLink
+        );
+        assert_eq!(softlink.get_cid().await?, file_cid);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_softlink_from_entity() -> FsResult<()> {
+        let (_, _, file) = fixtures::setup_test_env().await;
+
+        let file_entity = Entity::File(file);
+        let softlink = SoftLink::from(file_entity);
+
+        assert_eq!(
+            softlink.get_metadata().get_entity_type(),
+            &EntityType::SoftLink
+        );
+        assert!(matches!(softlink.get_entity().await?, Entity::File(_)));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_softlink_follow() -> FsResult<()> {
+        let (store, root_dir, _) = fixtures::setup_test_env().await;
+
+        let file_cid = root_dir
+            .get_entry("test_file.txt")?
+            .unwrap()
+            .resolve_cid()
+            .await?;
+        let softlink = SoftLink::with_cid(store, file_cid);
+
+        match softlink.follow().await? {
+            FollowResult::Resolved(entity) => {
+                assert!(matches!(entity, Entity::File(_)));
+            }
+            _ => panic!("Expected Resolved, got something else"),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_softlink_to_softlink() -> FsResult<()> {
+        let (store, root_dir, _) = fixtures::setup_test_env().await;
+
+        let file_cid = root_dir
+            .get_entry("test_file.txt")?
+            .unwrap()
+            .resolve_cid()
+            .await?;
+        let softlink1 = SoftLink::with_cid(store.clone(), file_cid);
+
+        let softlink1_cid = softlink1.store().await?;
+        let softlink2 = SoftLink::with_cid(store, softlink1_cid);
+
+        match softlink2.follow().await? {
+            FollowResult::Resolved(entity) => {
+                assert!(matches!(entity, Entity::File(_)));
+            }
+            _ => panic!("Expected Resolved, got something else"),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_softlink_max_depth() -> FsResult<()> {
+        let (store, root_dir, _) = fixtures::setup_test_env().await;
+
+        let file_cid = root_dir
+            .get_entry("test_file.txt")?
+            .unwrap()
+            .resolve_cid()
+            .await?;
+
+        // Link depth 1 to file.
+        let mut softlink = SoftLink::with_cid(store.clone(), file_cid);
+
+        // Link depth 9 to file.
+        for _ in 0..DEFAULT_SOFTLINK_DEPTH - 1 {
+            let cid = softlink.store().await?;
+            softlink = SoftLink::with_cid(store.clone(), cid);
+        }
+
+        match softlink.follow().await? {
+            FollowResult::Resolved(entity) => {
+                assert!(matches!(entity, Entity::File(_)));
+            }
+            _ => panic!("Expected Resolved, got something else"),
+        }
+
+        // Link depth 10 to file.
+        let cid = softlink.store().await?;
+        softlink = SoftLink::with_cid(store.clone(), cid);
+
+        match softlink.follow().await? {
+            FollowResult::MaxDepthReached => {}
+            _ => panic!("Expected MaxDepthReached, got something else"),
+        }
+
+        Ok(())
+    }
+
+    // #[tokio::test]
+    // async fn test_broken_softlink() -> FsResult<()> {
+    //     let store = MemoryStore::default();
+    //     let non_existent_cid = Cid::default();  // This CID doesn't exist in the store
+
+    //     let softlink = SoftLink::with_cid(store, non_existent_cid);
+
+    //     match softlink.follow().await? {
+    //         FollowResult::BrokenLink(_) => {},
+    //         _ => panic!("Expected BrokenLink, got something else"),
+    //     }
+
+    //     assert!(matches!(softlink.resolve().await, Err(FsError::BrokenSoftLink(_))));
+
+    //     Ok(())
+    // }
+
+    #[tokio::test]
+    async fn test_softlink_resolve() -> FsResult<()> {
+        let (store, root_dir, _) = fixtures::setup_test_env().await;
+
+        let file_cid = root_dir
+            .get_entry("test_file.txt")?
+            .unwrap()
+            .resolve_cid()
+            .await?;
+        let softlink = SoftLink::with_cid(store, file_cid);
+
+        let resolved_entity = softlink.resolve().await?;
+        assert!(matches!(resolved_entity, Entity::File(_)));
+
+        Ok(())
+    }
+}

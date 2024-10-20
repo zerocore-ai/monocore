@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use monoutils_store::IpldStore;
 use typed_path::{Utf8UnixComponent, Utf8UnixPath};
 
-use crate::{filesystem::entity::Entity, FsError, FsResult};
+use crate::filesystem::{entity::Entity, FsError, FsResult};
 
 use super::{Dir, Utf8UnixPathSegment};
 
@@ -56,15 +56,14 @@ pub type FindResultDirMut<'a, S> = FindResult<&'a mut Dir<S>>;
 /// ## Examples
 ///
 /// ```
-/// use monofs::dir::{Dir, find_dir};
+/// use monofs::filesystem::{Dir, find_dir};
 /// use monoutils_store::MemoryStore;
-/// use typed_path::Utf8UnixPath;
 ///
-/// # async fn example() -> anyhow::Result<()> {
+/// # #[tokio::main]
+/// # async fn main() -> anyhow::Result<()> {
 /// let store = MemoryStore::default();
 /// let root_dir = Dir::new(store);
-/// let path = Utf8UnixPath::new("some/path/to/entity");
-/// let result = find_dir(&root_dir, path).await?;
+/// let result = find_dir(&root_dir, "some/path/to/entity").await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -77,13 +76,12 @@ pub type FindResultDirMut<'a, S> = FindResult<&'a mut Dir<S>>;
 /// - `/`
 ///
 /// If any of these components are present in the path, the function will return an error.
-pub async fn find_dir<'a, S>(
-    mut dir: &'a Dir<S>,
-    path: &Utf8UnixPath,
-) -> FsResult<FindResultDir<'a, S>>
+pub async fn find_dir<S>(mut dir: &Dir<S>, path: impl AsRef<str>) -> FsResult<FindResultDir<S>>
 where
     S: IpldStore + Send + Sync,
 {
+    let path = Utf8UnixPath::new(path.as_ref());
+
     // Convert path components to Utf8UnixPathSegment and collect them
     let components = path
         .components()
@@ -131,15 +129,14 @@ where
 /// ## Examples
 ///
 /// ```
-/// use monofs::dir::{Dir, find_dir_mut};
+/// use monofs::filesystem::{Dir, find_dir_mut};
 /// use monoutils_store::MemoryStore;
-/// use typed_path::Utf8UnixPath;
 ///
-/// # async fn example() -> anyhow::Result<()> {
+/// # #[tokio::main]
+/// # async fn main() -> anyhow::Result<()> {
 /// let store = MemoryStore::default();
 /// let mut root_dir = Dir::new(store);
-/// let path = Utf8UnixPath::new("some/path/to/entity");
-/// let result = find_dir_mut(&mut root_dir, path).await?;
+/// let result = find_dir_mut(&mut root_dir, "some/path/to/entity").await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -152,13 +149,15 @@ where
 /// - `/`
 ///
 /// If any of these components are present in the path, the function will return an error.
-pub async fn find_dir_mut<'a, S>(
-    mut dir: &'a mut Dir<S>,
-    path: &Utf8UnixPath,
-) -> FsResult<FindResultDirMut<'a, S>>
+pub async fn find_dir_mut<S>(
+    mut dir: &mut Dir<S>,
+    path: impl AsRef<str>,
+) -> FsResult<FindResultDirMut<S>>
 where
     S: IpldStore + Send + Sync,
 {
+    let path = Utf8UnixPath::new(path.as_ref());
+
     // Convert path components to Utf8UnixPathSegment and collect them
     let components = path
         .components()
@@ -206,26 +205,24 @@ where
 /// ## Examples
 ///
 /// ```
-/// use monofs::dir::{Dir, find_or_create_dir};
+/// use monofs::filesystem::{Dir, find_or_create_dir};
 /// use monoutils_store::MemoryStore;
-/// use typed_path::Utf8UnixPath;
 ///
-/// # async fn example() -> anyhow::Result<()> {
+/// # #[tokio::main]
+/// # async fn main() -> anyhow::Result<()> {
 /// let store = MemoryStore::default();
 /// let mut root_dir = Dir::new(store);
-/// let path = Utf8UnixPath::new("new/nested/directory");
-/// let new_dir = find_or_create_dir(&mut root_dir, &path).await?;
+/// let new_dir = find_or_create_dir(&mut root_dir, "new/nested/directory").await?;
 /// assert!(new_dir.is_empty());
 /// # Ok(())
 /// # }
 /// ```
-pub async fn find_or_create_dir<'a, S>(
-    dir: &'a mut Dir<S>,
-    path: &Utf8UnixPath,
-) -> FsResult<&'a mut Dir<S>>
+pub async fn find_or_create_dir<S>(dir: &mut Dir<S>, path: impl AsRef<str>) -> FsResult<&mut Dir<S>>
 where
     S: IpldStore + Send + Sync,
 {
+    let path = Utf8UnixPath::new(path.as_ref());
+
     match find_dir_mut(dir, path).await {
         Ok(FindResult::Found { dir }) => Ok(dir),
         Ok(FindResult::NotFound { mut dir, depth }) => {
@@ -259,9 +256,8 @@ where
 #[cfg(test)]
 mod tests {
     use monoutils_store::MemoryStore;
-    use typed_path::Utf8UnixPathBuf;
 
-    use crate::file::File;
+    use crate::filesystem::File;
 
     use super::*;
 
@@ -281,16 +277,16 @@ mod tests {
             let file2 = File::new(store.clone());
 
             let file1_cid = file1.store().await?;
-            subdir1.put_entry("file1.txt".parse()?, file1_cid.into())?;
+            subdir1.put_entry("file1.txt", file1_cid.into())?;
 
             let file2_cid = file2.store().await?;
-            subdir2.put_entry("file2.txt".parse()?, file2_cid.into())?;
+            subdir2.put_entry("file2.txt", file2_cid.into())?;
 
             let subdir2_cid = subdir2.store().await?;
-            subdir1.put_entry("subdir2".parse()?, subdir2_cid.into())?;
+            subdir1.put_entry("subdir2", subdir2_cid.into())?;
 
             let subdir1_cid = subdir1.store().await?;
-            root.put_entry("subdir1".parse()?, subdir1_cid.into())?;
+            root.put_entry("subdir1", subdir1_cid.into())?;
 
             Ok(root)
         }
@@ -301,31 +297,31 @@ mod tests {
         let root = fixtures::setup_test_filesystem().await?;
 
         // Test finding existing directories
-        let result = find_dir(&root, &Utf8UnixPathBuf::from("subdir1")).await?;
+        let result = find_dir(&root, "subdir1").await?;
         assert!(matches!(result, FindResult::Found { .. }));
 
-        let result = find_dir(&root, &Utf8UnixPathBuf::from("subdir1/subdir2")).await?;
+        let result = find_dir(&root, "subdir1/subdir2").await?;
         assert!(matches!(result, FindResult::Found { .. }));
 
         // Test finding non-existent directories
-        let result = find_dir(&root, &Utf8UnixPathBuf::from("nonexistent")).await?;
+        let result = find_dir(&root, "nonexistent").await?;
         assert!(matches!(result, FindResult::NotFound { depth: 0, .. }));
 
-        let result = find_dir(&root, &Utf8UnixPathBuf::from("subdir1/nonexistent")).await?;
+        let result = find_dir(&root, "subdir1/nonexistent").await?;
         assert!(matches!(result, FindResult::NotFound { depth: 1, .. }));
 
         // Test finding a path that contains a file
-        let result = find_dir(&root, &Utf8UnixPathBuf::from("subdir1/file1.txt/invalid")).await?;
+        let result = find_dir(&root, "subdir1/file1.txt/invalid").await?;
         assert!(matches!(result, FindResult::NotADir { depth: 1 }));
 
         // Test invalid paths
-        let result = find_dir(&root, &Utf8UnixPathBuf::from("/invalid/path")).await;
+        let result = find_dir(&root, "/invalid/path").await;
         assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
 
-        let result = find_dir(&root, &Utf8UnixPathBuf::from("invalid/../path")).await;
+        let result = find_dir(&root, "invalid/../path").await;
         assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
 
-        let result = find_dir(&root, &Utf8UnixPathBuf::from("./invalid/path")).await;
+        let result = find_dir(&root, "./invalid/path").await;
         assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
 
         Ok(())
@@ -336,25 +332,21 @@ mod tests {
         let mut root = fixtures::setup_test_filesystem().await?;
 
         // Test finding existing directories
-        let result = find_dir_mut(&mut root, &Utf8UnixPathBuf::from("subdir1")).await?;
+        let result = find_dir_mut(&mut root, "subdir1").await?;
         assert!(matches!(result, FindResult::Found { .. }));
 
-        let result = find_dir_mut(&mut root, &Utf8UnixPathBuf::from("subdir1/subdir2")).await?;
+        let result = find_dir_mut(&mut root, "subdir1/subdir2").await?;
         assert!(matches!(result, FindResult::Found { .. }));
 
         // Test finding non-existent directories
-        let result = find_dir_mut(&mut root, &Utf8UnixPathBuf::from("nonexistent")).await?;
+        let result = find_dir_mut(&mut root, "nonexistent").await?;
         assert!(matches!(result, FindResult::NotFound { depth: 0, .. }));
 
-        let result = find_dir_mut(&mut root, &Utf8UnixPathBuf::from("subdir1/nonexistent")).await?;
+        let result = find_dir_mut(&mut root, "subdir1/nonexistent").await?;
         assert!(matches!(result, FindResult::NotFound { depth: 1, .. }));
 
         // Test finding a path that contains a file
-        let result = find_dir_mut(
-            &mut root,
-            &Utf8UnixPathBuf::from("subdir1/file1.txt/invalid"),
-        )
-        .await?;
+        let result = find_dir_mut(&mut root, "subdir1/file1.txt/invalid").await?;
         assert!(matches!(result, FindResult::NotADir { depth: 1 }));
 
         Ok(())
@@ -365,30 +357,27 @@ mod tests {
         let mut root = fixtures::setup_test_filesystem().await?;
 
         // Test creating a new directory
-        let new_dir = find_or_create_dir(&mut root, &Utf8UnixPathBuf::from("new_dir")).await?;
+        let new_dir = find_or_create_dir(&mut root, "new_dir").await?;
         assert!(new_dir.is_empty());
 
         // Verify the new directory exists
-        let result = find_dir(&root, &Utf8UnixPathBuf::from("new_dir")).await?;
+        let result = find_dir(&root, "new_dir").await?;
         assert!(matches!(result, FindResult::Found { .. }));
 
         // Test creating a nested structure
-        let nested_dir =
-            find_or_create_dir(&mut root, &Utf8UnixPathBuf::from("parent/child/grandchild"))
-                .await?;
+        let nested_dir = find_or_create_dir(&mut root, "parent/child/grandchild").await?;
         assert!(nested_dir.is_empty());
 
         // Verify the nested structure exists
-        let result = find_dir(&root, &Utf8UnixPathBuf::from("parent/child/grandchild")).await?;
+        let result = find_dir(&root, "parent/child/grandchild").await?;
         assert!(matches!(result, FindResult::Found { .. }));
 
         // Test getting an existing directory
-        let existing_dir = find_or_create_dir(&mut root, &Utf8UnixPathBuf::from("subdir1")).await?;
+        let existing_dir = find_or_create_dir(&mut root, "subdir1").await?;
         assert!(!existing_dir.is_empty());
 
         // Test creating a directory where a file already exists
-        let result =
-            find_or_create_dir(&mut root, &Utf8UnixPathBuf::from("subdir1/file1.txt")).await;
+        let result = find_or_create_dir(&mut root, "subdir1/file1.txt").await;
         assert!(matches!(result, Err(FsError::NotADirectory(_))));
 
         Ok(())

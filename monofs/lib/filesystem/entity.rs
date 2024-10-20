@@ -2,7 +2,7 @@ use std::fmt::{self, Debug};
 
 use monoutils_store::{ipld::cid::Cid, IpldStore, Storable, StoreError, StoreResult};
 
-use crate::{dir::Dir, file::File, softlink::SoftLink, FsError, FsResult, Metadata};
+use crate::filesystem::{Dir, File, FsError, FsResult, Metadata, SoftLink};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -74,6 +74,15 @@ where
             Entity::File(file) => file.get_metadata(),
             Entity::Dir(dir) => dir.get_metadata(),
             Entity::SoftLink(softlink) => softlink.get_metadata(),
+        }
+    }
+
+    /// Returns the store used to persist the entity.
+    pub fn get_store(&self) -> &S {
+        match self {
+            Entity::File(file) => file.get_store(),
+            Entity::Dir(dir) => dir.get_store(),
+            Entity::SoftLink(softlink) => softlink.get_store(),
         }
     }
 }

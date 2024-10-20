@@ -118,6 +118,12 @@ pub trait IpldStore: Clone {
     /// Returns the allowed maximum block size for raw bytes. If there is no limit, `None` is returned.
     fn get_raw_block_max_size(&self) -> Option<u64>;
 
+    /// Checks if the store is empty.
+    fn is_empty(&self) -> impl Future<Output = StoreResult<bool>>;
+
+    /// Returns the number of blocks in the store.
+    fn get_size(&self) -> impl Future<Output = StoreResult<u64>>;
+
     // /// Attempts to remove a node and its dependencies from the store.
     // ///
     // /// Returns the number of nodes and blocks removed.

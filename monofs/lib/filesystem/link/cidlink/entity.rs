@@ -1,7 +1,7 @@
 use monoutils_store::IpldStore;
 
-use crate::{
-    dir::Dir, file::File, filesystem::entity::Entity, softlink::SoftLink, CidLink, FsResult,
+use crate::filesystem::{
+    dir::Dir, entity::Entity, file::File, softlink::SoftLink, CidLink, FsResult,
 };
 
 //--------------------------------------------------------------------------------------------------

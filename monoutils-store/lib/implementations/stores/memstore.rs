@@ -209,6 +209,14 @@ where
     fn get_raw_block_max_size(&self) -> Option<u64> {
         self.chunker.chunk_max_size()
     }
+
+    async fn is_empty(&self) -> StoreResult<bool> {
+        Ok(self.blocks.read().await.is_empty())
+    }
+
+    async fn get_size(&self) -> StoreResult<u64> {
+        Ok(self.blocks.read().await.len() as u64)
+    }
 }
 
 impl<C, L> IpldStoreSeekable for MemoryStore<C, L>

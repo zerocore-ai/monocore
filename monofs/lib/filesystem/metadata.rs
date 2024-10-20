@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use getset::Getters;
 use serde::{Deserialize, Serialize};
 
+use crate::config::DEFAULT_SOFTLINK_DEPTH;
+
 use super::kind::EntityType;
 
 //--------------------------------------------------------------------------------------------------
@@ -16,7 +18,17 @@ use super::kind::EntityType;
 /// hard links, so there is no `link-count` field. Also `size` is not stored here, but rather
 /// requested when needed.
 ///
-// TODO: Need to to know precisely what the DateTimes serialize to.
+/// ## Examples
+///
+/// ```
+/// use monofs::filesystem::{EntityType, Metadata, SyncType};
+/// use monofs::config::DEFAULT_SOFTLINK_DEPTH;
+///
+/// let metadata = Metadata::new(EntityType::File);
+/// assert_eq!(*metadata.get_entity_type(), EntityType::File);
+/// assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
+/// assert_eq!(*metadata.get_softlink_depth(), DEFAULT_SOFTLINK_DEPTH);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct Metadata {
@@ -31,9 +43,9 @@ pub struct Metadata {
 
     /// The size of the entity in bytes.
     sync_type: SyncType,
-    // /// The maximum depth of a softlink.
-    // softlink_depth: u32,
 
+    /// The maximum depth of a softlink.
+    softlink_depth: u32,
     // /// Extended attributes.
     // #[serde(skip)]
     // extended_attrs: Option<AttributeCidLink<S>>,
@@ -41,7 +53,7 @@ pub struct Metadata {
 
 /// The method of syncing to use for the entity used by the filesystem
 /// service.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SyncType {
     /// Use the [RAFT consensus algorithm][raft] to sync the entity.
@@ -71,6 +83,18 @@ pub struct ExtendedAttributes<S> {
 
 impl Metadata {
     /// Creates a new metadata object.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{EntityType, Metadata, SyncType};
+    /// use monofs::config::DEFAULT_SOFTLINK_DEPTH;
+    ///
+    /// let metadata = Metadata::new(EntityType::File);
+    /// assert_eq!(*metadata.get_entity_type(), EntityType::File);
+    /// assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
+    /// assert_eq!(*metadata.get_softlink_depth(), DEFAULT_SOFTLINK_DEPTH);
+    /// ```
     pub fn new(entity_type: EntityType) -> Self {
         let now = Utc::now();
 
@@ -79,12 +103,51 @@ impl Metadata {
             created_at: now,
             modified_at: now,
             sync_type: SyncType::default(),
-            // softlink_depth: 40,
+            softlink_depth: DEFAULT_SOFTLINK_DEPTH,
             // extended_attrs: None,
         }
     }
 }
 
 //--------------------------------------------------------------------------------------------------
-// Trait Implementations
+// Tests
 //--------------------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_metadata_new() {
+        let metadata = Metadata::new(EntityType::File);
+
+        assert_eq!(*metadata.get_entity_type(), EntityType::File);
+        assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
+        assert_eq!(*metadata.get_softlink_depth(), DEFAULT_SOFTLINK_DEPTH);
+    }
+
+    #[test]
+    fn test_metadata_getters() {
+        let metadata = Metadata::new(EntityType::Dir);
+
+        assert_eq!(*metadata.get_entity_type(), EntityType::Dir);
+        assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
+        assert_eq!(*metadata.get_softlink_depth(), DEFAULT_SOFTLINK_DEPTH);
+        assert!(metadata.get_created_at() <= &Utc::now());
+        assert!(metadata.get_modified_at() <= &Utc::now());
+    }
+
+    #[test]
+    fn test_sync_type_default() {
+        assert_eq!(SyncType::default(), SyncType::RAFT);
+    }
+
+    #[test]
+    fn test_metadata_serialization() {
+        let metadata = Metadata::new(EntityType::File);
+        let serialized = serde_json::to_string(&metadata).unwrap();
+        let deserialized: Metadata = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(metadata, deserialized);
+    }
+}

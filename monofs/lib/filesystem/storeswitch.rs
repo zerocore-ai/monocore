@@ -1,21 +1,14 @@
 use monoutils_store::IpldStore;
 
-use crate::FsResult;
-
 //--------------------------------------------------------------------------------------------------
 // Traits
 //--------------------------------------------------------------------------------------------------
 
 /// A trait for types that can be changed to a different store.
-pub trait StoreChange<S>
-where
-    S: IpldStore,
-{
+pub trait StoreSwitchable {
     /// The type of the entity.
-    type Entity;
+    type WithStore<U: IpldStore>;
 
     /// Change the store used to persist the entity.
-    fn change_store(&self, store: S) -> FsResult<Self::Entity>
-    where
-        Self: Sized;
+    fn change_store<U: IpldStore>(self, new_store: U) -> Self::WithStore<U>;
 }
