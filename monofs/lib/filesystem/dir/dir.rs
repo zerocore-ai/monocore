@@ -2,16 +2,13 @@ use std::{
     collections::{BTreeMap, HashMap},
     fmt::{self, Debug},
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use monoutils_store::{
     ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
 };
-use serde::{
-    de::{self, DeserializeSeed},
-    Deserialize, Deserializer, Serialize,
-};
+use serde::{Deserialize, Serialize};
 
 use crate::filesystem::{
     kind::EntityType, Entity, EntityCidLink, File, FsError, FsResult, Link, Metadata, SoftLink,
@@ -42,14 +39,22 @@ pub(super) struct DirInner<S>
 where
     S: IpldStore,
 {
+    /// The CID of the directory when it is initially loaded from the store.
+    ///
+    /// It is not initialized if the directory was not loaded from the store.
+    initial_load_cid: OnceLock<Cid>,
+
+    /// The CID of the previous version of the directory if there is one.
+    previous: Option<Cid>,
+
     /// Directory metadata.
-    pub(crate) metadata: Metadata,
+    metadata: Metadata,
 
     /// The store used to persist blocks in the directory.
-    pub(crate) store: S,
+    store: S,
 
     /// The entries in the directory.
-    pub(crate) entries: HashMap<Utf8UnixPathSegment, EntityCidLink<S>>,
+    entries: HashMap<Utf8UnixPathSegment, EntityCidLink<S>>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -60,10 +65,7 @@ where
 pub(crate) struct DirSerializable {
     metadata: Metadata,
     entries: BTreeMap<String, Cid>,
-}
-
-pub(crate) struct DirDeserializeSeed<S> {
-    pub(crate) store: S,
+    previous: Option<Cid>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -76,7 +78,7 @@ where
 {
     /// Creates a new directory with the given store.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```
     /// use monofs::filesystem::Dir;
@@ -90,6 +92,8 @@ where
     pub fn new(store: S) -> Self {
         Self {
             inner: Arc::new(DirInner {
+                initial_load_cid: OnceLock::new(),
+                previous: None,
                 metadata: Metadata::new(EntityType::Dir),
                 entries: HashMap::new(),
                 store,
@@ -99,7 +103,7 @@ where
 
     /// Checks if an [`EntityCidLink`] with the given name exists in the directory.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```
     /// use monofs::filesystem::{Dir, Utf8UnixPathSegment};
@@ -126,9 +130,82 @@ where
         Ok(self.inner.entries.contains_key(&name))
     }
 
+    /// Returns the CID of the directory when it was initially loaded from the store.
+    ///
+    /// It returns `None` if the directory was not loaded from the store.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::Dir;
+    /// use monoutils_store::{MemoryStore, Storable};
+    /// use monoutils_store::ipld::cid::Cid;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let dir = Dir::new(store.clone());
+    ///
+    /// // Initially, the CID is not set
+    /// assert!(dir.get_initial_load_cid().is_none());
+    ///
+    /// // Store the directory
+    /// let stored_cid = dir.store().await?;
+    ///
+    /// // Load the directory
+    /// let loaded_dir = Dir::load(&stored_cid, store).await?;
+    ///
+    /// // Now the initial load CID is set
+    /// assert_eq!(loaded_dir.get_initial_load_cid(), Some(&stored_cid));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_initial_load_cid(&self) -> Option<&Cid> {
+        self.inner.initial_load_cid.get()
+    }
+
+    /// Returns the CID of the previous version of the directory if there is one.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::Dir;
+    /// use monoutils_store::{MemoryStore, Storable};
+    /// use monoutils_store::ipld::cid::Cid;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store.clone());
+    ///
+    /// // Initially, there's no previous version
+    /// assert!(dir.get_previous().is_none());
+    ///
+    /// // Store the directory
+    /// let first_cid = dir.store().await?;
+    ///
+    /// // Load the directory and create a new version
+    /// let mut loaded_dir = Dir::load(&first_cid, store.clone()).await?;
+    /// loaded_dir.put_entry("new_file", Cid::default().into())?;
+    ///
+    /// // Store the new version
+    /// let second_cid = loaded_dir.store().await?;
+    ///
+    /// // Load the new version
+    /// let new_version = Dir::load(&second_cid, store).await?;
+    ///
+    /// // Now the previous CID is set
+    /// assert_eq!(new_version.get_previous(), Some(&first_cid));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_previous(&self) -> Option<&Cid> {
+        self.inner.previous.as_ref()
+    }
+
     /// Adds a [`EntityCidLink`] and its associated name in the directory's entries.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```
     /// use monofs::filesystem::{Dir, Utf8UnixPathSegment};
@@ -194,7 +271,7 @@ where
 
     /// Gets the [`EntityCidLink`] with the given name from the directory's entries.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```
     /// use monofs::filesystem::{Dir, Utf8UnixPathSegment};
@@ -355,7 +432,7 @@ where
 
     /// Returns `true` if the directory is empty.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```
     /// use monofs::filesystem::{Dir, Utf8UnixPathSegment};
@@ -382,18 +459,12 @@ where
         self.inner.entries.is_empty()
     }
 
-    /// Deserializes to a `Dir` using an arbitrary deserializer and store.
-    pub fn deserialize_with<'de>(
-        deserializer: impl Deserializer<'de, Error: Into<FsError>>,
-        store: S,
-    ) -> FsResult<Self> {
-        DirDeserializeSeed::new(store)
-            .deserialize(deserializer)
-            .map_err(Into::into)
-    }
-
     /// Tries to create a new `Dir` from a serializable representation.
-    pub(crate) fn try_from_serializable(serializable: DirSerializable, store: S) -> FsResult<Self> {
+    pub(crate) fn from_serializable(
+        serializable: DirSerializable,
+        store: S,
+        load_cid: Cid,
+    ) -> FsResult<Self> {
         let entries: HashMap<_, _> = serializable
             .entries
             .into_iter()
@@ -402,21 +473,13 @@ where
 
         Ok(Dir {
             inner: Arc::new(DirInner {
+                initial_load_cid: OnceLock::from(load_cid),
+                previous: serializable.previous,
                 metadata: serializable.metadata,
                 store,
                 entries,
             }),
         })
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
-// Methods: DirDeserializeSeed
-//--------------------------------------------------------------------------------------------------
-
-impl<S> DirDeserializeSeed<S> {
-    fn new(store: S) -> Self {
-        Self { store }
     }
 }
 
@@ -439,6 +502,7 @@ where
 
         let serializable = DirSerializable {
             metadata: self.inner.metadata.clone(),
+            previous: self.inner.initial_load_cid.get().cloned(),
             entries,
         };
 
@@ -447,7 +511,7 @@ where
 
     async fn load(cid: &Cid, store: S) -> StoreResult<Self> {
         let serializable: DirSerializable = store.get_node(cid).await?;
-        Dir::try_from_serializable(serializable, store).map_err(StoreError::custom)
+        Dir::from_serializable(serializable, store, *cid).map_err(StoreError::custom)
     }
 }
 
@@ -466,21 +530,6 @@ where
                     .collect::<Vec<_>>(),
             )
             .finish()
-    }
-}
-
-impl<'de, S> DeserializeSeed<'de> for DirDeserializeSeed<S>
-where
-    S: IpldStore,
-{
-    type Value = Dir<S>;
-
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let serializable = DirSerializable::deserialize(deserializer)?;
-        Dir::try_from_serializable(serializable, self.store).map_err(de::Error::custom)
     }
 }
 
@@ -662,6 +711,54 @@ mod tests {
 
         assert_eq!(entry1.1.get_cid(), Some(&file1_cid));
         assert_eq!(entry2.1.get_cid(), Some(&file2_cid));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_dir_get_initial_load_cid() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let dir = Dir::new(store.clone());
+
+        // Initially, the CID is not set
+        assert!(dir.get_initial_load_cid().is_none());
+
+        // Store the directory
+        let stored_cid = dir.store().await?;
+
+        // Load the directory
+        let loaded_dir = Dir::load(&stored_cid, store).await?;
+
+        // Now the initial load CID is set
+        assert_eq!(loaded_dir.get_initial_load_cid(), Some(&stored_cid));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_dir_get_previous() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let dir = Dir::new(store.clone());
+
+        // Initially, there's no previous version
+        assert!(dir.get_previous().is_none());
+
+        // Store the directory
+        let first_cid = dir.store().await?;
+
+        // Load the directory and create a new version
+        let mut loaded_dir = Dir::load(&first_cid, store.clone()).await?;
+        loaded_dir.put_entry("new_file", Cid::default().into())?;
+
+        // Store the new version
+        let second_cid = loaded_dir.store().await?;
+
+        // Load the new version
+        let new_version = Dir::load(&second_cid, store).await?;
+
+        // Now the previous and initial load CIDs are set
+        assert_eq!(new_version.get_previous(), Some(&first_cid));
+        assert_eq!(new_version.get_initial_load_cid(), Some(&second_cid));
 
         Ok(())
     }

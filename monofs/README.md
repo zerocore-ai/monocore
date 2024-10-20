@@ -11,7 +11,12 @@
   </p>
 </div>
 
-**`monofs`** is a powerful, distributed filesystem library designed for AI-driven sandboxed environments. It provides a simple and intuitive API for managing files and directories in a content-addressed storage system.
+**`monofs`** is a powerful, distributed filesystem designed for distributed workloads. It provides a simple and intuitive API for managing files and directories in a content-addressed storage system.
+
+> [!WARNING]
+> This project is in early development and is not yet ready for production use.
+
+##
 
 ## Features
 
@@ -19,6 +24,7 @@
 - Immutable data structures with copy-on-write semantics
 - Support for files, directories, and symbolic links
 - Asynchronous API for efficient I/O operations
+- Versioning support for tracking file and directory history
 
 ## Usage
 

@@ -1,4 +1,7 @@
-use std::{error::Error, fmt::Display};
+use std::{
+    error::Error,
+    fmt::{self, Display},
+};
 use thiserror::Error;
 
 use crate::oci::distribution::DockerRegistryResponseError;
@@ -117,6 +120,16 @@ impl MonocoreError {
     }
 }
 
+impl AnyError {
+    /// Downcasts the error to a `T`.
+    pub fn downcast<T>(&self) -> Option<&T>
+    where
+        T: Display + fmt::Debug + Send + Sync + 'static,
+    {
+        self.error.downcast_ref::<T>()
+    }
+}
+
 //--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------
@@ -138,7 +151,7 @@ impl PartialEq for AnyError {
 }
 
 impl Display for AnyError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.error)
     }
 }

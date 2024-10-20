@@ -108,8 +108,17 @@ impl<V> CidLink<V> {
     {
         match self {
             Self::Encoded { identifier, cached } => {
-                cached.get_or_try_init(V::load(identifier, store)).await?;
-                Ok(cached.get_mut().unwrap())
+                let value = if let Some(value) = cached.take() {
+                    value
+                } else {
+                    V::load(identifier, store).await?
+                };
+
+                // MUTATION SAFETY: When a mutable reference is requested, it usually means the
+                // CID might become stale after mutating the value.
+                *self = Self::Decoded(value);
+
+                Ok(self.get_value_mut().unwrap())
             }
             Self::Decoded(value) => Ok(value),
         }
