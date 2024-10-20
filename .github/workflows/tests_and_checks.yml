@@ -103,7 +103,7 @@ jobs:
       matrix:
         rust-toolchain:
           - stable
-          - nightly
+          # - nightly # Nightly Clippy having concussion again!
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
