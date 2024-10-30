@@ -34,7 +34,7 @@ use std::{fmt, str::FromStr};
 #[getset(get = "pub with_prefix")]
 pub struct EnvPair {
     /// The environment variable name.
-    var: String,
+    name: String,
 
     /// The value of the environment variable.
     value: String,
@@ -58,12 +58,12 @@ impl EnvPair {
     /// use monocore::runtime::EnvPair;
     ///
     /// let env_pair = EnvPair::new("HOME", "/home/user");
-    /// assert_eq!(env_pair.get_var(), "HOME");
+    /// assert_eq!(env_pair.get_name(), "HOME");
     /// assert_eq!(env_pair.get_value(), "/home/user");
     /// ```
-    pub fn new<S: Into<String>>(var: S, value: S) -> Self {
+    pub fn new<S: Into<String>>(name: S, value: S) -> Self {
         Self {
-            var: var.into(),
+            name: name.into(),
             value: value.into(),
         }
     }
@@ -92,7 +92,7 @@ impl FromStr for EnvPair {
 impl fmt::Display for EnvPair {
     /// Formats the environment variable pair following the format "<var>=<value>".
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}={}", self.var, self.value)
+        write!(f, "{}={}", self.name, self.value)
     }
 }
 
@@ -126,18 +126,18 @@ mod tests {
     #[test]
     fn test_env_pair_new() {
         let env_pair = EnvPair::new("VAR", "VALUE");
-        assert_eq!(env_pair.var, String::from("VAR"));
+        assert_eq!(env_pair.name, String::from("VAR"));
         assert_eq!(env_pair.value, String::from("VALUE"));
     }
 
     #[test]
     fn test_env_pair_from_str() -> anyhow::Result<()> {
         let env_pair: EnvPair = "VAR=VALUE".parse()?;
-        assert_eq!(env_pair.var, String::from("VAR"));
+        assert_eq!(env_pair.name, String::from("VAR"));
         assert_eq!(env_pair.value, String::from("VALUE"));
 
         let env_pair: EnvPair = "VAR=".parse()?;
-        assert_eq!(env_pair.var, String::from("VAR"));
+        assert_eq!(env_pair.name, String::from("VAR"));
         assert_eq!(env_pair.value, String::from(""));
 
         assert!("VAR".parse::<EnvPair>().is_err());
@@ -177,12 +177,12 @@ mod tests {
     #[test]
     fn test_env_pair_with_special_characters() -> anyhow::Result<()> {
         let env_pair: EnvPair = "VAR_WITH_UNDERSCORE=VALUE WITH SPACES".parse()?;
-        assert_eq!(env_pair.get_var(), "VAR_WITH_UNDERSCORE");
-        assert_eq!(env_pair.get_value(), "VALUE WITH SPACES");
+        assert_eq!(env_pair.name, "VAR_WITH_UNDERSCORE");
+        assert_eq!(env_pair.value, "VALUE WITH SPACES");
 
         let env_pair: EnvPair = "VAR.WITH.DOTS=VALUE_WITH_UNDERSCORE".parse()?;
-        assert_eq!(env_pair.get_var(), "VAR.WITH.DOTS");
-        assert_eq!(env_pair.get_value(), "VALUE_WITH_UNDERSCORE");
+        assert_eq!(env_pair.name, "VAR.WITH.DOTS");
+        assert_eq!(env_pair.value, "VALUE_WITH_UNDERSCORE");
 
         Ok(())
     }

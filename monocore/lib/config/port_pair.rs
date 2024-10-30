@@ -9,7 +9,7 @@ use crate::MonocoreError;
 //--------------------------------------------------------------------------------------------------
 
 /// A pair of ports to map between the host and the guest.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PortPair {
     /// The guest port and the host port are distinct.
     Distinct {

@@ -1,34 +1,49 @@
 //! If you are trying to run this example, please make sure to run `make example microvm_shell` from
 //! the `monocore` subdirectory
 
-use monocore::runtime::MicroVM;
+use anyhow::{Context, Result};
+use monocore::vm::MicroVm;
+use std::path::Path;
 
 //--------------------------------------------------------------------------------------------------
 // Function: main
 //--------------------------------------------------------------------------------------------------
 
-fn main() -> anyhow::Result<()> {
-    // Get the current architecture
-    let arch = get_current_arch();
+fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
 
     // Use the architecture-specific build directory
-    let rootfs_path = format!("build/rootfs-alpine-{}", arch);
+    let rootfs_path = format!("build/rootfs-alpine-{}", get_current_arch());
 
-    // Update the set_xattr call // TODO: Not sure how important this is
-    set_xattr(&rootfs_path, "user.containers.override_stat", b"0:0:0555")?;
+    // Check if rootfs exists
+    if !Path::new(&rootfs_path).exists() {
+        anyhow::bail!(
+            "Rootfs directory '{}' does not exist. Please run 'make unpack_rootfs' first.",
+            rootfs_path
+        );
+    }
 
-    // Build the microVM
-    let vm = MicroVM::builder()
+    // Update the set_xattr call
+    set_xattr(&rootfs_path, "user.containers.override_stat", b"0:0:0555")
+        .context("Failed to set xattr on rootfs")?;
+
+    // Build the MicroVm
+    let vm = MicroVm::builder()
         .root_path(&rootfs_path)
         .num_vcpus(2)
         .exec_path("/bin/sh")
         .rlimits(["RLIMIT_NOFILE=256:512".parse()?])
-        .env(["ALIEN_GREETING=Hello puny humans!".parse()?])
+        .env(["PATH=/bin".parse()?])
         .ram_mib(1024)
-        .build()?;
+        .build()
+        .context("Failed to build MicroVm")?;
 
-    // Start the microVM
-    vm.start();
+    // Start the MicroVm
+    tracing::info!("Starting MicroVm...");
+    vm.start()?;
+
+    // Since vm.start() spawns a thread, we need to wait for it
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     Ok(())
 }

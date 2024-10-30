@@ -10,7 +10,7 @@ use crate::MonocoreError;
 //--------------------------------------------------------------------------------------------------
 
 /// Represents a path on the host and the guest.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PathPair {
     /// The guest path and host path are distinct.
     Distinct {

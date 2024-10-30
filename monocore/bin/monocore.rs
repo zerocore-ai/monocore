@@ -5,11 +5,13 @@ use monocore::{
 };
 
 //--------------------------------------------------------------------------------------------------
-// Main
+// Function: main
 //--------------------------------------------------------------------------------------------------
 
 #[tokio::main]
 async fn main() -> MonocoreResult<()> {
+    tracing_subscriber::fmt::init();
+
     // Parse command line arguments
     match MonocoreArgs::parse().subcommand {
         Some(MonocoreSubcommand::Up { file, group }) => {
@@ -35,6 +37,15 @@ async fn main() -> MonocoreResult<()> {
         }
         Some(MonocoreSubcommand::Status {}) => {
             println!("status command coming soon");
+        }
+        Some(MonocoreSubcommand::Install {}) => {
+            println!("install command coming soon");
+        }
+        Some(MonocoreSubcommand::Init {}) => {
+            println!("init command coming soon");
+        }
+        Some(MonocoreSubcommand::Agent {}) => {
+            println!("agent command coming soon");
         }
         None => MonocoreArgs::command().print_help()?,
     }

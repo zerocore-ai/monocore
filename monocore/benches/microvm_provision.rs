@@ -1,3 +1,6 @@
+//! If you are trying to run this example, please make sure to run `make bench microvm_provision` from
+//! the `monocore` subdirectory
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::{process::Command, time::Duration};
 
@@ -5,7 +8,7 @@ use std::{process::Command, time::Duration};
 // Benchmark
 //--------------------------------------------------------------------------------------------------
 
-fn benchmark_microvm_nop(c: &mut Criterion) {
+fn benchmark_microvm_provision(c: &mut Criterion) {
     // First, execute the make command
     let make_status = Command::new("make")
         .args(&["example", "microvm_nop"])
@@ -29,7 +32,7 @@ fn benchmark_microvm_nop(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().sample_size(10).measurement_time(Duration::from_secs(10));
-    targets = benchmark_microvm_nop
+    config = Criterion::default().sample_size(10).measurement_time(Duration::from_secs(20));
+    targets = benchmark_microvm_provision
 }
 criterion_main!(benches);

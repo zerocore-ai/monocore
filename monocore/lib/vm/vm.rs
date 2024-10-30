@@ -4,12 +4,11 @@ use getset::Getters;
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
-    config::{PathPair, PortPair},
-    runtime::ffi,
+    config::{EnvPair, PathPair, PortPair},
     utils, InvalidMicroVMConfigError, MonocoreError, MonocoreResult,
 };
 
-use super::{EnvPair, LinuxRlimit, MicroVMBuilder};
+use super::{ffi, LinuxRlimit, MicroVmBuilder, MicroVmConfigBuilder};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -17,43 +16,43 @@ use super::{EnvPair, LinuxRlimit, MicroVMBuilder};
 
 /// A lightweight Linux virtual machine.
 #[derive(Debug, Getters)]
-pub struct MicroVM {
-    /// The context ID for the microVM.
+pub struct MicroVm {
+    /// The context ID for the MicroVm.
     ctx_id: u32,
 
-    /// The configuration for the microVM.
+    /// The configuration for the MicroVm.
     #[get = "pub with_prefix"]
-    config: MicroVMConfig,
+    config: MicroVmConfig,
 }
 
-/// A configuration for a microVM.
+/// A configuration for a MicroVm.
 #[derive(Debug)]
-pub struct MicroVMConfig {
-    /// The log level to use for the microVM.
+pub struct MicroVmConfig {
+    /// The log level to use for the MicroVm.
     pub log_level: LogLevel,
 
-    /// The path to the root directory for the microVM.
+    /// The path to the root directory for the MicroVm.
     pub root_path: PathBuf,
 
-    /// The number of vCPUs to use for the microVM.
+    /// The number of vCPUs to use for the MicroVm.
     pub num_vcpus: u8,
 
-    /// The amount of RAM in MiB to use for the microVM.
+    /// The amount of RAM in MiB to use for the MicroVm.
     pub ram_mib: u32,
 
-    /// The virtio-fs mounts to use for the microVM.
+    /// The virtio-fs mounts to use for the MicroVm.
     pub virtiofs: Vec<PathPair>,
 
-    /// The port map to use for the microVM.
+    /// The port map to use for the MicroVm.
     pub port_map: Vec<PortPair>,
 
-    /// The resource limits to use for the microVM.
+    /// The resource limits to use for the MicroVm.
     pub rlimits: Vec<LinuxRlimit>,
 
-    /// The working directory path to use for the microVM.
+    /// The working directory path to use for the MicroVm.
     pub workdir_path: Option<Utf8UnixPathBuf>,
 
-    /// The executable path to use for the microVM.
+    /// The executable path to use for the MicroVm.
     pub exec_path: Option<Utf8UnixPathBuf>,
 
     /// The arguments to pass to the executable.
@@ -62,11 +61,11 @@ pub struct MicroVMConfig {
     /// The environment variables to set for the executable.
     pub env: Vec<EnvPair>,
 
-    /// The console output path to use for the microVM.
+    /// The console output path to use for the MicroVm.
     pub console_output: Option<Utf8UnixPathBuf>,
 }
 
-/// The log level to use for the microVM.
+/// The log level to use for the MicroVm.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[repr(u32)]
 pub enum LogLevel {
@@ -94,9 +93,9 @@ pub enum LogLevel {
 // Methods
 //--------------------------------------------------------------------------------------------------
 
-impl MicroVM {
-    /// Creates a new microVM from a configuration.
-    pub fn from_config(config: MicroVMConfig) -> MonocoreResult<Self> {
+impl MicroVm {
+    /// Creates a new micro VM from a configuration.
+    pub fn from_config(config: MicroVmConfig) -> MonocoreResult<Self> {
         let ctx_id = Self::create_ctx();
 
         config.validate()?;
@@ -106,23 +105,30 @@ impl MicroVM {
         Ok(Self { ctx_id, config })
     }
 
-    /// Creates a builder for a microVM.
-    pub fn builder() -> MicroVMBuilder<(), ()> {
-        MicroVMBuilder::default()
+    /// Creates a builder for a micro VM.
+    pub fn builder() -> MicroVmBuilder<(), ()> {
+        MicroVmBuilder::default()
     }
 
-    /// Starts the microVM.
-    pub fn start(&self) {
-        Self::start_vm(self.ctx_id)
+    /// Starts the VM. This function will not return until the VM exits.
+    pub fn start(&self) -> MonocoreResult<i32> {
+        let ctx_id = self.ctx_id;
+        let status = unsafe { ffi::krun_start_enter(ctx_id) };
+        if status < 0 {
+            tracing::error!("Failed to start MicroVm: {}", status);
+            return Err(MonocoreError::StartVmFailed(status));
+        }
+        tracing::info!("MicroVm exited with status: {}", status);
+        Ok(status)
     }
 
     fn create_ctx() -> u32 {
         let ctx_id = unsafe { ffi::krun_create_ctx() };
-        assert!(ctx_id >= 0, "Failed to create microVM context: {}", ctx_id);
+        assert!(ctx_id >= 0, "Failed to create MicroVm context: {}", ctx_id);
         ctx_id as u32
     }
 
-    fn apply_config(ctx_id: u32, config: &MicroVMConfig) {
+    fn apply_config(ctx_id: u32, config: &MicroVmConfig) {
         // Set log level
         unsafe {
             let status = ffi::krun_set_log_level(config.log_level as u32);
@@ -247,17 +253,15 @@ impl MicroVM {
             }
         }
     }
-
-    fn start_vm(ctx_id: u32) {
-        unsafe {
-            let status = ffi::krun_start_enter(ctx_id);
-            assert!(status >= 0, "Failed to start microVM: {}", status);
-        }
-    }
 }
 
-impl MicroVMConfig {
-    /// Validates the microVM configuration.
+impl MicroVmConfig {
+    /// Creates a builder for a MicroVm configuration.
+    pub fn builder() -> MicroVmConfigBuilder<(), ()> {
+        MicroVmConfigBuilder::default()
+    }
+
+    /// Validates the MicroVm configuration.
     pub fn validate(&self) -> MonocoreResult<()> {
         if !self.root_path.exists() {
             return Err(MonocoreError::InvalidMicroVMConfig(
@@ -287,7 +291,7 @@ impl MicroVMConfig {
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
-impl Drop for MicroVM {
+impl Drop for MicroVm {
     fn drop(&mut self) {
         unsafe { ffi::krun_free_ctx(self.ctx_id) };
     }
@@ -296,3 +300,71 @@ impl Drop for MicroVM {
 //--------------------------------------------------------------------------------------------------
 // Tests
 //--------------------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use crate::config::DEFAULT_NUM_VCPUS;
+
+    use super::*;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_microvm_config_builder() {
+        let config = MicroVmConfig::builder()
+            .log_level(LogLevel::Info)
+            .root_path(PathBuf::from("/tmp"))
+            .ram_mib(512)
+            .build();
+
+        assert!(config.log_level == LogLevel::Info);
+        assert_eq!(config.root_path, PathBuf::from("/tmp"));
+        assert_eq!(config.ram_mib, 512);
+        assert_eq!(config.num_vcpus, DEFAULT_NUM_VCPUS);
+    }
+
+    #[test]
+    fn test_microvm_config_validation_success() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = MicroVmConfig::builder()
+            .log_level(LogLevel::Info)
+            .root_path(temp_dir.path().to_path_buf())
+            .ram_mib(512)
+            .build();
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_microvm_config_validation_failure_root_path() {
+        let config = MicroVmConfig::builder()
+            .log_level(LogLevel::Info)
+            .root_path(PathBuf::from("/non/existent/path"))
+            .ram_mib(512)
+            .build();
+
+        assert!(matches!(
+            config.validate(),
+            Err(MonocoreError::InvalidMicroVMConfig(
+                InvalidMicroVMConfigError::RootPathDoesNotExist(_)
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_microvm_config_validation_failure_zero_ram() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = MicroVmConfig::builder()
+            .log_level(LogLevel::Info)
+            .root_path(temp_dir.path().to_path_buf())
+            .ram_mib(0)
+            .build();
+
+        assert!(matches!(
+            config.validate(),
+            Err(MonocoreError::InvalidMicroVMConfig(
+                InvalidMicroVMConfigError::RamIsZero
+            ))
+        ));
+    }
+}

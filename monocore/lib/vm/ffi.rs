@@ -33,7 +33,7 @@ extern "C" {
     /// * `ctx_id` - The configuration context ID to free.
     pub(crate) fn krun_free_ctx(ctx_id: u32) -> i32;
 
-    /// Sets the basic configuration parameters for the microVM.
+    /// Sets the basic configuration parameters for the MicroVm.
     ///
     /// ## Arguments
     ///
@@ -42,7 +42,7 @@ extern "C" {
     /// * `ram_mib` - The amount of RAM in MiB.
     pub(crate) fn krun_set_vm_config(ctx_id: u32, num_vcpus: u8, ram_mib: u32) -> i32;
 
-    /// Sets the path to be use as root for the microVM. Not available in libkrun-SEV.
+    /// Sets the path to be use as root for the MicroVm. Not available in libkrun-SEV.
     ///
     /// ## Arguments
     ///
@@ -50,7 +50,7 @@ extern "C" {
     /// * `root_path` - The path to be used as root.
     pub(crate) fn krun_set_root(ctx_id: u32, root_path: *const c_char) -> i32;
 
-    /// Adds a disk image to be used as a general partition for the microVM.
+    /// Adds a disk image to be used as a general partition for the MicroVm.
     ///
     /// This API is mutually exclusive with the deprecated krun_set_root_disk and
     /// krun_set_data_disk methods and must not be used together.
@@ -135,7 +135,7 @@ extern "C" {
     #[allow(dead_code)]
     pub(crate) fn krun_set_net_mac(ctx_id: u32, c_mac: *const u8) -> i32;
 
-    /// Configures a map of host to guest TCP ports for the microVM.
+    /// Configures a map of host to guest TCP ports for the MicroVm.
     ///
     /// ## Arguments
     ///
@@ -197,7 +197,7 @@ extern "C" {
     ///   "<RESOURCE_NUMBER>=RLIM_CUR:RLIM_MAX" (e.g., "6=1024:1024").
     pub(crate) fn krun_set_rlimits(ctx_id: u32, c_rlimits: *const *const c_char) -> i32;
 
-    /// Sets the SMBIOS OEM strings for the microVM.
+    /// Sets the SMBIOS OEM strings for the MicroVm.
     ///
     /// ## Arguments
     ///
@@ -210,7 +210,7 @@ extern "C" {
         c_oem_strings: *const *const c_char,
     ) -> i32;
 
-    /// Sets the working directory for the executable to be run inside the microVM.
+    /// Sets the working directory for the executable to be run inside the MicroVm.
     ///
     /// ## Arguments
     ///
@@ -219,7 +219,7 @@ extern "C" {
     ///   "krun_set_root".
     pub(crate) fn krun_set_workdir(ctx_id: u32, c_workdir_path: *const c_char) -> i32;
 
-    /// Sets the path to the executable to be run inside the microVM, the arguments to be passed to
+    /// Sets the path to the executable to be run inside the MicroVm, the arguments to be passed to
     /// the executable, and the environment variables to be configured in the context of the
     /// executable.
     ///
@@ -257,7 +257,7 @@ extern "C" {
     /// present in the environment.
     pub(crate) fn krun_set_env(ctx_id: u32, c_envp: *const *const c_char) -> i32;
 
-    /// Sets the filepath to the TEE configuration file for the microVM. Only available in
+    /// Sets the filepath to the TEE configuration file for the MicroVm. Only available in
     /// libkrun-sev.
     ///
     /// ## Arguments
@@ -278,7 +278,7 @@ extern "C" {
     pub(crate) fn krun_add_vsock_port(ctx_id: u32, port: u32, c_filepath: *const c_char) -> i32;
 
     /// Gets the eventfd file descriptor to signal the guest to shut down orderly. This must be
-    /// called before starting the microVM with "krun_start_enter". Only available in libkrun-efi.
+    /// called before starting the MicroVm with "krun_start_enter". Only available in libkrun-efi.
     ///
     /// ## Arguments
     ///
@@ -290,7 +290,7 @@ extern "C" {
     #[allow(dead_code)]
     pub(crate) fn krun_get_shutdown_eventfd(ctx_id: u32) -> i32;
 
-    /// Sets the path to the file to write the console output for the microVM.
+    /// Sets the path to the file to write the console output for the MicroVm.
     ///
     /// ## Arguments
     ///
@@ -298,7 +298,7 @@ extern "C" {
     /// * `c_filepath` - The path of the file to write the console output.
     pub(crate) fn krun_set_console_output(ctx_id: u32, c_filepath: *const c_char) -> i32;
 
-    /// Starts and enters the microVM with the configured parameters. The VMM will attempt to take over
+    /// Starts and enters the MicroVm with the configured parameters. The VMM will attempt to take over
     /// stdin/stdout to manage them on behalf of the process running inside the isolated environment,
     /// simulating that the latter has direct control of the terminal.
     ///
@@ -310,8 +310,8 @@ extern "C" {
     ///
     /// ## Returns
     ///
-    /// This function only returns if an error happens before starting the microVM. Otherwise, the
-    /// VMM assumes it has full control of the process, and will call to exit() once the microVM shuts
+    /// This function only returns if an error happens before starting the MicroVm. Otherwise, the
+    /// VMM assumes it has full control of the process, and will call to exit() once the MicroVm shuts
     /// down.
     pub(crate) fn krun_start_enter(ctx_id: u32) -> i32;
 }

@@ -68,8 +68,8 @@ pub enum MonocoreError {
     #[error("invalid environment variable pair: {0}")]
     InvalidEnvPair(String),
 
-    /// An error that occurred when an invalid microVM configuration was used.
-    #[error("invalid microVM configuration: {0}")]
+    /// An error that occurred when an invalid MicroVm configuration was used.
+    #[error("invalid MicroVm configuration: {0}")]
     InvalidMicroVMConfig(InvalidMicroVMConfigError),
 
     /// An error that occurred when an invalid resource limit format was used.
@@ -83,9 +83,70 @@ pub enum MonocoreError {
     /// An error that occurred when an invalid resource limit resource was used.
     #[error("invalid resource limit resource: {0}")]
     InvalidRLimitResource(String),
+
+    /// An error that occurred when a Serde JSON error occurred.
+    #[error("serde json error: {0}")]
+    SerdeJson(#[from] serde_json::Error),
+
+    /// An error that occurred when a configuration validation error occurred.
+    #[error("configuration validation error: {0}")]
+    ConfigValidation(String),
+
+    /// An error that occurs when trying to access group resources for a service that has no group
+    #[error("service '{0}' belongs to no group")]
+    ServiceBelongsToNoGroup(String),
+
+    /// An error that occurs when trying to access group resources for a service that belongs to a
+    /// different group.
+    #[error("service '{0}' belongs to wrong group: '{1}'")]
+    ServiceBelongsToWrongGroup(String, String),
+
+    /// An error that occurred when a channel send operation failed.
+    #[error("channel send error: {0}")]
+    ChannelSendError(#[from] tokio::sync::mpsc::error::SendError<()>),
+
+    /// An error that occurred when failed to get shutdown eventfd
+    #[error("failed to get shutdown eventfd: {0}")]
+    FailedToGetShutdownEventFd(i32),
+
+    /// An error that occurred when failed to write to shutdown eventfd
+    #[error("failed to write to shutdown eventfd: {0}")]
+    FailedToShutdown(String),
+
+    /// An error that occurred when failed to start VM
+    #[error("failed to start VM: {0}")]
+    FailedToStartVM(i32),
+
+    /// An error that occurred when invalid supervisor arguments were provided.
+    #[error("invalid supervisor arguments: {0}")]
+    InvalidSupervisorArgs(String),
+
+    /// An error that occurred when a service was not found
+    #[error("service not found: {0}")]
+    ServiceNotFound(String),
+
+    /// An error that occurred when a process ID could not be obtained
+    #[error("failed to get process ID for service: {0}")]
+    ProcessIdNotFound(String),
+
+    /// An error that occurred when a path does not exist
+    #[error("path does not exist: {0}")]
+    PathNotFound(String),
+
+    /// An error that occurred when a rootfs path does not exist
+    #[error("rootfs path does not exist: {0}")]
+    RootFsPathNotFound(String),
+
+    /// An error that occurred when the supervisor binary was not found
+    #[error("supervisor binary not found: {0}")]
+    SupervisorBinaryNotFound(String),
+
+    /// An error that occurred when failed to start VM
+    #[error("failed to start VM: {0}")]
+    StartVmFailed(i32),
 }
 
-/// An error that occurred when an invalid microVM configuration was used.
+/// An error that occurred when an invalid MicroVm configuration was used.
 #[derive(Debug, Error)]
 pub enum InvalidMicroVMConfigError {
     /// The root path does not exist.
