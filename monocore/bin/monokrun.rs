@@ -6,6 +6,8 @@ use monocore::{
     vm::MicroVm,
     MonocoreError, MonocoreResult,
 };
+use tokio::signal::unix::{signal, SignalKind};
+use tracing::info;
 
 //--------------------------------------------------------------------------------------------------
 // Function: main
@@ -64,13 +66,19 @@ pub async fn main() -> MonocoreResult<()> {
 
         // Create and start the supervisor
         let mut supervisor = Supervisor::new(service, group, rootfs_path).await?;
-        supervisor.start().await?;
 
-        // Wait for ctrl-c signal
-        tokio::signal::ctrl_c().await?;
+        // Set up signal handler for graceful shutdown
+        let mut term_signal = signal(SignalKind::terminate())?;
 
-        // Stop the supervisor gracefully
-        supervisor.stop().await?;
+        tokio::select! {
+            _ = supervisor.start() => {
+                info!("Supervisor exited normally");
+            }
+            _ = term_signal.recv() => {
+                info!("Received SIGTERM signal, initiating graceful shutdown");
+                supervisor.stop().await?;
+            }
+        }
 
         return Ok(());
     }

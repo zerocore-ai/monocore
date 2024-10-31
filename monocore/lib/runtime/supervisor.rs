@@ -7,7 +7,7 @@ use std::{
 
 use tokio::{
     fs::{self, File, OpenOptions},
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::AsyncWriteExt,
     process::Command,
     sync::broadcast,
     time,
@@ -100,7 +100,7 @@ impl Supervisor {
     }
 
     /// Creates a log file with proper permissions and rotation
-    async fn create_log_file(path: &Path) -> MonocoreResult<File> {
+    async fn _create_log_file(path: &Path) -> MonocoreResult<File> {
         // Rotate old log file if it exists
         if path.exists() {
             let backup_path = path.with_extension(format!(
@@ -168,46 +168,46 @@ impl Supervisor {
         self.save_runtime_state().await?;
 
         // Handle stdout
-        let stdout = child.stdout.take().unwrap();
-        let stdout_path = self.stdout_log_path.clone();
-        let stdout_handle = tokio::spawn(async move {
-            match Self::create_log_file(&stdout_path).await {
-                Ok(mut file) => {
-                    let mut reader = BufReader::new(stdout).lines();
-                    while let Ok(Some(line)) = reader.next_line().await {
-                        info!("[stdout] {}", line);
-                        if let Err(e) = file.write_all(format!("{}\n", line).as_bytes()).await {
-                            error!("Failed to write to stdout log: {}", e);
-                        }
-                        if let Err(e) = file.flush().await {
-                            error!("Failed to flush stdout log: {}", e);
-                        }
-                    }
-                }
-                Err(e) => error!("Failed to create stdout log file: {}", e),
-            }
-        });
+        // let stdout = child.stdout.take().unwrap();
+        // let stdout_path = self.stdout_log_path.clone();
+        // let stdout_handle = tokio::spawn(async move {
+        //     match Self::create_log_file(&stdout_path).await {
+        //         Ok(mut file) => {
+        //             let mut reader = BufReader::new(stdout).lines();
+        //             while let Ok(Some(line)) = reader.next_line().await {
+        //                 info!("[stdout] {}", line);
+        //                 // if let Err(e) = file.write_all(format!("{}\n", line).as_bytes()).await {
+        //                 //     error!("Failed to write to stdout log: {}", e);
+        //                 // }
+        //                 // if let Err(e) = file.flush().await {
+        //                 //     error!("Failed to flush stdout log: {}", e);
+        //                 // }
+        //             }
+        //         }
+        //         Err(e) => error!("Failed to create stdout log file: {}", e),
+        //     }
+        // });
 
-        // Handle stderr
-        let stderr = child.stderr.take().unwrap();
-        let stderr_path = self.stderr_log_path.clone();
-        let stderr_handle = tokio::spawn(async move {
-            match Self::create_log_file(&stderr_path).await {
-                Ok(mut file) => {
-                    let mut reader = BufReader::new(stderr).lines();
-                    while let Ok(Some(line)) = reader.next_line().await {
-                        error!("[stderr] {}", line);
-                        if let Err(e) = file.write_all(format!("{}\n", line).as_bytes()).await {
-                            error!("Failed to write to stderr log: {}", e);
-                        }
-                        if let Err(e) = file.flush().await {
-                            error!("Failed to flush stderr log: {}", e);
-                        }
-                    }
-                }
-                Err(e) => error!("Failed to create stderr log file: {}", e),
-            }
-        });
+        // // Handle stderr
+        // let stderr = child.stderr.take().unwrap();
+        // let stderr_path = self.stderr_log_path.clone();
+        // let stderr_handle = tokio::spawn(async move {
+        //     match Self::create_log_file(&stderr_path).await {
+        //         Ok(mut file) => {
+        //             let mut reader = BufReader::new(stderr).lines();
+        //             while let Ok(Some(line)) = reader.next_line().await {
+        //                 error!("[stderr] {}", line);
+        //                 // if let Err(e) = file.write_all(format!("{}\n", line).as_bytes()).await {
+        //                 //     error!("Failed to write to stderr log: {}", e);
+        //                 // }
+        //                 // if let Err(e) = file.flush().await {
+        //                 //     error!("Failed to flush stderr log: {}", e);
+        //                 // }
+        //             }
+        //         }
+        //         Err(e) => error!("Failed to create stderr log file: {}", e),
+        //     }
+        // });
 
         // Handle process lifecycle
         let mut shutdown_rx = self.shutdown_tx.subscribe();
@@ -218,13 +218,14 @@ impl Supervisor {
         tokio::spawn(async move {
             tokio::select! {
                 _ = shutdown_rx.recv() => {
+                    info!("Received shutdown signal, terminating micro VM process");
                     // Received shutdown signal, terminate the process
                     let _ = child.kill().await;
                 }
                 status = child.wait() => {
                     match status {
                         Ok(exit_status) => {
-                            info!("MicroVM process exited with status: {}", exit_status);
+                            info!("Micro VM process exited with status: {}", exit_status);
                             // Clean up files
                             for path in [runtime_state_path, stdout_path, stderr_path] {
                                 if let Err(e) = fs::remove_file(&path).await {
@@ -233,21 +234,21 @@ impl Supervisor {
                             }
                         }
                         Err(e) => {
-                            error!("Error waiting for MicroVM process: {}", e);
+                            error!("Error waiting for micro VM process: {}", e);
                         }
                     }
                 }
             }
 
-            // Ensure log tasks are cleaned up
-            stdout_handle.abort();
-            stderr_handle.abort();
+            // // Ensure log tasks are cleaned up
+            // stdout_handle.abort();
+            // stderr_handle.abort();
         });
 
         Ok(())
     }
 
-    /// Stops the supervised micro VM process.
+    /// Stops the supervised micro VM sub process.
     ///
     /// Sends a shutdown signal to the process and waits for it to terminate.
     pub async fn stop(&mut self) -> MonocoreResult<()> {
@@ -267,6 +268,7 @@ impl Supervisor {
             &self.stdout_log_path,
             &self.stderr_log_path,
         ] {
+            info!("Removing file: {}", path.display());
             if let Err(e) = fs::remove_file(path).await {
                 warn!("Failed to remove file {}: {}", path.display(), e);
             }

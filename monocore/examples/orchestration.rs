@@ -34,12 +34,26 @@ async fn main() -> anyhow::Result<()> {
     // Get status of all services
     println!("\nChecking service status...");
     let statuses = orchestrator.status().await?;
+
+    // Print table headers
+    println!(
+        "{:<15} {:<10} {:<15} {:<12} {:<14}",
+        "Service", "PID", "Status", "CPU Usage", "Memory Usage"
+    );
+    println!(
+        "{:-<15} {:-<10} {:-<15} {:-<12} {:-<14}",
+        "", "", "", "", ""
+    );
+
+    // Print each service status as a table row
     for status in statuses {
         println!(
-            "Service: {}, PID: {:?}, State: {:?}",
-            status.name,
-            status.pid,
-            status.state.get_status()
+            "{:<15} {:<10} {:<15} {:<12} {:<14}",
+            status.get_name(),
+            status.get_pid().unwrap_or(0),
+            format!("{:?}", status.get_state().get_status()),
+            status.get_state().get_metrics().get_cpu_usage(),
+            status.get_state().get_metrics().get_memory_usage()
         );
     }
 
@@ -75,7 +89,7 @@ fn create_test_config() -> anyhow::Result<Monocore> {
         .base("alpine:latest")
         .group("main")
         .command("/usr/bin/tail")
-        .argv(vec!["-f".to_string(), "/dev/null".to_string()])
+        .argv(["-f".to_string(), "/dev/null".to_string()])
         .build();
 
     // Create a service that runs 'sleep infinity' command (keeps running indefinitely)

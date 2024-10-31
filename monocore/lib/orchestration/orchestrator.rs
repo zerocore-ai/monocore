@@ -1,15 +1,15 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    process::Command as StdCommand,
 };
 
+use getset::Getters;
 use tokio::{
     fs,
     io::{AsyncBufReadExt, BufReader},
     process::{Child, Command},
 };
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     config::{Monocore, Service},
@@ -38,7 +38,8 @@ pub struct Orchestrator {
 }
 
 /// Status information for a service.
-#[derive(Debug)]
+#[derive(Debug, Getters)]
+#[getset(get = "pub with_prefix")]
 pub struct ServiceStatus {
     /// The name of the service.
     pub name: String,
@@ -114,9 +115,27 @@ impl Orchestrator {
         for service_name in services_to_stop {
             if let Some(pid) = self.running_services.remove(&service_name) {
                 // Check if process is still running before trying to stop it
-                if is_process_running(pid) {
+                if self.is_process_running(pid).await {
+                    info!(
+                        "Stopping supervisor for service {} (PID {})",
+                        service_name, pid
+                    );
                     if let Err(e) = self.stop_service(pid).await {
                         error!("Failed to stop service {}: {}", service_name, e);
+                    }
+
+                    // Wait for a reasonable time for the supervisor to clean up
+                    let mut attempts = 5;
+                    while attempts > 0 && self.is_process_running(pid).await {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        attempts -= 1;
+                    }
+
+                    if self.is_process_running(pid).await {
+                        warn!(
+                            "Service {} (PID {}) is taking longer than expected to stop",
+                            service_name, pid
+                        );
                     }
                 } else {
                     info!(
@@ -133,6 +152,7 @@ impl Orchestrator {
     /// Gets the status of all services.
     pub async fn status(&self) -> MonocoreResult<Vec<ServiceStatus>> {
         let mut statuses = Vec::new();
+        let mut stale_files = Vec::new();
 
         // Ensure directory exists before reading
         if !fs::try_exists(&*MICROVM_STATE_DIR).await? {
@@ -148,6 +168,14 @@ impl Orchestrator {
                 match fs::read_to_string(&path).await {
                     Ok(contents) => match serde_json::from_str::<MicroVmState>(&contents) {
                         Ok(state) => {
+                            // Check if the process is still running
+                            if let Some(pid) = state.get_pid() {
+                                if !self.is_process_running(*pid).await {
+                                    stale_files.push(path);
+                                    continue;
+                                }
+                            }
+
                             statuses.push(ServiceStatus {
                                 name: state.get_service().get_name().to_string(),
                                 pid: *state.get_pid(),
@@ -156,14 +184,21 @@ impl Orchestrator {
                         }
                         Err(e) => {
                             error!("Failed to parse state file {:?}: {}", path, e);
-                            continue;
+                            stale_files.push(path);
                         }
                     },
                     Err(e) => {
                         error!("Failed to read state file {:?}: {}", path, e);
-                        continue;
+                        stale_files.push(path);
                     }
                 }
+            }
+        }
+
+        // Clean up stale files
+        for path in stale_files {
+            if let Err(e) = fs::remove_file(&path).await {
+                warn!("Failed to remove stale state file {:?}: {}", path, e);
             }
         }
 
@@ -219,54 +254,76 @@ impl Orchestrator {
     /// Spawns tasks to handle the stdout and stderr of a child process
     fn spawn_output_handler(&self, mut child: Child, service_name: String) {
         // Handle stdout
-        if let Some(stdout) = child.stdout.take() {
-            let service_name = service_name.clone();
-            tokio::spawn(async move {
-                let mut reader = BufReader::new(stdout).lines();
-                while let Ok(Some(line)) = reader.next_line().await {
-                    info!("[{}/stdout] {}", service_name, line);
-                }
-            });
+        match child.stdout.take() {
+            Some(stdout) => {
+                let stdout_service_name = service_name.clone();
+                tokio::spawn(async move {
+                    let mut reader = BufReader::new(stdout).lines();
+                    while let Ok(Some(line)) = reader.next_line().await {
+                        info!("[{}/stdout] {}", stdout_service_name, line);
+                    }
+                });
+            }
+            None => {
+                warn!("Failed to capture stdout for service {}", service_name);
+            }
         }
 
         // Handle stderr
-        if let Some(stderr) = child.stderr.take() {
-            let service_name = service_name.clone();
-            tokio::spawn(async move {
-                let mut reader = BufReader::new(stderr).lines();
-                while let Ok(Some(line)) = reader.next_line().await {
-                    error!("[{}/stderr] {}", service_name, line);
-                }
-            });
+        match child.stderr.take() {
+            Some(stderr) => {
+                let stderr_service_name = service_name.clone();
+                tokio::spawn(async move {
+                    let mut reader = BufReader::new(stderr).lines();
+                    while let Ok(Some(line)) = reader.next_line().await {
+                        error!("[{}/stderr] {}", stderr_service_name, line);
+                    }
+                });
+            }
+            None => {
+                warn!("Failed to capture stderr for service {}", service_name);
+            }
         }
 
-        // Spawn a task to wait for the child process
+        // Wait for the child process
         tokio::spawn(async move {
             match child.wait().await {
-                Ok(status) => info!("Service {} exited with status: {}", service_name, status),
-                Err(e) => error!("Failed to wait for service {}: {}", service_name, e),
+                Ok(status) => {
+                    info!(
+                        "Service supervisor for {} exited with status: {}",
+                        service_name, status
+                    );
+                }
+                Err(e) => {
+                    error!("Failed to wait for service {}: {}", service_name, e);
+                }
             }
         });
     }
 
     /// Stops a service by its process ID.
     async fn stop_service(&self, pid: u32) -> MonocoreResult<()> {
+        // Send SIGTERM instead of SIGKILL to allow graceful shutdown
         Command::new("kill")
+            .arg("-TERM") // Use SIGTERM instead of default SIGKILL
             .arg(pid.to_string())
             .spawn()?
             .wait()
             .await?;
 
+        // Give the supervisor some time to clean up (optional)
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
         Ok(())
     }
-}
 
-/// Checks if a process with the given PID is still running
-fn is_process_running(pid: u32) -> bool {
-    // On Unix systems, sending signal 0 checks process existence without actually sending a signal
-    StdCommand::new("kill")
-        .arg("-0")
-        .arg(pid.to_string())
-        .status()
-        .map_or(false, |status| status.success())
+    /// Checks if a process with the given PID is still running
+    async fn is_process_running(&self, pid: u32) -> bool {
+        Command::new("kill")
+            .arg("-0")
+            .arg(pid.to_string())
+            .status()
+            .await
+            .map_or(false, |status| status.success())
+    }
 }

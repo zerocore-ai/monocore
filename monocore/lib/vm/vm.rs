@@ -115,16 +115,16 @@ impl MicroVm {
         let ctx_id = self.ctx_id;
         let status = unsafe { ffi::krun_start_enter(ctx_id) };
         if status < 0 {
-            tracing::error!("Failed to start MicroVm: {}", status);
+            tracing::error!("Failed to start micro VM: {}", status);
             return Err(MonocoreError::StartVmFailed(status));
         }
-        tracing::info!("MicroVm exited with status: {}", status);
+        tracing::info!("Micro VM exited with status: {}", status);
         Ok(status)
     }
 
     fn create_ctx() -> u32 {
         let ctx_id = unsafe { ffi::krun_create_ctx() };
-        assert!(ctx_id >= 0, "Failed to create MicroVm context: {}", ctx_id);
+        assert!(ctx_id >= 0, "Failed to create micro VM context: {}", ctx_id);
         ctx_id as u32
     }
 
