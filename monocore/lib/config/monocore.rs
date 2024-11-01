@@ -136,7 +136,7 @@ pub enum Service {
 
         /// The arguments to pass to the command.
         #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        argv: Vec<String>,
+        args: Vec<String>,
 
         /// The number of vCPUs to use.
         #[serde(default = "Monocore::default_num_vcpus")]
@@ -553,9 +553,9 @@ impl Service {
     }
 
     /// Returns the arguments to pass to the command.
-    pub fn get_argv(&self) -> Option<&[String]> {
+    pub fn get_args(&self) -> Option<&[String]> {
         match self {
-            Service::Default { argv, .. } => Some(argv),
+            Service::Default { args, .. } => Some(args),
             _ => None,
         }
     }
@@ -579,7 +579,7 @@ impl Default for Service {
             port: None,
             workdir: None,
             command: None,
-            argv: vec![],
+            args: vec![],
             cpus: Monocore::default_num_vcpus(),
             ram: Monocore::default_ram_mib(),
         }

@@ -156,6 +156,10 @@ pub enum MonocoreError {
     /// An error that occurred when failed to kill process
     #[error("Failed to kill process: {0}")]
     ProcessKillError(String),
+
+    /// An error that occurred when merging configurations
+    #[error("configuration merge error: {0}")]
+    ConfigMerge(String),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

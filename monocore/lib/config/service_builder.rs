@@ -22,7 +22,7 @@ pub struct ServiceDefaultBuilder<Name> {
     port: Option<PortPair>,
     workdir: Option<String>,
     command: Option<String>,
-    argv: Vec<String>,
+    args: Vec<String>,
     cpus: u8,
     ram: u32,
 }
@@ -117,8 +117,8 @@ impl<Name> ServiceDefaultBuilder<Name> {
     }
 
     /// Sets the command arguments for the service
-    pub fn argv(mut self, argv: impl IntoIterator<Item = String>) -> Self {
-        self.argv = argv.into_iter().collect();
+    pub fn args(mut self, args: impl IntoIterator<Item = String>) -> Self {
+        self.args = args.into_iter().collect();
         self
     }
 
@@ -148,7 +148,7 @@ impl<Name> ServiceDefaultBuilder<Name> {
             port: self.port,
             workdir: self.workdir,
             command: self.command,
-            argv: self.argv,
+            args: self.args,
             cpus: self.cpus,
             ram: self.ram,
         }
@@ -170,7 +170,7 @@ impl ServiceDefaultBuilder<String> {
             port: self.port,
             workdir: self.workdir,
             command: self.command,
-            argv: self.argv,
+            args: self.args,
             cpus: self.cpus,
             ram: self.ram,
         }
@@ -343,7 +343,7 @@ impl Default for ServiceDefaultBuilder<()> {
             port: None,
             workdir: None,
             command: None,
-            argv: vec![],
+            args: vec![],
             cpus: Monocore::default_num_vcpus(),
             ram: Monocore::default_ram_mib(),
         }
@@ -410,7 +410,7 @@ mod tests {
             .port("8080:80".parse()?)
             .workdir("/app")
             .command("./app")
-            .argv(vec!["--port".to_string(), "80".to_string()])
+            .args(vec!["--port".to_string(), "80".to_string()])
             .cpus(2)
             .ram(1024)
             .build();
@@ -428,7 +428,7 @@ mod tests {
                 port,
                 workdir,
                 command,
-                argv,
+                args,
                 cpus,
                 ram,
             } => {
@@ -443,7 +443,7 @@ mod tests {
                 assert_eq!(port, Some("8080:80".parse()?));
                 assert_eq!(workdir, Some("/app".to_string()));
                 assert_eq!(command, Some("./app".to_string()));
-                assert_eq!(argv, vec!["--port", "80"]);
+                assert_eq!(args, vec!["--port", "80"]);
                 assert_eq!(cpus, 2);
                 assert_eq!(ram, 1024);
             }
@@ -472,7 +472,7 @@ mod tests {
                 port,
                 workdir,
                 command,
-                argv,
+                args,
                 cpus,
                 ram,
             } => {
@@ -487,7 +487,7 @@ mod tests {
                 assert_eq!(port, None);
                 assert_eq!(workdir, None);
                 assert_eq!(command, None);
-                assert!(argv.is_empty());
+                assert!(args.is_empty());
                 assert_eq!(cpus, Monocore::default_num_vcpus());
                 assert_eq!(ram, Monocore::default_ram_mib());
             }

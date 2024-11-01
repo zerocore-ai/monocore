@@ -97,7 +97,7 @@ fn create_test_config() -> anyhow::Result<Monocore> {
         .base("alpine:latest")
         .group("main")
         .command("/usr/bin/tail")
-        .argv(["-f".to_string(), "/dev/null".to_string()])
+        .args(["-f".to_string(), "/dev/null".to_string()])
         .build();
 
     // Create a service that runs 'sleep infinity' command (keeps running indefinitely)
@@ -106,7 +106,7 @@ fn create_test_config() -> anyhow::Result<Monocore> {
         .base("alpine:latest")
         .group("main")
         .command("/bin/sleep")
-        .argv(vec!["infinity".to_string()])
+        .args(vec!["infinity".to_string()])
         .build();
 
     // Create the Monocore configuration

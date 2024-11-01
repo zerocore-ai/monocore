@@ -37,22 +37,21 @@ pub async fn main() -> MonocoreResult<()> {
     let args: Vec<_> = env::args().collect();
 
     // Check for subprocess mode first
-    if args.len() >= 6 && args[1] == "--run-microvm-subprocess" {
+    if args.len() >= 5 && args[1] == "--run-microvm-subprocess" {
         // Handle subprocess mode
         let service: Service = serde_json::from_str(&args[2])?;
         let env: Vec<EnvPair> = serde_json::from_str(&args[3])?;
-        let argv: Vec<String> = serde_json::from_str(&args[4])?;
-        let root_path = PathBuf::from(&args[5]);
+        let rootfs_path = PathBuf::from(&args[4]);
 
         // Set up micro VM options
         let microvm = MicroVm::builder()
-            .root_path(root_path)
+            .root_path(rootfs_path)
             .num_vcpus(service.get_cpus())
             .ram_mib(service.get_ram())
             .port_map(service.get_port().cloned().into_iter())
             .workdir_path(service.get_workdir().unwrap_or("/"))
             .exec_path(service.get_command().unwrap_or("/bin/sh"))
-            .argv(argv)
+            .argv(service.get_args().map(|v| v.to_vec()).unwrap_or_default())
             .env(env)
             .build()?;
 

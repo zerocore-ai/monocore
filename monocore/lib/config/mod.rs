@@ -2,6 +2,7 @@
 
 mod defaults;
 mod env_pair;
+mod merge;
 mod monocore;
 mod monocore_builder;
 mod path_pair;

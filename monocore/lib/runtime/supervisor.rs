@@ -166,7 +166,6 @@ impl Supervisor {
             .get_service()
             .get_group_env(self.state.get_group())?;
         let env_json = serde_json::to_string(&env_pairs)?;
-        let argv_json = serde_json::to_string(&self.state.get_service().get_argv())?;
         let rootfs_path = self.state.get_rootfs_path().to_str().unwrap();
 
         // Start the micro VM sub process
@@ -175,7 +174,6 @@ impl Supervisor {
                 "--run-microvm-subprocess",
                 &service_json,
                 &env_json,
-                &argv_json,
                 rootfs_path,
             ])
             .stdout(Stdio::piped())
