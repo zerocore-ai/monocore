@@ -427,7 +427,6 @@ mod tests {
 
     mod fixtures {
         use super::*;
-        use std::net::Ipv4Addr;
 
         pub fn create_test_service(name: &str) -> Service {
             Service::Default {
@@ -451,7 +450,6 @@ mod tests {
         pub fn create_test_group(name: &str) -> Group {
             Group {
                 name: name.to_string(),
-                address: std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                 volumes: vec![],
                 envs: vec![],
             }
@@ -460,13 +458,13 @@ mod tests {
 
     #[test]
     fn test_monocore_validate_service_names_unique() {
-        let mut monocore = Monocore::builder()
-            .services(vec![
+        let mut monocore = Monocore {
+            services: vec![
                 fixtures::create_test_service("service1"),
                 fixtures::create_test_service("service2"),
-            ])
-            .groups(vec![])
-            .build();
+            ],
+            groups: vec![],
+        };
 
         let mut errors = Vec::new();
         let names = monocore.validate_service_names(&mut errors);
@@ -475,13 +473,13 @@ mod tests {
         assert!(errors.is_empty());
 
         // Test duplicate names
-        monocore = Monocore::builder()
-            .services(vec![
+        monocore = Monocore {
+            services: vec![
                 fixtures::create_test_service("service1"),
                 fixtures::create_test_service("service1"),
-            ])
-            .groups(vec![])
-            .build();
+            ],
+            groups: vec![],
+        };
 
         let mut errors = Vec::new();
         monocore.validate_service_names(&mut errors);
@@ -492,13 +490,13 @@ mod tests {
 
     #[test]
     fn test_monocore_validate_group_names_unique() {
-        let mut monocore = Monocore::builder()
-            .groups(vec![
+        let mut monocore = Monocore {
+            groups: vec![
                 fixtures::create_test_group("group1"),
                 fixtures::create_test_group("group2"),
-            ])
-            .services(vec![])
-            .build();
+            ],
+            services: vec![],
+        };
 
         let mut errors = Vec::new();
         let names = monocore.validate_group_names(&mut errors);
@@ -507,13 +505,13 @@ mod tests {
         assert!(errors.is_empty());
 
         // Test duplicate names
-        monocore = Monocore::builder()
-            .groups(vec![
+        monocore = Monocore {
+            groups: vec![
                 fixtures::create_test_group("group1"),
                 fixtures::create_test_group("group1"),
-            ])
-            .services(vec![])
-            .build();
+            ],
+            services: vec![],
+        };
 
         let mut errors = Vec::new();
         monocore.validate_group_names(&mut errors);
@@ -529,10 +527,10 @@ mod tests {
             *group = Some("test-group".to_string());
         }
 
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![fixtures::create_test_group("test-group")])
-            .build();
+        let monocore = Monocore {
+            services: vec![service],
+            groups: vec![fixtures::create_test_group("test-group")],
+        };
 
         let mut errors = Vec::new();
         let group_names = monocore.validate_group_names(&mut errors);
@@ -546,10 +544,10 @@ mod tests {
             *group = Some("non-existent".to_string());
         }
 
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![fixtures::create_test_group("test-group")])
-            .build();
+        let monocore = Monocore {
+            services: vec![service],
+            groups: vec![fixtures::create_test_group("test-group")],
+        };
 
         let mut errors = Vec::new();
         let group_names = monocore.validate_group_names(&mut errors);
@@ -576,10 +574,10 @@ mod tests {
             *group = Some("test-group".to_string());
         }
 
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![group])
-            .build();
+        let monocore = Monocore {
+            services: vec![service],
+            groups: vec![group],
+        };
 
         let mut errors = Vec::new();
         let volume_map = monocore.build_volume_group_map();
@@ -602,10 +600,10 @@ mod tests {
             *group = Some("test-group".to_string());
         }
 
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![group])
-            .build();
+        let monocore = Monocore {
+            services: vec![service],
+            groups: vec![group],
+        };
 
         let mut errors = Vec::new();
         let env_map = monocore.build_env_group_map();
@@ -623,10 +621,10 @@ mod tests {
 
         let service2 = fixtures::create_test_service("service2");
 
-        let monocore = Monocore::builder()
-            .services(vec![service1, service2])
-            .groups(vec![])
-            .build();
+        let monocore = Monocore {
+            services: vec![service1, service2],
+            groups: vec![],
+        };
 
         let mut errors = Vec::new();
         let service_names = monocore.validate_service_names(&mut errors);
@@ -640,10 +638,10 @@ mod tests {
             *depends_on = vec!["non-existent".to_string()];
         }
 
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![])
-            .build();
+        let monocore = Monocore {
+            services: vec![service],
+            groups: vec![],
+        };
 
         let mut errors = Vec::new();
         let service_names = monocore.validate_service_names(&mut errors);
@@ -665,10 +663,10 @@ mod tests {
             *command = None;
         }
 
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![])
-            .build();
+        let monocore = Monocore {
+            services: vec![service],
+            groups: vec![],
+        };
 
         let mut errors = Vec::new();
         monocore.validate_service_specific_config(&monocore.services[0], &mut errors);
@@ -690,10 +688,10 @@ mod tests {
             ram: Monocore::default_ram_mib(),
         };
 
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![])
-            .build();
+        let monocore = Monocore {
+            services: vec![service],
+            groups: vec![],
+        };
 
         let mut errors = Vec::new();
         monocore.validate_service_specific_config(&monocore.services[0], &mut errors);
@@ -719,10 +717,10 @@ mod tests {
             *depends_on = vec!["service1".to_string()];
         }
 
-        let monocore = Monocore::builder()
-            .services(vec![service1, service2, service3])
-            .groups(vec![])
-            .build();
+        let monocore = Monocore {
+            services: vec![service1, service2, service3],
+            groups: vec![],
+        };
 
         let result = monocore.check_circular_dependencies();
         assert!(result.is_err());
@@ -740,10 +738,10 @@ mod tests {
             *envs = vec!["env1".to_string(), "env1".to_string()];
         }
 
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![])
-            .build();
+        let monocore = Monocore {
+            services: vec![service],
+            groups: vec![],
+        };
 
         let mut errors = Vec::new();
         monocore.validate_service_declarations(&monocore.services[0], &mut errors);
@@ -765,10 +763,10 @@ mod tests {
             ];
         }
 
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![])
-            .build();
+        let monocore = Monocore {
+            services: vec![service],
+            groups: vec![],
+        };
 
         let mut errors = Vec::new();
         monocore.validate_service_declarations(&monocore.services[0], &mut errors);
@@ -781,10 +779,10 @@ mod tests {
             *depends_on = vec!["dep1".to_string(), "dep1".to_string()];
         }
 
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![])
-            .build();
+        let monocore = Monocore {
+            services: vec![service],
+            groups: vec![],
+        };
 
         let mut errors = Vec::new();
         monocore.validate_service_declarations(&monocore.services[0], &mut errors);

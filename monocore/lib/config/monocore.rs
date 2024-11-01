@@ -1,6 +1,6 @@
 //! Monocore configuration types and helpers.
 
-use std::{collections::HashMap, net::IpAddr};
+use std::collections::HashMap;
 
 use getset::{Getters, Setters};
 use serde::{Deserialize, Serialize};
@@ -10,8 +10,8 @@ use uuid::Uuid;
 use crate::{MonocoreError, MonocoreResult};
 
 use super::{
-    EnvPair, PathPair, PortPair, ServiceDefaultBuilder, ServiceHttpHandlerBuilder,
-    ServicePrecursorBuilder, DEFAULT_NUM_VCPUS, DEFAULT_RAM_MIB,
+    monocore_builder::MonocoreBuilder, EnvPair, PathPair, PortPair, ServiceDefaultBuilder,
+    ServiceHttpHandlerBuilder, ServicePrecursorBuilder, DEFAULT_NUM_VCPUS, DEFAULT_RAM_MIB,
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -19,7 +19,7 @@ use super::{
 //--------------------------------------------------------------------------------------------------
 
 /// The monocore configuration.
-#[derive(Debug, Clone, Deserialize, Serialize, TypedBuilder, PartialEq, Getters, Setters)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Getters, Setters)]
 #[getset(get = "pub with_prefix")]
 pub struct Monocore {
     /// The services to run.
@@ -28,7 +28,6 @@ pub struct Monocore {
 
     /// The groups to run the services in.
     #[serde(rename = "group", skip_serializing_if = "Vec::is_empty", default)]
-    #[builder(default)]
     pub(super) groups: Vec<Group>,
 }
 
@@ -38,9 +37,6 @@ pub struct Monocore {
 pub struct Group {
     /// The name of the group.
     pub(super) name: String,
-
-    /// The address of the group.
-    pub(super) address: IpAddr,
 
     /// The volumes to mount.
     #[serde(rename = "volume", skip_serializing_if = "Vec::is_empty", default)]
@@ -230,6 +226,26 @@ pub enum Service {
 impl Monocore {
     /// The maximum service dependency chain length.
     pub const MAX_DEPENDENCY_DEPTH: usize = 32;
+
+    /// Creates a new builder for a Monocore configuration.
+    ///
+    /// This builder provides a fluent interface for configuring and creating a Monocore configuration.
+    /// The builder validates the configuration during build to ensure it is valid.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use monocore::config::Monocore;
+    ///
+    /// let monocore = Monocore::builder()
+    ///     .services(vec![])
+    ///     .groups(vec![])
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn builder() -> MonocoreBuilder {
+        MonocoreBuilder::default()
+    }
 
     /// Returns the default number of vCPUs.
     pub fn default_num_vcpus() -> u8 {
@@ -667,7 +683,6 @@ mod tests {
             ])
             .groups(vec![Group::builder()
                 .name("app".to_string())
-                .address("10.0.0.1".parse()?)
                 .volumes(vec![GroupVolume::builder()
                     .name("main".to_string())
                     .path("~/Desktop/project".to_string())
@@ -680,7 +695,7 @@ mod tests {
                     ])
                     .build()])
                 .build()])
-            .build();
+            .build()?;
 
         assert_eq!(config, expected_monocore);
 
@@ -726,7 +741,6 @@ mod tests {
             "group": [
                 {
                     "name": "app",
-                    "address": "10.0.0.1",
                     "volume": [
                         {
                             "name": "main",
@@ -785,7 +799,6 @@ mod tests {
             ])
             .groups(vec![Group::builder()
                 .name("app".to_string())
-                .address("10.0.0.1".parse()?)
                 .volumes(vec![GroupVolume::builder()
                     .name("main".to_string())
                     .path("~/Desktop/project".to_string())
@@ -798,7 +811,7 @@ mod tests {
                     ])
                     .build()])
                 .build()])
-            .build();
+            .build()?;
 
         assert_eq!(config, expected_monocore);
 
@@ -809,7 +822,6 @@ mod tests {
     fn test_monocore_config_get_group_env() -> anyhow::Result<()> {
         let group = Group::builder()
             .name("test-group".to_string())
-            .address("127.0.0.1".parse()?)
             .volumes(vec![])
             .envs(vec![GroupEnv::builder()
                 .name("test-env".to_string())
@@ -820,7 +832,7 @@ mod tests {
         let monocore = Monocore::builder()
             .services(vec![])
             .groups(vec![group])
-            .build();
+            .build()?;
 
         // Test finding env in specific group
         let env = monocore.get_group_env("test-env", "test-group");
@@ -842,7 +854,6 @@ mod tests {
     fn test_monocore_config_get_group_volume() -> anyhow::Result<()> {
         let group = Group::builder()
             .name("test-group".to_string())
-            .address("127.0.0.1".parse()?)
             .volumes(vec![GroupVolume::builder()
                 .name("test-volume".to_string())
                 .path("/test".to_string())
@@ -853,7 +864,7 @@ mod tests {
         let monocore = Monocore::builder()
             .services(vec![])
             .groups(vec![group])
-            .build();
+            .build()?;
 
         // Test finding volume in specific group
         let volume = monocore.get_group_volume("test-volume", "test-group");
@@ -875,7 +886,6 @@ mod tests {
     fn test_monocore_config_get_service_envs() -> anyhow::Result<()> {
         let group = Group::builder()
             .name("test-group".to_string())
-            .address("127.0.0.1".parse()?)
             .volumes(vec![])
             .envs(vec![GroupEnv::builder()
                 .name("test-env".to_string())
@@ -888,6 +898,7 @@ mod tests {
 
         let service = Service::builder_default()
             .name("test-service")
+            .command("/bin/sleep")
             .group("test-group")
             .envs(vec!["test-env".to_string()])
             .build();
@@ -895,7 +906,7 @@ mod tests {
         let monocore = Monocore::builder()
             .services(vec![service])
             .groups(vec![group])
-            .build();
+            .build()?;
 
         let envs = monocore.get_service_envs(&monocore.services[0])?;
         assert_eq!(envs.len(), 2);
@@ -911,13 +922,13 @@ mod tests {
     fn test_monocore_config_get_service_envs_no_group() -> anyhow::Result<()> {
         let service = Service::builder_default()
             .name("test-service")
-            .envs(vec!["test-env".to_string()])
+            .command("/bin/sleep")
             .build();
 
         let monocore = Monocore::builder()
             .services(vec![service])
             .groups(vec![])
-            .build();
+            .build()?;
 
         let result = monocore.get_service_envs(&monocore.services[0]);
         assert!(matches!(
@@ -932,7 +943,6 @@ mod tests {
     fn test_monocore_config_get_service_volumes() -> anyhow::Result<()> {
         let group = Group::builder()
             .name("test-group".to_string())
-            .address("127.0.0.1".parse()?)
             .volumes(vec![GroupVolume::builder()
                 .name("test-volume".to_string())
                 .path("/test".to_string())
@@ -942,6 +952,7 @@ mod tests {
 
         let service = Service::builder_default()
             .name("test-service")
+            .command("/bin/sleep")
             .group("test-group")
             .volumes(vec![ServiceVolume::builder()
                 .name("test-volume".to_string())
@@ -952,7 +963,7 @@ mod tests {
         let monocore = Monocore::builder()
             .services(vec![service])
             .groups(vec![group])
-            .build();
+            .build()?;
 
         let volumes = monocore.get_service_volumes(&monocore.services[0])?;
         assert_eq!(volumes.len(), 1);
@@ -966,16 +977,13 @@ mod tests {
     fn test_monocore_config_get_service_volumes_no_group() -> anyhow::Result<()> {
         let service = Service::builder_default()
             .name("test-service")
-            .volumes(vec![ServiceVolume::builder()
-                .name("test-volume".to_string())
-                .mount(PathPair::Same("/test".parse()?))
-                .build()])
+            .command("/bin/sleep")
             .build();
 
         let monocore = Monocore::builder()
             .services(vec![service])
             .groups(vec![])
-            .build();
+            .build()?;
 
         let result = monocore.get_service_volumes(&monocore.services[0]);
         assert!(matches!(

@@ -5,7 +5,7 @@ use monocore::{
     config::{Group, Monocore, Service},
     orchestration::{LogRetentionPolicy, Orchestrator},
 };
-use std::{net::Ipv4Addr, time::Duration};
+use std::time::Duration;
 use tokio::time;
 
 #[tokio::main]
@@ -89,10 +89,7 @@ fn get_current_arch() -> &'static str {
 // Create a simple test configuration that runs long-running Alpine Linux commands
 fn create_test_config() -> anyhow::Result<Monocore> {
     // Create the main group
-    let main_group = Group::builder()
-        .name("main".to_string())
-        .address(Ipv4Addr::new(172, 0, 0, 1).into())
-        .build();
+    let main_group = Group::builder().name("main".to_string()).build();
 
     // Create a service that runs 'tail -f /dev/null' command (keeps running indefinitely)
     let tail_service = Service::builder_default()
@@ -116,7 +113,7 @@ fn create_test_config() -> anyhow::Result<Monocore> {
     let config = Monocore::builder()
         .services(vec![tail_service, sleep_service])
         .groups(vec![main_group])
-        .build();
+        .build()?;
 
     Ok(config)
 }
