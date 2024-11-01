@@ -7,9 +7,10 @@ use std::{
 
 use tokio::{
     fs::{self, File, OpenOptions},
-    io::AsyncWriteExt,
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
     sync::broadcast,
+    task::JoinHandle,
     time,
 };
 
@@ -19,7 +20,7 @@ use crate::{
     config::{Group, Service},
     runtime::MicroVmStatus,
     utils::{MICROVM_LOG_DIR, MICROVM_STATE_DIR},
-    MonocoreResult,
+    MonocoreError, MonocoreResult,
 };
 
 use super::MicroVmState;
@@ -52,6 +53,8 @@ pub struct Supervisor {
 //--------------------------------------------------------------------------------------------------
 
 impl Supervisor {
+    const MAX_LOG_SIZE: u64 = 10 * 1024 * 1024; // 10MB max log size
+
     /// Creates a new  instance.
     ///
     /// # Arguments
@@ -100,23 +103,12 @@ impl Supervisor {
     }
 
     /// Creates a log file with proper permissions and rotation
-    async fn _create_log_file(path: &Path) -> MonocoreResult<File> {
-        // Rotate old log file if it exists
-        if path.exists() {
-            let backup_path = path.with_extension(format!(
-                "{}.old",
-                path.extension().unwrap_or_default().to_str().unwrap_or("")
-            ));
-            if let Err(e) = fs::rename(path, &backup_path).await {
-                warn!("Failed to rotate log file: {}", e);
-            }
-        }
-
+    async fn create_log_file(path: &Path) -> MonocoreResult<File> {
         // Create new log file with proper permissions
         let file = OpenOptions::new()
             .create(true)
             .write(true)
-            .truncate(true)
+            .append(true)
             .open(path)
             .await?;
 
@@ -127,13 +119,41 @@ impl Supervisor {
         Ok(file)
     }
 
+    /// Rotates the log file if it reaches a certain size
+    async fn rotate_log_if_needed(file: &File, path: &Path) -> MonocoreResult<()> {
+        let metadata = file.metadata().await?;
+        if metadata.len() > Self::MAX_LOG_SIZE {
+            // Ensure all data is written before rotation
+            file.sync_all().await?;
+
+            // Rotate old log file if it exists
+            let backup_path = path.with_extension(format!(
+                "{}.old",
+                path.extension().unwrap_or_default().to_str().unwrap_or("")
+            ));
+
+            // Remove old backup if it exists
+            if backup_path.exists() {
+                if let Err(e) = fs::remove_file(&backup_path).await {
+                    warn!("Failed to remove old backup log file: {}", e);
+                }
+            }
+
+            // Rename current log to backup
+            if let Err(e) = fs::rename(path, &backup_path).await {
+                warn!("Failed to rotate log file: {}", e);
+            }
+        }
+        Ok(())
+    }
+
     /// Starts the supervised micro VM process.
     ///
     /// This method:
     /// 1. Spawns the micro VM subprocess
     /// 2. Sets up stdout/stderr logging
     /// 3. Initializes process monitoring
-    pub async fn start(&mut self) -> MonocoreResult<()> {
+    pub async fn start(&mut self) -> MonocoreResult<JoinHandle<MonocoreResult<()>>> {
         self.state.set_status(MicroVmStatus::Starting);
         self.save_runtime_state().await?;
 
@@ -147,7 +167,7 @@ impl Supervisor {
             .get_group_env(self.state.get_group())?;
         let env_json = serde_json::to_string(&env_pairs)?;
         let argv_json = serde_json::to_string(&self.state.get_service().get_argv())?;
-        let rootfs_path = self.state.get_root_path().to_str().unwrap();
+        let rootfs_path = self.state.get_rootfs_path().to_str().unwrap();
 
         // Start the micro VM sub process
         let mut child = Command::new(current_exe)
@@ -168,84 +188,133 @@ impl Supervisor {
         self.save_runtime_state().await?;
 
         // Handle stdout
-        // let stdout = child.stdout.take().unwrap();
-        // let stdout_path = self.stdout_log_path.clone();
-        // let stdout_handle = tokio::spawn(async move {
-        //     match Self::create_log_file(&stdout_path).await {
-        //         Ok(mut file) => {
-        //             let mut reader = BufReader::new(stdout).lines();
-        //             while let Ok(Some(line)) = reader.next_line().await {
-        //                 info!("[stdout] {}", line);
-        //                 // if let Err(e) = file.write_all(format!("{}\n", line).as_bytes()).await {
-        //                 //     error!("Failed to write to stdout log: {}", e);
-        //                 // }
-        //                 // if let Err(e) = file.flush().await {
-        //                 //     error!("Failed to flush stdout log: {}", e);
-        //                 // }
-        //             }
-        //         }
-        //         Err(e) => error!("Failed to create stdout log file: {}", e),
-        //     }
-        // });
+        let stdout = child.stdout.take().unwrap();
+        let stdout_path = self.stdout_log_path.clone();
+        let stdout_handle = tokio::spawn(async move {
+            let mut file = match Self::create_log_file(&stdout_path).await {
+                Ok(f) => f,
+                Err(e) => {
+                    error!("Failed to create stdout log file: {}", e);
+                    return;
+                }
+            };
 
-        // // Handle stderr
-        // let stderr = child.stderr.take().unwrap();
-        // let stderr_path = self.stderr_log_path.clone();
-        // let stderr_handle = tokio::spawn(async move {
-        //     match Self::create_log_file(&stderr_path).await {
-        //         Ok(mut file) => {
-        //             let mut reader = BufReader::new(stderr).lines();
-        //             while let Ok(Some(line)) = reader.next_line().await {
-        //                 error!("[stderr] {}", line);
-        //                 // if let Err(e) = file.write_all(format!("{}\n", line).as_bytes()).await {
-        //                 //     error!("Failed to write to stderr log: {}", e);
-        //                 // }
-        //                 // if let Err(e) = file.flush().await {
-        //                 //     error!("Failed to flush stderr log: {}", e);
-        //                 // }
-        //             }
-        //         }
-        //         Err(e) => error!("Failed to create stderr log file: {}", e),
-        //     }
-        // });
+            let mut reader = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                // Check and rotate if needed
+                if let Err(e) = Self::rotate_log_if_needed(&file, &stdout_path).await {
+                    error!("Failed to rotate stdout log: {}", e);
+                }
+
+                // Reopen file if it was rotated
+                if !stdout_path.exists() {
+                    file = match Self::create_log_file(&stdout_path).await {
+                        Ok(f) => f,
+                        Err(e) => {
+                            error!("Failed to create new stdout log file after rotation: {}", e);
+                            return;
+                        }
+                    };
+                }
+
+                if let Err(e) = file.write_all(format!("{}\n", line).as_bytes()).await {
+                    error!("Failed to write to stdout log: {}", e);
+                }
+                if let Err(e) = file.flush().await {
+                    error!("Failed to flush stdout log: {}", e);
+                }
+            }
+        });
+
+        // Handle stderr
+        let stderr = child.stderr.take().unwrap();
+        let stderr_path = self.stderr_log_path.clone();
+        let stderr_handle = tokio::spawn(async move {
+            let mut file = match Self::create_log_file(&stderr_path).await {
+                Ok(f) => f,
+                Err(e) => {
+                    error!("Failed to create stderr log file: {}", e);
+                    return;
+                }
+            };
+
+            let mut reader = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                // Check and rotate if needed
+                if let Err(e) = Self::rotate_log_if_needed(&file, &stderr_path).await {
+                    error!("Failed to rotate stderr log: {}", e);
+                }
+
+                // Reopen file if it was rotated
+                if !stderr_path.exists() {
+                    file = match Self::create_log_file(&stderr_path).await {
+                        Ok(f) => f,
+                        Err(e) => {
+                            error!("Failed to create new stderr log file after rotation: {}", e);
+                            return;
+                        }
+                    };
+                }
+
+                if let Err(e) = file.write_all(format!("{}\n", line).as_bytes()).await {
+                    error!("Failed to write to stderr log: {}", e);
+                }
+                if let Err(e) = file.flush().await {
+                    error!("Failed to flush stderr log: {}", e);
+                }
+            }
+        });
 
         // Handle process lifecycle
         let mut shutdown_rx = self.shutdown_tx.subscribe();
         let runtime_state_path = self.runtime_state_path.clone();
-        let stdout_path = self.stdout_log_path.clone();
-        let stderr_path = self.stderr_log_path.clone();
-
-        tokio::spawn(async move {
-            tokio::select! {
+        let handle = tokio::spawn(async move {
+            let result = tokio::select! {
                 _ = shutdown_rx.recv() => {
-                    info!("Received shutdown signal, terminating micro VM process");
                     // Received shutdown signal, terminate the process
+                    info!("Received shutdown signal, terminating micro VM process");
                     let _ = child.kill().await;
+                    Ok(())
                 }
                 status = child.wait() => {
                     match status {
                         Ok(exit_status) => {
-                            info!("Micro VM process exited with status: {}", exit_status);
-                            // Clean up files
-                            for path in [runtime_state_path, stdout_path, stderr_path] {
-                                if let Err(e) = fs::remove_file(&path).await {
-                                    warn!("Failed to remove file {}: {}", path.display(), e);
-                                }
+                            // Clean up runtime state file if it still exists
+                            info!(
+                                "Removing runtime state file: {}",
+                                runtime_state_path.display()
+                            );
+
+                            if let Err(e) = fs::remove_file(&runtime_state_path).await {
+                                warn!(
+                                    "Failed to remove runtime state file {}: {}",
+                                    runtime_state_path.display(),
+                                    e
+                                );
                             }
+
+                            info!(
+                                "Micro VM process exited with status, cleaning up: {}",
+                                exit_status
+                            );
+                            Ok(())
                         }
                         Err(e) => {
                             error!("Error waiting for micro VM process: {}", e);
+                            Err(MonocoreError::ProcessWaitError(e.to_string()))
                         }
                     }
                 }
-            }
+            };
 
-            // // Ensure log tasks are cleaned up
-            // stdout_handle.abort();
-            // stderr_handle.abort();
+            // Ensure log tasks are cleaned up
+            stdout_handle.abort();
+            stderr_handle.abort();
+
+            result
         });
 
-        Ok(())
+        Ok(handle)
     }
 
     /// Stops the supervised micro VM sub process.
@@ -262,16 +331,18 @@ impl Supervisor {
         // Wait a bit for the process to clean up
         time::sleep(time::Duration::from_secs(1)).await;
 
-        // Clean up files if they still exist
-        for path in [
-            &self.runtime_state_path,
-            &self.stdout_log_path,
-            &self.stderr_log_path,
-        ] {
-            info!("Removing file: {}", path.display());
-            if let Err(e) = fs::remove_file(path).await {
-                warn!("Failed to remove file {}: {}", path.display(), e);
-            }
+        // Clean up runtime state file if it still exists
+        info!(
+            "Removing runtime state file: {}",
+            self.runtime_state_path.display()
+        );
+
+        if let Err(e) = fs::remove_file(&self.runtime_state_path).await {
+            warn!(
+                "Failed to remove runtime state file {}: {}",
+                self.runtime_state_path.display(),
+                e
+            );
         }
 
         self.state

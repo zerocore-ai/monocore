@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 //--------------------------------------------------------------------------------------------------
 // Constants
 //--------------------------------------------------------------------------------------------------
@@ -7,3 +9,6 @@ pub const DEFAULT_NUM_VCPUS: u8 = 1;
 
 /// The default amount of RAM in MiB to use for the MicroVm.
 pub const DEFAULT_RAM_MIB: u32 = 1024;
+
+/// Default maximum age for log files (7 days)
+pub const DEFAULT_LOG_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);

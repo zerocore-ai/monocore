@@ -7,7 +7,7 @@ use monocore::{
     MonocoreError, MonocoreResult,
 };
 use tokio::signal::unix::{signal, SignalKind};
-use tracing::info;
+use tracing::{error, info};
 
 //--------------------------------------------------------------------------------------------------
 // Function: main
@@ -30,7 +30,9 @@ use tracing::info;
 /// ```
 #[tokio::main]
 pub async fn main() -> MonocoreResult<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stdout)
+        .init();
 
     let args: Vec<_> = env::args().collect();
 
@@ -70,9 +72,21 @@ pub async fn main() -> MonocoreResult<()> {
         // Set up signal handler for graceful shutdown
         let mut term_signal = signal(SignalKind::terminate())?;
 
+        // Start the supervisor and get the join handle
+        let supervisor_handle = supervisor.start().await?;
+
         tokio::select! {
-            _ = supervisor.start() => {
-                info!("Supervisor exited normally");
+            result = supervisor_handle => {
+                match result {
+                    Ok(result) => {
+                        info!("Supervisor exited normally");
+                        result?;
+                    }
+                    Err(e) => {
+                        error!("Supervisor task failed: {}", e);
+                        return Err(MonocoreError::SupervisorError(e.to_string()));
+                    }
+                }
             }
             _ = term_signal.recv() => {
                 info!("Received SIGTERM signal, initiating graceful shutdown");

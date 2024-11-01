@@ -144,6 +144,18 @@ pub enum MonocoreError {
     /// An error that occurred when failed to start VM
     #[error("failed to start VM: {0}")]
     StartVmFailed(i32),
+
+    /// An error that occurred when waiting for a process to exit
+    #[error("process wait error: {0}")]
+    ProcessWaitError(String),
+
+    /// An error that occurred when the supervisor task failed
+    #[error("supervisor error: {0}")]
+    SupervisorError(String),
+
+    /// An error that occurred when failed to kill process
+    #[error("Failed to kill process: {0}")]
+    ProcessKillError(String),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

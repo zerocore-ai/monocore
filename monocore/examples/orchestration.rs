@@ -3,9 +3,9 @@
 
 use monocore::{
     config::{Group, Monocore, Service},
-    orchestration::Orchestrator,
+    orchestration::{LogRetentionPolicy, Orchestrator},
 };
-use std::net::Ipv4Addr;
+use std::{net::Ipv4Addr, time::Duration};
 use tokio::time;
 
 #[tokio::main]
@@ -21,15 +21,26 @@ async fn main() -> anyhow::Result<()> {
     // Create a test configuration
     let config = create_test_config()?;
 
-    // Create an orchestrator instance with supervisor path
-    let mut orchestrator = Orchestrator::new(config, rootfs_path, supervisor_path).await?;
+    // Alternatively, use the convenience method
+    let log_retention_policy = LogRetentionPolicy::with_max_age_weeks(1);
+
+    let mut orchestrator = Orchestrator::with_log_retention_policy(
+        config,
+        rootfs_path,
+        supervisor_path,
+        log_retention_policy,
+    )
+    .await?;
+
+    // You can also manually trigger log cleanup
+    orchestrator.cleanup_old_logs().await?;
 
     // Start all services
     println!("Starting all services...");
     orchestrator.up(None).await?;
 
     // Wait for a moment to let services start
-    time::sleep(time::Duration::from_secs(2)).await;
+    time::sleep(Duration::from_secs(60)).await;
 
     // Get status of all services
     println!("\nChecking service status...");

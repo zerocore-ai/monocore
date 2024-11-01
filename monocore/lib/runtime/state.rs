@@ -30,7 +30,7 @@ pub struct MicroVmState {
     group: Group,
 
     /// The path to the rootfs of the micro VM OS.
-    root_path: PathBuf,
+    rootfs_path: PathBuf,
 
     /// The status of the micro VM sub process.
     status: MicroVmStatus,
@@ -84,14 +84,14 @@ pub struct MicroVmMetrics {
 
 impl MicroVmState {
     /// Creates a new micro VM state.
-    pub fn new(service: Service, group: Group, root_path: impl AsRef<Path>) -> Self {
+    pub fn new(service: Service, group: Group, rootfs_path: impl AsRef<Path>) -> Self {
         Self {
             pid: None,
             created_at: Utc::now(),
             modified_at: Utc::now(),
             service,
             group,
-            root_path: root_path.as_ref().into(),
+            rootfs_path: rootfs_path.as_ref().into(),
             status: MicroVmStatus::Unstarted,
             metrics: MicroVmMetrics::default(),
         }
