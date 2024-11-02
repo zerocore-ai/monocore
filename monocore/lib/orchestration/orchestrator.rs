@@ -81,10 +81,8 @@ pub struct ServiceStatus {
 //--------------------------------------------------------------------------------------------------
 
 impl Orchestrator {
-    /// Creates a new Orchestrator instance with custom log retention policy, allowing
-    /// fine-grained control over how service logs are managed.
+    /// Creates a new Orchestrator instance with custom log retention policy
     pub async fn with_log_retention_policy(
-        config: Monocore,
         rootfs_path: impl AsRef<Path>,
         supervisor_path: impl AsRef<Path>,
         log_retention_policy: LogRetentionPolicy,
@@ -101,7 +99,7 @@ impl Orchestrator {
         }
 
         Ok(Self {
-            config,
+            config: Monocore::default(),
             rootfs_path: rootfs_path.as_ref().to_path_buf(),
             supervisor_path,
             running_services: HashMap::new(),
@@ -109,61 +107,50 @@ impl Orchestrator {
         })
     }
 
-    /// Creates a new Orchestrator instance with default log retention policy.
+    /// Creates a new Orchestrator instance with default log retention policy
     pub async fn new(
-        config: Monocore,
         rootfs_path: impl AsRef<Path>,
         supervisor_path: impl AsRef<Path>,
     ) -> MonocoreResult<Self> {
-        Self::with_log_retention_policy(
-            config,
-            rootfs_path,
-            supervisor_path,
-            LogRetentionPolicy::default(),
-        )
-        .await
+        Self::with_log_retention_policy(rootfs_path, supervisor_path, LogRetentionPolicy::default())
+            .await
     }
 
-    /// Starts services according to the configuration. Can start either a single specified
-    /// service or all configured services. Performs log cleanup if automatic cleanup is enabled.
-    ///
-    /// The service_name parameter controls which services to start:
-    /// - When None: starts all services defined in the configuration
-    /// - When Some(name): starts only the specified service, returning an error if the service is not found
-    pub async fn up(&mut self, service_name: Option<&str>) -> MonocoreResult<()> {
+    /// Starts or updates services according to the provided configuration.
+    /// Merges the new config with existing config and starts/restarts changed services.
+    pub async fn up(&mut self, new_config: Monocore) -> MonocoreResult<()> {
         if self.log_retention_policy.auto_cleanup {
             if let Err(e) = self.cleanup_old_logs().await {
                 warn!("Failed to clean up old logs during startup: {}", e);
             }
         }
 
-        let services_to_start: Vec<Service> = match service_name {
-            Some(name) => {
-                let service = self
-                    .config
-                    .get_services()
-                    .iter()
-                    .find(|s| s.get_name() == name)
-                    .ok_or_else(|| MonocoreError::ServiceNotFound(name.to_string()))?;
-                vec![service.clone()]
-            }
-            None => self.config.get_services().to_vec(),
-        };
+        // Clone current config to avoid borrowing issues
+        let current_config = self.config.clone();
 
-        for service in services_to_start {
-            self.start_service(&service).await?;
+        // Get the services that changed or were added
+        let changed_services = current_config.get_changed_services(&new_config);
+
+        // Merge the configurations
+        self.config = current_config.merge(&new_config)?;
+
+        // Start/restart changed services
+        for service in changed_services {
+            // Stop the service if it's running
+            if let Some(pid) = self.running_services.get(service.get_name()) {
+                self.stop_service(*pid).await?;
+                self.running_services.remove(service.get_name());
+            }
+
+            // Start the service with new configuration
+            self.start_service(service).await?;
         }
 
         Ok(())
     }
 
-    /// Stops running services, either a single specified service or all running services.
-    /// Sends SIGTERM to processes and waits for graceful shutdown. Performs log cleanup
-    /// if automatic cleanup is enabled.
-    ///
-    /// The service_name parameter controls which services to stop:
-    /// - When None: stops all currently running services
-    /// - When Some(name): stops only the specified service, doing nothing if the service isn't running
+    /// Stops running services and removes them from the configuration.
+    /// When service_name is None, stops and removes all services.
     pub async fn down(&mut self, service_name: Option<&str>) -> MonocoreResult<()> {
         if self.log_retention_policy.auto_cleanup {
             if let Err(e) = self.cleanup_old_logs().await {
@@ -176,14 +163,14 @@ impl Orchestrator {
             None => self.running_services.keys().cloned().collect(),
         };
 
-        for service_name in services_to_stop {
-            if let Some(pid) = self.running_services.remove(&service_name) {
+        for service_name in &services_to_stop {
+            // Stop the service if it's running
+            if let Some(pid) = self.running_services.remove(service_name) {
                 info!(
                     "Stopping supervisor for service {} (PID {})",
                     service_name, pid
                 );
 
-                // Send SIGTERM signal once
                 if let Err(e) = self.stop_service(pid).await {
                     error!("Failed to send SIGTERM to service {}: {}", service_name, e);
                     continue;
@@ -196,7 +183,6 @@ impl Orchestrator {
                     attempts -= 1;
                 }
 
-                // Only log warning if process is still running after timeout
                 if self.is_process_running(pid).await {
                     warn!(
                         "Service {} (PID {}) did not exit within timeout period",
@@ -205,6 +191,9 @@ impl Orchestrator {
                 }
             }
         }
+
+        // Remove services from config in place
+        self.config.remove_services(Some(&services_to_stop));
 
         Ok(())
     }
@@ -282,7 +271,7 @@ impl Orchestrator {
 
         // Use the supervisor binary path and pipe stdout/stderr
         let child = Command::new(&self.supervisor_path)
-            .arg("run-supervisor")
+            .arg("--run-supervisor")
             .args([
                 &service_json,
                 &group_json,

@@ -26,7 +26,7 @@ use tracing::{error, info};
 ///
 /// Expected arguments for subprocess mode:
 /// ```text
-/// monokrun --run-microvm-subprocess <service_json> <env_json> <argv_json> <rootfs_path>
+/// monokrun --run-microvm-subprocess <service_json> <env_json> <rootfs_path>
 /// ```
 #[tokio::main]
 pub async fn main() -> MonocoreResult<()> {
@@ -60,7 +60,7 @@ pub async fn main() -> MonocoreResult<()> {
     }
 
     // Check for supervisor mode
-    if args.len() >= 5 && args[1] == "run-supervisor" {
+    if args.len() >= 5 && args[1] == "--run-supervisor" {
         let service: Service = serde_json::from_str(&args[2])?;
         let group: Group = serde_json::from_str(&args[3])?;
         let rootfs_path = PathBuf::from(&args[4]);
@@ -98,6 +98,6 @@ pub async fn main() -> MonocoreResult<()> {
 
     // If we get here, no valid subcommand was provided
     Err(MonocoreError::InvalidSupervisorArgs(
-        "Usage: monocore run-supervisor <service_json> <group_json> <rootfs_path>\n       monocore --run-microvm-subprocess <service_json> <env_json> <argv_json> <rootfs_path>".into(),
+        "Usage: monocore --run-supervisor <service_json> <group_json> <rootfs_path>\n       monocore --run-microvm-subprocess <service_json> <env_json> <argv_json> <rootfs_path>".into(),
     ))
 }

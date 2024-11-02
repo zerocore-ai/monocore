@@ -19,7 +19,7 @@ use super::{
 //--------------------------------------------------------------------------------------------------
 
 /// The monocore configuration.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Getters, Setters)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Getters, Setters)]
 #[getset(get = "pub with_prefix")]
 pub struct Monocore {
     /// The services to run.
@@ -257,6 +257,15 @@ impl Monocore {
         DEFAULT_RAM_MIB
     }
 
+    /// Get a group by name in this configuration
+    pub fn get_group(&self, group_name: Option<&str>) -> Option<&Group> {
+        group_name.and_then(|name| self.groups.iter().find(|g| g.get_name() == name))
+    }
+
+    /// Get a service by name in this configuration
+    pub fn get_service(&self, service_name: &str) -> Option<&Service> {
+        self.services.iter().find(|s| s.get_name() == service_name)
+    }
     /// Gets a group environment by name
     pub fn get_group_env(&self, env_name: &str, group_name: &str) -> Option<&GroupEnv> {
         // Find env in specified group
@@ -323,6 +332,28 @@ impl Monocore {
                     group_name
                 ))
             })
+    }
+
+    /// Removes specified services from the configuration in place.
+    /// If service_names is None, removes all services.
+    /// Groups are preserved unless all services are removed.
+    ///
+    /// # Arguments
+    /// * `service_names` - Optional set of service names to remove. If None, removes all services.
+    pub fn remove_services(&mut self, service_names: Option<&[String]>) {
+        match service_names {
+            Some(names) => {
+                self.services
+                    .retain(|s| !names.contains(&s.get_name().to_string()));
+                if self.services.is_empty() {
+                    self.groups.clear();
+                }
+            }
+            None => {
+                self.services.clear();
+                self.groups.clear();
+            }
+        }
     }
 }
 

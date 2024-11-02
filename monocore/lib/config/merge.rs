@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use super::Monocore;
+use super::{Monocore, Service};
 use crate::{MonocoreError, MonocoreResult};
 
 //--------------------------------------------------------------------------------------------------
@@ -151,6 +151,101 @@ impl Monocore {
         }
 
         Ok(())
+    }
+
+    /// Gets a list of services that were either added or modified in the merged configuration
+    /// compared to the original configuration.
+    ///
+    /// A service is considered modified if either:
+    /// - The service itself has changed
+    /// - The group the service belongs to has changed
+    ///
+    /// # Returns
+    /// A vector of references to services that were either added or modified
+    pub fn get_changed_services<'a>(&'a self, other: &'a Monocore) -> Vec<&'a Service> {
+        let mut changed_services = Vec::new();
+        let mut processed_services = HashSet::new();
+
+        // Step 1: Find services that are new or modified in the new config
+        self.get_new_and_modified_services(other, &mut changed_services, &mut processed_services);
+
+        // Step 2: Find existing services affected by group changes
+        self.get_services_affected_by_group_changes(
+            other,
+            &processed_services,
+            &mut changed_services,
+        );
+
+        changed_services
+    }
+
+    /// Get services that are either new or explicitly modified in the new config
+    fn get_new_and_modified_services<'a>(
+        &'a self,
+        other: &'a Monocore,
+        changed_services: &mut Vec<&'a Service>,
+        processed_services: &mut HashSet<&'a str>,
+    ) {
+        for new_service in &other.services {
+            let service_name = new_service.get_name();
+            // Track which services we've looked at to avoid duplicates
+            processed_services.insert(service_name);
+
+            // Try to find the service in the original config along with its group
+            match self
+                .get_service(service_name)
+                .map(|service| (service, self.get_group(new_service.get_group())))
+            {
+                // Service exists in original config
+                Some((old_service, old_group)) => {
+                    // Get the service's group from the new config
+                    let new_group = other.get_group(new_service.get_group());
+
+                    // Service is considered changed if either:
+                    // - The service definition itself changed
+                    // - The service's group changed
+                    if new_service != old_service || new_group != old_group {
+                        changed_services.push(new_service);
+                    }
+                }
+                // Service doesn't exist in original config - it's new
+                None => {
+                    changed_services.push(new_service);
+                }
+            }
+        }
+    }
+
+    /// Get existing services that are affected by changes to their groups
+    fn get_services_affected_by_group_changes<'a>(
+        &'a self,
+        other: &'a Monocore,
+        processed_services: &HashSet<&str>,
+        changed_services: &mut Vec<&'a Service>,
+    ) {
+        // Look through all services in the original config
+        for service in &self.services {
+            // Skip services we already processed in get_new_and_modified_services
+            if processed_services.contains(service.get_name()) {
+                continue;
+            }
+
+            // If the service belongs to a group
+            if let Some(group_name) = service.get_group() {
+                // Get the group from both configs
+                let old_group = self.get_group(Some(group_name));
+                let new_group = other.get_group(Some(group_name));
+
+                // Service is affected if:
+                // - The group exists in the new config (new_group.is_some())
+                // - The group definition changed (old_group != new_group)
+                if old_group != new_group && new_group.is_some() {
+                    // This service wasn't explicitly updated but its group changed,
+                    // so it needs to be restarted
+                    changed_services.push(service);
+                }
+            }
+        }
     }
 }
 
@@ -432,5 +527,135 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("circular dependency"));
+    }
+
+    #[test]
+    fn test_monocore_merge_get_changed_services() -> anyhow::Result<()> {
+        // Create original group
+        let group1 = Group::builder()
+            .name("group1".to_string())
+            .volumes(vec![GroupVolume::builder()
+                .name("vol1".to_string())
+                .path("/data".to_string())
+                .build()])
+            .build();
+
+        // Create updated version of the group
+        let group1_updated = Group::builder()
+            .name("group1".to_string())
+            .volumes(vec![GroupVolume::builder()
+                .name("vol1".to_string())
+                .path("/data-updated".to_string())
+                .build()])
+            .build();
+
+        // Create services
+        let service1 = Service::builder_default()
+            .name("service1")
+            .group("group1")
+            .command("./test1")
+            .build();
+
+        let service1_updated = Service::builder_default()
+            .name("service1")
+            .group("group1")
+            .command("./test1-updated")
+            .build();
+
+        let service2 = Service::builder_default()
+            .name("service2")
+            .group("group1")
+            .command("./test2")
+            .build();
+
+        let service3 = Service::builder_default()
+            .name("service3")
+            .group("group1")
+            .command("./test3")
+            .build();
+
+        let service4 = Service::builder_default()
+            .name("service4")
+            .command("./test4")
+            .build();
+
+        let service5 = Service::builder_default()
+            .name("service5")
+            .command("./test5")
+            .build();
+
+        // Create original config
+        let config1 = Monocore::builder()
+            .services(vec![service1, service2, service4])
+            .groups(vec![group1])
+            .build()?;
+
+        // Create updated config with modified service1 and new service2
+        let config2 = Monocore::builder()
+            .services(vec![service1_updated, service3, service5])
+            .groups(vec![group1_updated])
+            .build()?;
+
+        // Get changed services
+        let changed_services = config1.get_changed_services(&config2);
+
+        println!("{:#?}", changed_services);
+
+        // Should contain all services that changed
+        assert_eq!(changed_services.len(), 4);
+        assert!(changed_services.iter().any(|s| s.get_name() == "service1"));
+        assert!(changed_services.iter().any(|s| s.get_name() == "service2"));
+        assert!(changed_services.iter().any(|s| s.get_name() == "service3"));
+        assert!(changed_services.iter().any(|s| s.get_name() == "service5"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_monocore_merge_get_changed_services_group_change() -> anyhow::Result<()> {
+        // Create original group
+        let group1 = Group::builder()
+            .name("group1".to_string())
+            .envs(vec![GroupEnv::builder()
+                .name("env1".to_string())
+                .envs(vec![EnvPair::new("KEY1", "value1")])
+                .build()])
+            .build();
+
+        // Create updated version of the group with different env
+        let group1_updated = Group::builder()
+            .name("group1".to_string())
+            .envs(vec![GroupEnv::builder()
+                .name("env1".to_string())
+                .envs(vec![EnvPair::new("KEY1", "updated-value1")])
+                .build()])
+            .build();
+
+        // Create service that doesn't change but belongs to the changing group
+        let service1 = Service::builder_default()
+            .name("service1")
+            .group("group1")
+            .command("./test1")
+            .build();
+
+        // Create configs
+        let config1 = Monocore::builder()
+            .services(vec![service1.clone()])
+            .groups(vec![group1])
+            .build()?;
+
+        let config2 = Monocore::builder()
+            .services(vec![service1])
+            .groups(vec![group1_updated])
+            .build()?;
+
+        // Get changed services
+        let changed_services = config1.get_changed_services(&config2);
+
+        // Should contain service1 because its group changed
+        assert_eq!(changed_services.len(), 1);
+        assert_eq!(changed_services[0].get_name(), "service1");
+
+        Ok(())
     }
 }

@@ -42,9 +42,6 @@ fn main() -> Result<()> {
     tracing::info!("Starting MicroVm...");
     vm.start()?;
 
-    // Since vm.start() spawns a thread, we need to wait for it
-    std::thread::sleep(std::time::Duration::from_secs(1));
-
     Ok(())
 }
 

@@ -18,45 +18,52 @@ async fn main() -> anyhow::Result<()> {
     // Path to supervisor binary - adjust this path as needed
     let supervisor_path = "../target/release/monokrun";
 
-    // Create a test configuration
-    let config = create_test_config()?;
-
-    // Alternatively, use the convenience method
+    // Create orchestrator with log retention policy
     let log_retention_policy = LogRetentionPolicy::with_max_age_weeks(1);
+    let mut orchestrator =
+        Orchestrator::with_log_retention_policy(rootfs_path, supervisor_path, log_retention_policy)
+            .await?;
 
-    let mut orchestrator = Orchestrator::with_log_retention_policy(
-        config,
-        rootfs_path,
-        supervisor_path,
-        log_retention_policy,
-    )
-    .await?;
+    // Create initial configuration
+    let initial_config = create_initial_config()?;
 
-    // You can also manually trigger log cleanup
-    orchestrator.cleanup_old_logs().await?;
+    // Start initial services
+    println!("Starting initial services...");
+    orchestrator.up(initial_config).await?;
 
-    // Start all services
-    println!("Starting all services...");
-    orchestrator.up(None).await?;
+    // Wait a bit to let services start
+    time::sleep(Duration::from_secs(10)).await;
+    print_service_status(&orchestrator).await?;
 
-    // Wait for a moment to let services start
-    time::sleep(Duration::from_secs(60)).await;
+    // Create updated configuration with modified service and new service
+    let updated_config = create_updated_config()?;
 
-    // Get status of all services
-    println!("\nChecking service status...");
+    // Update services
+    println!("\nUpdating services...");
+    orchestrator.up(updated_config).await?;
+
+    // Wait a bit to let services update
+    time::sleep(Duration::from_secs(10)).await;
+    print_service_status(&orchestrator).await?;
+
+    // Stop all services
+    println!("\nStopping all services...");
+    orchestrator.down(None).await?;
+
+    Ok(())
+}
+
+// Helper function to print service status
+async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()> {
+    println!("\nCurrent service status:");
     let statuses = orchestrator.status().await?;
 
-    // Print table headers
     println!(
         "{:<15} {:<10} {:<15} {:<12} {:<14}",
         "Service", "PID", "Status", "CPU Usage", "Memory Usage"
     );
-    println!(
-        "{:-<15} {:-<10} {:-<15} {:-<12} {:-<14}",
-        "", "", "", "", ""
-    );
+    println!("{:-<67}", "");
 
-    // Print each service status as a table row
     for status in statuses {
         println!(
             "{:<15} {:<10} {:<15} {:<12} {:<14}",
@@ -67,31 +74,15 @@ async fn main() -> anyhow::Result<()> {
             status.get_state().get_metrics().get_memory_usage()
         );
     }
-
-    // Stop all services
-    println!("\nStopping all services...");
-    orchestrator.down(None).await?;
-
     Ok(())
 }
 
-// Add this function to determine the current architecture
-fn get_current_arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
-        "x86_64"
-    } else if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        panic!("Unsupported architecture")
-    }
-}
-
-// Create a simple test configuration that runs long-running Alpine Linux commands
-fn create_test_config() -> anyhow::Result<Monocore> {
+// Create initial configuration with two services
+fn create_initial_config() -> anyhow::Result<Monocore> {
     // Create the main group
     let main_group = Group::builder().name("main".to_string()).build();
 
-    // Create a service that runs 'tail -f /dev/null' command (keeps running indefinitely)
+    // Create initial services
     let tail_service = Service::builder_default()
         .name("tail-service")
         .base("alpine:latest")
@@ -100,7 +91,6 @@ fn create_test_config() -> anyhow::Result<Monocore> {
         .args(["-f".to_string(), "/dev/null".to_string()])
         .build();
 
-    // Create a service that runs 'sleep infinity' command (keeps running indefinitely)
     let sleep_service = Service::builder_default()
         .name("sleep-service")
         .base("alpine:latest")
@@ -116,4 +106,59 @@ fn create_test_config() -> anyhow::Result<Monocore> {
         .build()?;
 
     Ok(config)
+}
+
+// Create updated configuration with modified service and new service
+fn create_updated_config() -> anyhow::Result<Monocore> {
+    // Create the main group
+    let main_group = Group::builder().name("main".to_string()).build();
+
+    // Create modified tail service (changed args)
+    let tail_service = Service::builder_default()
+        .name("tail-service")
+        .base("alpine:latest")
+        .group("main")
+        .command("/usr/bin/tail")
+        .args(["-f".to_string(), "/etc/hosts".to_string()]) // Changed from /dev/null to /etc/hosts
+        .build();
+
+    // Keep sleep service unchanged
+    let sleep_service = Service::builder_default()
+        .name("sleep-service")
+        .base("alpine:latest")
+        .group("main")
+        .command("/bin/sleep")
+        .args(vec!["infinity".to_string()])
+        .build();
+
+    // Add new echo service
+    let echo_service = Service::builder_default()
+        .name("echo-service")
+        .base("alpine:latest")
+        .group("main")
+        .command("/bin/sh")
+        .args(vec![
+            "-c".to_string(),
+            "while true; do echo 'Hello from echo service'; sleep 5; done".to_string(),
+        ])
+        .build();
+
+    // Create the updated Monocore configuration
+    let config = Monocore::builder()
+        .services(vec![tail_service, sleep_service, echo_service])
+        .groups(vec![main_group])
+        .build()?;
+
+    Ok(config)
+}
+
+// Add this function to determine the current architecture
+fn get_current_arch() -> &'static str {
+    if cfg!(target_arch = "x86_64") {
+        "x86_64"
+    } else if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        panic!("Unsupported architecture")
+    }
 }
