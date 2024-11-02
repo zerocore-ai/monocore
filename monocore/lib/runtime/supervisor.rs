@@ -68,16 +68,12 @@ impl Supervisor {
         rootfs_path: impl AsRef<Path>,
     ) -> MonocoreResult<Self> {
         // Generate unique IDs for the files
-        let process_id = std::process::id();
         let service_name = service.get_name();
 
         // Create paths with service name for better identification
-        let runtime_state_path =
-            MICROVM_STATE_DIR.join(format!("{}-{}.json", service_name, process_id));
-        let stdout_log_path =
-            MICROVM_LOG_DIR.join(format!("{}-{}.stdout.log", service_name, process_id));
-        let stderr_log_path =
-            MICROVM_LOG_DIR.join(format!("{}-{}.stderr.log", service_name, process_id));
+        let runtime_state_path = MICROVM_STATE_DIR.join(format!("{}.json", service_name));
+        let stdout_log_path = MICROVM_LOG_DIR.join(format!("{}.stdout.log", service_name));
+        let stderr_log_path = MICROVM_LOG_DIR.join(format!("{}.stderr.log", service_name));
 
         // Create directories with proper permissions
         for dir in [&*MICROVM_STATE_DIR, &*MICROVM_LOG_DIR] {
@@ -188,6 +184,7 @@ impl Supervisor {
         // Handle stdout
         let stdout = child.stdout.take().unwrap();
         let stdout_path = self.stdout_log_path.clone();
+        let service_name = self.state.get_service().get_name().to_string();
         let stdout_handle = tokio::spawn(async move {
             let mut file = match Self::create_log_file(&stdout_path).await {
                 Ok(f) => f,
@@ -215,7 +212,16 @@ impl Supervisor {
                     };
                 }
 
-                if let Err(e) = file.write_all(format!("{}\n", line).as_bytes()).await {
+                // Format the log entry with timestamp in standard log format
+                let now = chrono::Utc::now();
+                let formatted_line = format!(
+                    "{} INFO [{}] {}\n",
+                    now.format("%Y-%m-%dT%H:%M:%S%.3fZ"),
+                    service_name,
+                    line
+                );
+
+                if let Err(e) = file.write_all(formatted_line.as_bytes()).await {
                     error!("Failed to write to stdout log: {}", e);
                 }
                 if let Err(e) = file.flush().await {
@@ -227,6 +233,7 @@ impl Supervisor {
         // Handle stderr
         let stderr = child.stderr.take().unwrap();
         let stderr_path = self.stderr_log_path.clone();
+        let service_name = self.state.get_service().get_name().to_string();
         let stderr_handle = tokio::spawn(async move {
             let mut file = match Self::create_log_file(&stderr_path).await {
                 Ok(f) => f,
@@ -254,7 +261,16 @@ impl Supervisor {
                     };
                 }
 
-                if let Err(e) = file.write_all(format!("{}\n", line).as_bytes()).await {
+                // Format the log entry with timestamp in standard log format
+                let now = chrono::Utc::now();
+                let formatted_line = format!(
+                    "{} ERROR [{}] {}\n",
+                    now.format("%Y-%m-%dT%H:%M:%S%.3fZ"),
+                    service_name,
+                    line
+                );
+
+                if let Err(e) = file.write_all(formatted_line.as_bytes()).await {
                     error!("Failed to write to stderr log: {}", e);
                 }
                 if let Err(e) = file.flush().await {

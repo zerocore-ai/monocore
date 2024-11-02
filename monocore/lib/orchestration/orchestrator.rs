@@ -427,8 +427,8 @@ impl Orchestrator {
         max_age: Duration,
     ) -> MonocoreResult<bool> {
         // Only process .log and .log.old files
-        let is_log = entry
-            .path()
+        let path = entry.path();
+        let is_log = path
             .extension()
             .map_or(false, |ext| ext == "log" || ext == "old");
 

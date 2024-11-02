@@ -30,10 +30,6 @@ use tracing::{error, info};
 /// ```
 #[tokio::main]
 pub async fn main() -> MonocoreResult<()> {
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stdout)
-        .init();
-
     let args: Vec<_> = env::args().collect();
 
     // Check for subprocess mode first
@@ -61,6 +57,8 @@ pub async fn main() -> MonocoreResult<()> {
 
     // Check for supervisor mode
     if args.len() >= 5 && args[1] == "--run-supervisor" {
+        tracing_subscriber::fmt().init();
+
         let service: Service = serde_json::from_str(&args[2])?;
         let group: Group = serde_json::from_str(&args[3])?;
         let rootfs_path = PathBuf::from(&args[4]);
