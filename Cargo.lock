@@ -1671,7 +1671,7 @@ dependencies = [
 [[package]]
 name = "oci-spec"
 version = "0.7.0"
-source = "git+https://github.com/containers/oci-spec-rs?branch=main#e436a3024778cf734336952f4d37b69864488d0e"
+source = "git+https://github.com/containers/oci-spec-rs?branch=main#cabfc6464941af818089ec545c7a6bd1bfcc1b18"
 dependencies = [
  "derive_builder",
  "getset",
