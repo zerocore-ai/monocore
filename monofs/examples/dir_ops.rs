@@ -1,3 +1,27 @@
+//! This example demonstrates directory operations in monofs using an in-memory store.
+//!
+//! The example shows how to:
+//! - Create directories and files
+//! - Navigate directory structures
+//! - Copy and move files
+//! - List directory contents
+//! - Store and load directories from CIDs
+//!
+//! Operations demonstrated:
+//! 1. Creating root directory
+//! 2. Creating nested files and directories
+//! 3. Listing directory contents
+//! 4. Copying files between directories
+//! 5. Removing files and directories
+//! 6. Working with subdirectories
+//! 7. Checking entry existence
+//! 8. Storing and loading directories using CIDs
+//!
+//! To run the example:
+//! ```bash
+//! cargo run --example dir_ops
+//! ```
+
 use monofs::filesystem::{Dir, File, FsResult};
 use monoutils_store::{MemoryStore, Storable};
 

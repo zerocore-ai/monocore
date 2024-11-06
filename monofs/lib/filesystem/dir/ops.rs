@@ -252,23 +252,6 @@ where
         Ok(())
     }
 
-    /// Moves an entity from the source path to the target directory.
-    ///
-    /// The target path must be a directory.
-    pub async fn r#move(
-        &mut self,
-        _source: impl AsRef<str>,
-        _target: impl AsRef<str>,
-    ) -> FsResult<()> {
-        todo!("coming soon! `move` is tricky and needs to be handled properly")
-    }
-
-    /// Alias for `r#move`.
-    #[inline]
-    pub async fn mv(&mut self, source: impl AsRef<str>, target: impl AsRef<str>) -> FsResult<()> {
-        self.r#move(source, target).await
-    }
-
     /// Removes an entity at the specified path and returns it.
     ///
     /// ## Examples

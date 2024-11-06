@@ -26,6 +26,9 @@ async fn main() -> MonocoreResult<()> {
                 file, group
             );
         }
+        Some(MonocoreSubcommand::Status {}) => {
+            println!("status command coming soon");
+        }
         Some(MonocoreSubcommand::Push {}) => {
             println!("push command coming soon");
         }
@@ -34,9 +37,6 @@ async fn main() -> MonocoreResult<()> {
         }
         Some(MonocoreSubcommand::Run {}) => {
             println!("run command coming soon");
-        }
-        Some(MonocoreSubcommand::Status {}) => {
-            println!("status command coming soon");
         }
         Some(MonocoreSubcommand::Install {}) => {
             println!("install command coming soon");

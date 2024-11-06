@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_monocore_builder_with_group() {
-        let group = Group::builder().name("test-group".to_string()).build();
+        let group = Group::builder().name("test-group").build();
 
         let monocore = Monocore::builder()
             .services(vec![])

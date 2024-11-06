@@ -2,7 +2,7 @@ use std::{
     env,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    process::Stdio,
+    process::{self, Stdio},
 };
 
 use tokio::{
@@ -71,7 +71,8 @@ impl Supervisor {
         let service_name = service.get_name();
 
         // Create paths with service name for better identification
-        let runtime_state_path = MICROVM_STATE_DIR.join(format!("{}.json", service_name));
+        let runtime_state_path =
+            MICROVM_STATE_DIR.join(format!("{}-{}.json", service_name, process::id()));
         let stdout_log_path = MICROVM_LOG_DIR.join(format!("{}.stdout.log", service_name));
         let stderr_log_path = MICROVM_LOG_DIR.join(format!("{}.stderr.log", service_name));
 

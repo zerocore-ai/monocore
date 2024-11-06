@@ -36,6 +36,7 @@ pub struct Monocore {
 #[getset(get = "pub with_prefix")]
 pub struct Group {
     /// The name of the group.
+    #[builder(setter(transform = |name: impl AsRef<str>| name.as_ref().to_string()))]
     pub(super) name: String,
 
     /// The volumes to mount.
@@ -54,9 +55,11 @@ pub struct Group {
 #[getset(get = "pub with_prefix")]
 pub struct GroupVolume {
     /// The name of the volume.
+    #[builder(setter(transform = |name: impl AsRef<str>| name.as_ref().to_string()))]
     pub(super) name: String,
 
     /// The path to mount the volume from.
+    #[builder(setter(transform = |path: impl AsRef<str>| path.as_ref().to_string()))]
     pub(super) path: String,
 }
 
@@ -65,6 +68,7 @@ pub struct GroupVolume {
 #[getset(get = "pub with_prefix")]
 pub struct ServiceVolume {
     /// The name of the volume.
+    #[builder(setter(transform = |name: impl AsRef<str>| name.as_ref().to_string()))]
     pub(super) name: String,
 
     /// The path to mount the volume to.
@@ -76,6 +80,7 @@ pub struct ServiceVolume {
 #[getset(get = "pub with_prefix")]
 pub struct GroupEnv {
     /// The name of the environment group.
+    #[builder(setter(transform = |name: impl AsRef<str>| name.as_ref().to_string()))]
     pub(super) name: String,
 
     /// The environment variables to use.
@@ -699,7 +704,7 @@ mod tests {
                     .base("ubuntu:24.04")
                     .group("app")
                     .volumes(vec![ServiceVolume::builder()
-                        .name("main".to_string())
+                        .name("main")
                         .mount(PathPair::Distinct {
                             guest: "/".parse()?,
                             host: "/project".parse()?,
@@ -713,13 +718,13 @@ mod tests {
                     .build(),
             ])
             .groups(vec![Group::builder()
-                .name("app".to_string())
+                .name("app")
                 .volumes(vec![GroupVolume::builder()
-                    .name("main".to_string())
-                    .path("~/Desktop/project".to_string())
+                    .name("main")
+                    .path("~/Desktop/project")
                     .build()])
                 .envs(vec![GroupEnv::builder()
-                    .name("main".to_string())
+                    .name("main")
                     .envs(vec![
                         "LOG_LEVEL=info".parse()?,
                         "PROJECT_PATH=/project".parse()?,
@@ -829,9 +834,9 @@ mod tests {
                     .build(),
             ])
             .groups(vec![Group::builder()
-                .name("app".to_string())
+                .name("app")
                 .volumes(vec![GroupVolume::builder()
-                    .name("main".to_string())
+                    .name("main")
                     .path("~/Desktop/project".to_string())
                     .build()])
                 .envs(vec![GroupEnv::builder()
@@ -852,10 +857,10 @@ mod tests {
     #[test]
     fn test_monocore_config_get_group_env() -> anyhow::Result<()> {
         let group = Group::builder()
-            .name("test-group".to_string())
+            .name("test-group")
             .volumes(vec![])
             .envs(vec![GroupEnv::builder()
-                .name("test-env".to_string())
+                .name("test-env")
                 .envs(vec![EnvPair::new("TEST", "value")])
                 .build()])
             .build();
@@ -884,10 +889,10 @@ mod tests {
     #[test]
     fn test_monocore_config_get_group_volume() -> anyhow::Result<()> {
         let group = Group::builder()
-            .name("test-group".to_string())
+            .name("test-group")
             .volumes(vec![GroupVolume::builder()
-                .name("test-volume".to_string())
-                .path("/test".to_string())
+                .name("test-volume")
+                .path("/test")
                 .build()])
             .envs(vec![])
             .build();
@@ -916,10 +921,10 @@ mod tests {
     #[test]
     fn test_monocore_config_get_service_envs() -> anyhow::Result<()> {
         let group = Group::builder()
-            .name("test-group".to_string())
+            .name("test-group")
             .volumes(vec![])
             .envs(vec![GroupEnv::builder()
-                .name("test-env".to_string())
+                .name("test-env")
                 .envs(vec![
                     EnvPair::new("TEST1", "value1"),
                     EnvPair::new("TEST2", "value2"),
@@ -973,10 +978,10 @@ mod tests {
     #[test]
     fn test_monocore_config_get_service_volumes() -> anyhow::Result<()> {
         let group = Group::builder()
-            .name("test-group".to_string())
+            .name("test-group")
             .volumes(vec![GroupVolume::builder()
-                .name("test-volume".to_string())
-                .path("/test".to_string())
+                .name("test-volume")
+                .path("/test")
                 .build()])
             .envs(vec![])
             .build();
@@ -986,7 +991,7 @@ mod tests {
             .command("/bin/sleep")
             .group("test-group")
             .volumes(vec![ServiceVolume::builder()
-                .name("test-volume".to_string())
+                .name("test-volume")
                 .mount(PathPair::Same("/test".parse()?))
                 .build()])
             .build();

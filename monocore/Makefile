@@ -64,18 +64,19 @@ $(BUILD_DIR)/$(DISTRO_ROOTFS)-$(ARCH): $(FIXTURES_DIR)/$(DISTRO_ROOTFS)-$(ARCH).
 # Run examples
 example: build_monokrun unpack_rootfs
 	@if [ -z "$(word 2,$(MAKECMDGOALS))" ]; then \
-		echo "Usage: make example <example_name>"; \
+		echo "Usage: make example <example_name> [-- <args>]"; \
 			exit 1; \
 	fi
-	@$(MAKE) _run_example EXAMPLE_NAME=$(word 2,$(MAKECMDGOALS))
+	@$(eval EXAMPLE_ARGS := $(filter-out example $(word 2,$(MAKECMDGOALS)) --, $(MAKECMDGOALS)))
+	@$(MAKE) _run_example EXAMPLE_NAME=$(word 2,$(MAKECMDGOALS)) ARGS="$(EXAMPLE_ARGS)"
 
 _run_example:
 ifeq ($(OS),Darwin)
 	cargo build --example $(EXAMPLE_NAME) --release
 	codesign --entitlements monocore.entitlements --force -s - $(EXAMPLES_DIR)/$(EXAMPLE_NAME)
-	RUST_LOG=debug DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME) || exit $$?
+	RUST_LOG=debug DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME) $(ARGS) || exit $$?
 else
-	LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --example $(EXAMPLE_NAME) --release || exit $$?
+	LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
 endif
 
 # Run benchmarks
@@ -89,6 +90,6 @@ bench:
 _run_bench:
 	cargo bench --bench $(BENCH_NAME)
 
-# Catch-all target to allow example names
+# Catch-all target to allow example names and arguments
 %:
 	@:

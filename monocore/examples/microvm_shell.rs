@@ -1,12 +1,25 @@
 //! If you are trying to run this example, please make sure to run `make example microvm_shell` from
-//! the `monocore` subdirectory
+//! the `monocore` subdirectory.
+//!
+//! This example demonstrates running a basic shell inside a microvm with:
+//! - 2 virtual CPUs
+//! - 1024 MiB of RAM
+//! - Basic environment setup (PATH=/bin)
+//! - Resource limits (RLIMIT_NOFILE set to 256:512)
+//!
+//! To run the example:
+//! ```bash
+//! make example microvm_shell
+//! ```
+//!
+//! Once running, you can interact with the shell inside the microvm.
+//! The shell has basic functionality and access to busybox commands.
 
 use anyhow::{Context, Result};
 use monocore::vm::MicroVm;
-use std::path::Path;
 
 //--------------------------------------------------------------------------------------------------
-// Function: main
+// Functions: main
 //--------------------------------------------------------------------------------------------------
 
 fn main() -> Result<()> {
@@ -14,18 +27,6 @@ fn main() -> Result<()> {
 
     // Use the architecture-specific build directory
     let rootfs_path = format!("build/rootfs-alpine-{}", get_current_arch());
-
-    // Check if rootfs exists
-    if !Path::new(&rootfs_path).exists() {
-        anyhow::bail!(
-            "Rootfs directory '{}' does not exist. Please run 'make unpack_rootfs' first.",
-            rootfs_path
-        );
-    }
-
-    // Update the set_xattr call
-    set_xattr(&rootfs_path, "user.containers.override_stat", b"0:0:0555")
-        .context("Failed to set xattr on rootfs")?;
 
     // Build the MicroVm
     let vm = MicroVm::builder()
@@ -46,14 +47,8 @@ fn main() -> Result<()> {
 }
 
 //--------------------------------------------------------------------------------------------------
-// Function: *
+// Functions: *
 //--------------------------------------------------------------------------------------------------
-
-// Set an extended attribute on a file
-fn set_xattr(path: impl AsRef<std::path::Path>, name: &str, value: &[u8]) -> anyhow::Result<()> {
-    xattr::set(path, name, value)?;
-    Ok(())
-}
 
 // Add this function to determine the current architecture
 fn get_current_arch() -> &'static str {

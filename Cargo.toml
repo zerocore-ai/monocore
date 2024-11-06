@@ -4,6 +4,7 @@ members = [
     "monobase",
     "monocore",
     "monofs",
+    "monoutils-agent",
     "monoutils-did",
     "monoutils-raft",
     "monoutils-store",

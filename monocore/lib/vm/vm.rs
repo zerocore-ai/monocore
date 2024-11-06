@@ -15,6 +15,30 @@ use super::{ffi, LinuxRlimit, MicroVmBuilder, MicroVmConfigBuilder};
 //--------------------------------------------------------------------------------------------------
 
 /// A lightweight Linux virtual machine.
+///
+/// MicroVm provides a secure, isolated environment for running applications with their own
+/// filesystem, network, and resource constraints.
+///
+/// ## Examples
+///
+/// ```rust
+/// use monocore::vm::MicroVm;
+/// use tempfile::TempDir;
+///
+/// # fn main() -> anyhow::Result<()> {
+/// let temp_dir = TempDir::new()?;
+/// let vm = MicroVm::builder()
+///     .root_path(temp_dir.path())
+///     .ram_mib(1024)
+///     .exec_path("/bin/echo")
+///     .args(["Hello, World!"])
+///     .build()?;
+///
+/// // // Start the MicroVm
+/// // vm.start()?;  // This would actually run the VM
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Getters)]
 pub struct MicroVm {
     /// The context ID for the MicroVm.
@@ -25,7 +49,30 @@ pub struct MicroVm {
     config: MicroVmConfig,
 }
 
-/// A configuration for a MicroVm.
+/// Configuration for a MicroVm instance.
+///
+/// This struct holds all the settings needed to create and run a MicroVm,
+/// including system resources, filesystem configuration, networking, and
+/// process execution details.
+///
+/// Rather than creating this directly, use `MicroVmConfigBuilder` or
+/// `MicroVmBuilder` for a more ergonomic interface.
+///
+/// ## Examples
+///
+/// ```rust
+/// use monocore::vm::MicroVmConfig;
+/// use tempfile::TempDir;
+///
+/// # fn main() -> anyhow::Result<()> {
+/// let temp_dir = TempDir::new()?;
+/// let config = MicroVmConfig::builder()
+///     .root_path(temp_dir.path())
+///     .ram_mib(1024)
+///     .build()?;
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug)]
 pub struct MicroVmConfig {
     /// The log level to use for the MicroVm.
@@ -56,7 +103,7 @@ pub struct MicroVmConfig {
     pub exec_path: Option<Utf8UnixPathBuf>,
 
     /// The arguments to pass to the executable.
-    pub argv: Vec<String>,
+    pub args: Vec<String>,
 
     /// The environment variables to set for the executable.
     pub env: Vec<EnvPair>,
@@ -94,7 +141,16 @@ pub enum LogLevel {
 //--------------------------------------------------------------------------------------------------
 
 impl MicroVm {
-    /// Creates a new micro VM from a configuration.
+    /// Creates a new MicroVm from the given configuration.
+    ///
+    /// This is a low-level constructor - prefer using `MicroVm::builder()`
+    /// for a more ergonomic interface.
+    ///
+    /// ## Errors
+    /// Returns an error if:
+    /// - The configuration is invalid
+    /// - Required resources cannot be allocated
+    /// - The system lacks required capabilities
     pub fn from_config(config: MicroVmConfig) -> MonocoreResult<Self> {
         let ctx_id = Self::create_ctx();
 
@@ -105,12 +161,59 @@ impl MicroVm {
         Ok(Self { ctx_id, config })
     }
 
-    /// Creates a builder for a micro VM.
+    /// Creates a builder for configuring a new MicroVm instance.
+    ///
+    /// This is the recommended way to create a new MicroVm.
+    ///
+    /// ## Examples
+    ///
+    /// ```rust
+    /// use monocore::vm::MicroVm;
+    /// use tempfile::TempDir;
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// let temp_dir = TempDir::new()?;
+    /// let vm = MicroVm::builder()
+    ///     .root_path(temp_dir.path())
+    ///     .ram_mib(1024)
+    ///     .build()?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn builder() -> MicroVmBuilder<(), ()> {
         MicroVmBuilder::default()
     }
 
-    /// Starts the VM. This function will not return until the VM exits.
+    /// Starts the MicroVm and waits for it to complete.
+    ///
+    /// This function will block until the MicroVm exits. The exit status
+    /// of the guest process is returned.
+    ///
+    /// ## Examples
+    ///
+    /// ```rust,no_run
+    /// use monocore::vm::MicroVm;
+    /// use tempfile::TempDir;
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// let temp_dir = TempDir::new()?;
+    /// let vm = MicroVm::builder()
+    ///     .root_path(temp_dir.path())
+    ///     .ram_mib(1024)
+    ///     .exec_path("/bin/true")
+    ///     .build()?;
+    ///
+    /// // // Start the MicroVm
+    /// // let status = vm.start()?;
+    /// // assert_eq!(status, 0);  // Process exited successfully
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## Notes
+    /// - This function takes control of stdin/stdout
+    /// - The MicroVm is automatically cleaned up when this returns
+    /// - A non-zero status indicates the guest process failed
     pub fn start(&self) -> MonocoreResult<i32> {
         let ctx_id = self.ctx_id;
         let status = unsafe { ffi::krun_start_enter(ctx_id) };
@@ -129,11 +232,12 @@ impl MicroVm {
     }
 
     fn apply_config(ctx_id: u32, config: &MicroVmConfig) {
-        // Set log level
-        unsafe {
-            let status = ffi::krun_set_log_level(config.log_level as u32);
-            assert!(status >= 0, "Failed to set log level: {}", status);
-        }
+        // TODO: There is a bug where any log level even 0, enables all logs which sucks.
+        // // Set log level
+        // unsafe {
+        //     let status = ffi::krun_set_log_level(config.log_level as u32);
+        //     assert!(status >= 0, "Failed to set log level: {}", status);
+        // }
 
         // Set basic VM configuration
         unsafe {
@@ -199,7 +303,7 @@ impl MicroVm {
             let c_exec_path = CString::new(exec_path.to_string().as_bytes()).unwrap();
 
             let c_argv: Vec<_> = config
-                .argv
+                .args
                 .iter()
                 .map(|s| CString::new(s.as_str()).unwrap())
                 .collect();

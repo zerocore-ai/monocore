@@ -17,6 +17,8 @@ extern "C" {
     ///   - `3` - Info
     ///   - `4` - Debug
     ///   - `5` - Trace
+    // TODO: This implementation is buggy right now.
+    #[allow(dead_code)]
     pub(crate) fn krun_set_log_level(level: u32) -> i32;
 
     /// Creates a configuration context.

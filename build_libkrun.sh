@@ -38,7 +38,7 @@ ORIGINAL_DIR="$(pwd)"
 # Set up variables
 BUILD_DIR="$ORIGINAL_DIR/build"
 LIBKRUNFW_REPO="https://github.com/appcypher/libkrunfw.git"
-LIBKRUN_REPO="https://github.com/appcypher/libkrun.git"
+LIBKRUN_REPO="/Users/steveakinyemi/Desktop/Personal/libkrun"
 LIB_DIR="/usr/local/lib"
 LIB64_DIR="/usr/local/lib64"
 NO_CLEANUP=false

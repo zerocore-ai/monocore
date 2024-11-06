@@ -328,7 +328,7 @@ mod tests {
     #[test]
     fn test_monocore_merge_port_conflict() {
         // Create a group
-        let group = Group::builder().name("test-group".to_string()).build();
+        let group = Group::builder().name("test-group").build();
 
         // Create two services in the same group that use the same port
         let service1 = Service::builder_default()
@@ -371,8 +371,8 @@ mod tests {
     #[test]
     fn test_monocore_merge_port_different_groups() {
         // Create two groups
-        let group1 = Group::builder().name("group1".to_string()).build();
-        let group2 = Group::builder().name("group2".to_string()).build();
+        let group1 = Group::builder().name("group1").build();
+        let group2 = Group::builder().name("group2").build();
 
         // Create services in different groups using the same port
         let service1 = Service::builder_default()
@@ -413,8 +413,8 @@ mod tests {
     #[test]
     fn test_monocore_merge_groups() {
         // Create two groups with different names
-        let group1 = Group::builder().name("group1".to_string()).build();
-        let group2 = Group::builder().name("group2".to_string()).build();
+        let group1 = Group::builder().name("group1").build();
+        let group2 = Group::builder().name("group2").build();
 
         // Create configurations with different groups
         let config1 = Monocore::builder()
@@ -438,13 +438,13 @@ mod tests {
     fn test_monocore_merge_group_update() {
         // Create original group with a volume and env
         let group1 = Group::builder()
-            .name("group1".to_string())
+            .name("group1")
             .volumes(vec![GroupVolume::builder()
-                .name("vol1".to_string())
-                .path("/data".to_string())
+                .name("vol1")
+                .path("/data")
                 .build()])
             .envs(vec![GroupEnv::builder()
-                .name("env1".to_string())
+                .name("env1")
                 .envs(vec![EnvPair::new("KEY1", "value1")])
                 .build()])
             .build();
@@ -453,11 +453,11 @@ mod tests {
         let group1_updated = Group::builder()
             .name("group1".to_string())
             .volumes(vec![GroupVolume::builder()
-                .name("vol1".to_string())
-                .path("/data-updated".to_string())
+                .name("vol1")
+                .path("/data-updated")
                 .build()])
             .envs(vec![GroupEnv::builder()
-                .name("env1".to_string())
+                .name("env1")
                 .envs(vec![EnvPair::new("KEY1", "updated-value1")])
                 .build()])
             .build();
@@ -615,18 +615,18 @@ mod tests {
     fn test_monocore_merge_get_changed_services_group_change() -> anyhow::Result<()> {
         // Create original group
         let group1 = Group::builder()
-            .name("group1".to_string())
+            .name("group1")
             .envs(vec![GroupEnv::builder()
-                .name("env1".to_string())
+                .name("env1")
                 .envs(vec![EnvPair::new("KEY1", "value1")])
                 .build()])
             .build();
 
         // Create updated version of the group with different env
         let group1_updated = Group::builder()
-            .name("group1".to_string())
+            .name("group1")
             .envs(vec![GroupEnv::builder()
-                .name("env1".to_string())
+                .name("env1")
                 .envs(vec![EnvPair::new("KEY1", "updated-value1")])
                 .build()])
             .build();

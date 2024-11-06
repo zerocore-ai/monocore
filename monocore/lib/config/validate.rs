@@ -834,7 +834,7 @@ mod tests {
             .command("./test2")
             .build();
 
-        let group = Group::builder().name("test-group".to_string()).build();
+        let group = Group::builder().name("test-group").build();
 
         let config = Monocore {
             services: vec![service1, service2],
@@ -864,8 +864,8 @@ mod tests {
             .command("./test2")
             .build();
 
-        let group1 = Group::builder().name("group1".to_string()).build();
-        let group2 = Group::builder().name("group2".to_string()).build();
+        let group1 = Group::builder().name("group1").build();
+        let group2 = Group::builder().name("group2").build();
 
         let config = Monocore {
             services: vec![service1, service2],

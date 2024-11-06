@@ -35,8 +35,8 @@ pub struct Orchestrator {
     /// The path to the root filesystem.
     rootfs_path: PathBuf,
 
-    /// The path to the supervisor binary.
-    supervisor_path: PathBuf,
+    /// The path to the supervisor executable.
+    supervisor_exe_path: PathBuf,
 
     /// Map of running services and their process IDs.
     running_services: HashMap<String, u32>,
@@ -84,24 +84,24 @@ impl Orchestrator {
     /// Creates a new Orchestrator instance with custom log retention policy
     pub async fn with_log_retention_policy(
         rootfs_path: impl AsRef<Path>,
-        supervisor_path: impl AsRef<Path>,
+        supervisor_exe_path: impl AsRef<Path>,
         log_retention_policy: LogRetentionPolicy,
     ) -> MonocoreResult<Self> {
         // Ensure the state directory exists
         fs::create_dir_all(&*MICROVM_STATE_DIR).await?;
 
         // Verify supervisor binary exists
-        let supervisor_path = supervisor_path.as_ref().to_path_buf();
-        if !supervisor_path.exists() {
+        let supervisor_exe_path = supervisor_exe_path.as_ref().to_path_buf();
+        if !supervisor_exe_path.exists() {
             return Err(MonocoreError::SupervisorBinaryNotFound(
-                supervisor_path.display().to_string(),
+                supervisor_exe_path.display().to_string(),
             ));
         }
 
         Ok(Self {
             config: Monocore::default(),
             rootfs_path: rootfs_path.as_ref().to_path_buf(),
-            supervisor_path,
+            supervisor_exe_path,
             running_services: HashMap::new(),
             log_retention_policy,
         })
@@ -110,10 +110,14 @@ impl Orchestrator {
     /// Creates a new Orchestrator instance with default log retention policy
     pub async fn new(
         rootfs_path: impl AsRef<Path>,
-        supervisor_path: impl AsRef<Path>,
+        supervisor_exe_path: impl AsRef<Path>,
     ) -> MonocoreResult<Self> {
-        Self::with_log_retention_policy(rootfs_path, supervisor_path, LogRetentionPolicy::default())
-            .await
+        Self::with_log_retention_policy(
+            rootfs_path,
+            supervisor_exe_path,
+            LogRetentionPolicy::default(),
+        )
+        .await
     }
 
     /// Starts or updates services according to the provided configuration.
@@ -270,7 +274,7 @@ impl Orchestrator {
         let group_json = serde_json::to_string(group)?;
 
         // Use the supervisor binary path and pipe stdout/stderr
-        let child = Command::new(&self.supervisor_path)
+        let child = Command::new(&self.supervisor_exe_path)
             .arg("--run-supervisor")
             .args([
                 &service_json,
@@ -448,18 +452,6 @@ impl Orchestrator {
     }
 }
 
-impl Default for LogRetentionPolicy {
-    /// Creates a default configuration that:
-    /// - Keeps logs for 7 days
-    /// - Enables automatic cleanup during service operations
-    fn default() -> Self {
-        Self {
-            max_age: DEFAULT_LOG_MAX_AGE,
-            auto_cleanup: true,
-        }
-    }
-}
-
 impl LogRetentionPolicy {
     /// Creates a new log retention policy with custom settings.
     pub fn new(max_age: Duration, auto_cleanup: bool) -> Self {
@@ -498,6 +490,22 @@ impl LogRetentionPolicy {
     pub fn with_max_age_months(months: u64) -> Self {
         Self {
             max_age: Duration::from_secs(months * 30 * 24 * 60 * 60),
+            auto_cleanup: true,
+        }
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Trait Implementations
+//--------------------------------------------------------------------------------------------------
+
+impl Default for LogRetentionPolicy {
+    /// Creates a default configuration that:
+    /// - Keeps logs for 7 days
+    /// - Enables automatic cleanup during service operations
+    fn default() -> Self {
+        Self {
+            max_age: DEFAULT_LOG_MAX_AGE,
             auto_cleanup: true,
         }
     }

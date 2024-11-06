@@ -1,5 +1,31 @@
-//! If you are trying to run this example, please make sure to run `make example runtime_lifecycle` from
-//! the `monocore` subdirectory
+//! If you are trying to run this example, please make sure to run `make example orchestration_basic` from
+//! the `monocore` subdirectory.
+//!
+//! This example demonstrates basic orchestration capabilities:
+//! - Creating and managing multiple services
+//! - Service updates and configuration changes
+//! - Monitoring service status and metrics
+//!
+//! To run the example:
+//! ```bash
+//! make example orchestration_basic
+//! ```
+//!
+//! The example will:
+//! 1. Start initial services (tail-service and sleep-service)
+//! 2. Wait 10 seconds and show their status
+//! 3. Update the configuration:
+//!    - Modify tail-service to watch /etc/hosts instead of /dev/null
+//!    - Add a new echo-service
+//! 4. Wait 10 seconds and show updated status
+//! 5. Stop all services
+//!
+//! The output will show:
+//! - Service names
+//! - PIDs
+//! - Status
+//! - CPU usage
+//! - Memory usage
 
 use monocore::{
     config::{Group, Monocore, Service},
@@ -7,6 +33,10 @@ use monocore::{
 };
 use std::time::Duration;
 use tokio::time;
+
+//--------------------------------------------------------------------------------------------------
+// Functions: main
+//--------------------------------------------------------------------------------------------------
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -19,10 +49,12 @@ async fn main() -> anyhow::Result<()> {
     let supervisor_path = "../target/release/monokrun";
 
     // Create orchestrator with log retention policy
-    let log_retention_policy = LogRetentionPolicy::with_max_age_weeks(1);
-    let mut orchestrator =
-        Orchestrator::with_log_retention_policy(rootfs_path, supervisor_path, log_retention_policy)
-            .await?;
+    let mut orchestrator = Orchestrator::with_log_retention_policy(
+        rootfs_path,
+        supervisor_path,
+        LogRetentionPolicy::with_max_age_weeks(1),
+    )
+    .await?;
 
     // Create initial configuration
     let initial_config = create_initial_config()?;
@@ -53,6 +85,10 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+//--------------------------------------------------------------------------------------------------
+// Functions: *
+//--------------------------------------------------------------------------------------------------
+
 // Helper function to print service status
 async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()> {
     println!("\nCurrent service status:");
@@ -80,7 +116,7 @@ async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()>
 // Create initial configuration with two services
 fn create_initial_config() -> anyhow::Result<Monocore> {
     // Create the main group
-    let main_group = Group::builder().name("main".to_string()).build();
+    let main_group = Group::builder().name("main").build();
 
     // Create initial services
     let tail_service = Service::builder_default()
@@ -111,7 +147,7 @@ fn create_initial_config() -> anyhow::Result<Monocore> {
 // Create updated configuration with modified service and new service
 fn create_updated_config() -> anyhow::Result<Monocore> {
     // Create the main group
-    let main_group = Group::builder().name("main".to_string()).build();
+    let main_group = Group::builder().name("main").build();
 
     // Create modified tail service (changed args)
     let tail_service = Service::builder_default()

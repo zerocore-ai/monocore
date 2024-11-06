@@ -47,7 +47,13 @@ pub async fn main() -> MonocoreResult<()> {
             .port_map(service.get_port().cloned().into_iter())
             .workdir_path(service.get_workdir().unwrap_or("/"))
             .exec_path(service.get_command().unwrap_or("/bin/sh"))
-            .argv(service.get_args().map(|v| v.to_vec()).unwrap_or_default())
+            .args(
+                service
+                    .get_args()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|s| s.as_str()),
+            )
             .env(env)
             .build()?;
 
