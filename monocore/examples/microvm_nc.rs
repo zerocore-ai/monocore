@@ -2,6 +2,7 @@
 //! the `monocore` subdirectory.
 //!
 //! This example demonstrates network connectivity between microvms using netcat (nc).
+//! It creates two microvms - one running as a server and another as a client.
 //!
 //! To run in server mode (listens on port 3456):
 //! ```bash
@@ -10,7 +11,7 @@
 //! make example microvm_nc -- -s
 //! ```
 //!
-//! To run in client mode (connects to localhost:3456 and sends "Hello, world!"):
+//! To run in client mode (connects to localhost:3456):
 //! ```bash
 //! make example microvm_nc
 //! ```
@@ -18,7 +19,10 @@
 //! To test the connection:
 //! 1. Start the server in one terminal: `make example microvm_nc -- --server`
 //! 2. Start the client in another terminal: `make example microvm_nc`
-//! The client will send "Hello, world!" to the server and then both will exit.
+//!
+//! The server will listen on port 3456 and respond with "Hello from server!" when connected.
+//! The client will connect to the server, receive the message, and both will exit after
+//! the interaction or after a timeout.
 
 use anyhow::Result;
 use clap::Parser;
@@ -56,16 +60,27 @@ fn main() -> Result<()> {
             .root_path(&rootfs_path)
             .port_map(["3456:3456".parse()?])
             .exec_path("/bin/busybox")
-            .args(["timeout", "10", "busybox", "nc", "-l", "-p", "3456"])
+            .args([
+                "timeout",
+                "10",
+                "busybox",
+                "nc",
+                "-l",
+                "-p",
+                "3456",
+                "-e",
+                "echo",
+                "Hello from server!",
+            ])
             .ram_mib(1024)
             .build()?
     } else {
         tracing::info!("Client mode: Connecting to localhost:3456");
-        // Client mode: Connect to localhost:3456 and send "Hello, world!"
+        // Client mode: Use wget to fetch content from server
         MicroVm::builder()
             .root_path(&rootfs_path)
-            .exec_path("/bin/sh")
-            .args(["-c", "echo 'Hello, world!' | busybox nc 127.0.0.1 3456"])
+            .exec_path("/bin/busybox")
+            .args(["nc", "-w", "1", "localhost", "3456"])
             .ram_mib(1024)
             .build()?
     };

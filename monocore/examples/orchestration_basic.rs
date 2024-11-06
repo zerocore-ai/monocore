@@ -19,13 +19,6 @@
 //!    - Add a new echo-service
 //! 4. Wait 10 seconds and show updated status
 //! 5. Stop all services
-//!
-//! The output will show:
-//! - Service names
-//! - PIDs
-//! - Status
-//! - CPU usage
-//! - Memory usage
 
 use monocore::{
     config::{Group, Monocore, Service},

@@ -36,6 +36,7 @@ fn main() -> Result<()> {
         .rlimits(["RLIMIT_NOFILE=256:512".parse()?])
         .env(["PATH=/bin".parse()?])
         .ram_mib(1024)
+        .port_map(["8080:8080".parse()?])
         .build()
         .context("Failed to build MicroVm")?;
 
