@@ -214,12 +214,12 @@ impl Orchestrator {
 
                 // Wait for process to exit gracefully with timeout
                 let mut attempts = 5;
-                while attempts > 0 && self.is_process_running(pid).await {
+                while attempts > 0 && Self::is_process_running(pid).await {
                     time::sleep(Duration::from_secs(2)).await;
                     attempts -= 1;
                 }
 
-                if self.is_process_running(pid).await {
+                if Self::is_process_running(pid).await {
                     warn!(
                         "Service {} (PID {}) did not exit within timeout period",
                         service_name, pid
@@ -260,7 +260,7 @@ impl Orchestrator {
                         Ok(state) => {
                             // Check if the process is still running
                             if let Some(pid) = state.get_pid() {
-                                if !self.is_process_running(*pid).await {
+                                if !Self::is_process_running(*pid).await {
                                     stale_files.push(path);
                                     continue;
                                 }
@@ -410,16 +410,6 @@ impl Orchestrator {
         Ok(())
     }
 
-    /// Verifies if a process with the given PID is still active in the system.
-    async fn is_process_running(&self, pid: u32) -> bool {
-        Command::new("kill")
-            .arg("-0") // Only check process existence
-            .arg(pid.to_string())
-            .output()
-            .await
-            .map_or(false, |output| output.status.success())
-    }
-
     /// Performs cleanup of old log files based on the configured maximum age. Removes
     /// files that exceed the age threshold and logs the cleanup activity.
     pub async fn cleanup_old_logs(&self) -> MonocoreResult<()> {
@@ -484,6 +474,153 @@ impl Orchestrator {
             .unwrap_or_else(|_| Duration::from_secs(0));
 
         Ok(age > max_age)
+    }
+
+    /// Creates a new Orchestrator instance from existing state files with custom log retention policy.
+    /// This allows reconstructing the orchestrator's state from running services.
+    ///
+    /// ## Arguments
+    /// * `rootfs_path` - Path to the root filesystem
+    /// * `supervisor_exe_path` - Path to the supervisor executable
+    /// * `log_retention_policy` - Configuration for log file retention and cleanup
+    ///
+    /// ## Example
+    /// ```no_run
+    /// use monocore::orchestration::Orchestrator;
+    /// use monocore::config::LogRetentionPolicy;
+    /// use std::time::Duration;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let orchestrator = Orchestrator::load_with_log_retention_policy(
+    ///     "/path/to/rootfs",
+    ///     "/path/to/supervisor",
+    ///     LogRetentionPolicy::with_max_age_days(7)
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn load_with_log_retention_policy(
+        rootfs_path: impl AsRef<Path>,
+        supervisor_exe_path: impl AsRef<Path>,
+        log_retention_policy: LogRetentionPolicy,
+    ) -> MonocoreResult<Self> {
+        // Ensure the state directory exists
+        fs::create_dir_all(&*MICROVM_STATE_DIR).await?;
+
+        // Verify supervisor binary exists
+        let supervisor_exe_path = supervisor_exe_path.as_ref().to_path_buf();
+        if !supervisor_exe_path.exists() {
+            return Err(MonocoreError::SupervisorBinaryNotFound(
+                supervisor_exe_path.display().to_string(),
+            ));
+        }
+
+        // Read all state files and reconstruct services and groups
+        let mut services = Vec::new();
+        let mut groups = HashSet::new();
+        let mut running_services = HashMap::new();
+
+        let mut dir = fs::read_dir(&*MICROVM_STATE_DIR).await?;
+        while let Some(entry) = dir.next_entry().await? {
+            let path = entry.path();
+            if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
+                match fs::read_to_string(&path).await {
+                    Ok(contents) => match serde_json::from_str::<MicroVmState>(&contents) {
+                        Ok(state) => {
+                            // Only include if process is still running
+                            if let Some(pid) = state.get_pid() {
+                                if Self::is_process_running(*pid).await {
+                                    services.push(state.get_service().clone());
+                                    groups.insert(state.get_group().clone());
+                                    running_services
+                                        .insert(state.get_service().get_name().to_string(), *pid);
+                                } else {
+                                    // Clean up stale state file
+                                    if let Err(e) = fs::remove_file(&path).await {
+                                        warn!(
+                                            "Failed to remove stale state file {:?}: {}",
+                                            path, e
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to parse state file {:?}: {}", path, e);
+                            // Clean up invalid state file
+                            if let Err(e) = fs::remove_file(&path).await {
+                                warn!("Failed to remove invalid state file {:?}: {}", path, e);
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        warn!("Failed to read state file {:?}: {}", path, e);
+                    }
+                }
+            }
+        }
+
+        // Convert groups from HashSet to Vec
+        let groups: Vec<_> = groups.into_iter().collect();
+
+        // Create Monocore configuration from collected services and groups
+        let config = Monocore::builder()
+            .services(services)
+            .groups(groups)
+            .build()?;
+
+        Ok(Self {
+            config,
+            rootfs_path: rootfs_path.as_ref().to_path_buf(),
+            supervisor_exe_path,
+            running_services,
+            log_retention_policy,
+        })
+    }
+
+    /// Creates a new Orchestrator instance from existing state files with default log retention policy.
+    ///
+    /// This is a convenience method that uses the default log retention policy (7 days, auto cleanup enabled).
+    ///
+    /// ## Arguments
+    /// * `rootfs_path` - Path to the root filesystem
+    /// * `supervisor_exe_path` - Path to the supervisor executable
+    ///
+    /// ## Returns
+    /// A new Orchestrator instance initialized from existing state files
+    ///
+    /// ## Example
+    /// ```no_run
+    /// use monocore::orchestration::Orchestrator;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let orchestrator = Orchestrator::load(
+    ///     "/path/to/rootfs",
+    ///     "/path/to/supervisor"
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn load(
+        rootfs_path: impl AsRef<Path>,
+        supervisor_exe_path: impl AsRef<Path>,
+    ) -> MonocoreResult<Self> {
+        Self::load_with_log_retention_policy(
+            rootfs_path,
+            supervisor_exe_path,
+            LogRetentionPolicy::default(),
+        )
+        .await
+    }
+
+    /// Helper function to check if a process is running
+    async fn is_process_running(pid: u32) -> bool {
+        Command::new("kill")
+            .arg("-0") // Only check process existence
+            .arg(pid.to_string())
+            .output()
+            .await
+            .map_or(false, |output| output.status.success())
     }
 }
 

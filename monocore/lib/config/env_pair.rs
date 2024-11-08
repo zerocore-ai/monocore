@@ -30,7 +30,7 @@ use std::{fmt, str::FromStr};
 /// assert_eq!(env_pair.get_var(), "USER");
 /// assert_eq!(env_pair.get_value(), "alice");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Getters)]
+#[derive(Debug, Hash, Clone, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct EnvPair {
     /// The environment variable name.

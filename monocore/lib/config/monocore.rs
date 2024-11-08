@@ -32,7 +32,7 @@ pub struct Monocore {
 }
 
 /// The group to run the services in.
-#[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct Group {
     /// The name of the group.
@@ -51,7 +51,7 @@ pub struct Group {
 }
 
 /// The volume to mount.
-#[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct GroupVolume {
     /// The name of the volume.
@@ -76,7 +76,7 @@ pub struct ServiceVolume {
 }
 
 /// The environment group to use.
-#[derive(Debug, Clone, Serialize, TypedBuilder, Deserialize, PartialEq, Eq, Getters)]
+#[derive(Debug, Clone, Hash, Serialize, TypedBuilder, Deserialize, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct GroupEnv {
     /// The name of the environment group.
