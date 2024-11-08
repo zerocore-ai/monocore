@@ -1,5 +1,6 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
+    net::Ipv4Addr,
     path::{Path, PathBuf},
     process::Stdio,
     time::{Duration, SystemTime},
@@ -43,6 +44,12 @@ pub struct Orchestrator {
 
     /// Configuration for log retention and cleanup
     log_retention_policy: LogRetentionPolicy,
+
+    /// Maps group name to assigned IP
+    assigned_ips: HashMap<String, Ipv4Addr>,
+
+    /// Tracks used last octets for IP assignment
+    used_ips: BTreeSet<u8>,
 }
 
 /// Configuration for managing log file retention and cleanup in the orchestrator.
@@ -104,6 +111,8 @@ impl Orchestrator {
             supervisor_exe_path,
             running_services: HashMap::new(),
             log_retention_policy,
+            assigned_ips: HashMap::new(),
+            used_ips: BTreeSet::new(),
         })
     }
 
@@ -196,6 +205,9 @@ impl Orchestrator {
         // Clone the ordered services to avoid borrow issues
         let ordered_services: Vec<_> = ordered_services.into_iter().cloned().collect();
 
+        // Clone ordered_services before using it
+        let services_for_groups = ordered_services.clone();
+
         // Stop services in reverse dependency order
         for service in ordered_services {
             let service_name = service.get_name();
@@ -233,6 +245,28 @@ impl Orchestrator {
 
         // Remove services from config in place
         self.config.remove_services(Some(&services_to_stop));
+
+        // Get groups that will have no running services after shutdown
+        let mut empty_groups = HashSet::new();
+        for service in services_for_groups.iter() {
+            let group_name = service.get_group().unwrap_or_default();
+            let group_has_other_services = self.running_services.keys().any(|name| {
+                name != service.get_name()
+                    && self
+                        .config
+                        .get_service(name)
+                        .map(|s| s.get_group().unwrap_or_default() == group_name)
+                        .unwrap_or(false)
+            });
+            if !group_has_other_services {
+                empty_groups.insert(group_name);
+            }
+        }
+
+        // Release IPs for groups with no running services
+        for group_name in empty_groups {
+            self.release_group_ip(group_name);
+        }
 
         Ok(())
     }
@@ -295,25 +329,34 @@ impl Orchestrator {
         Ok(statuses)
     }
 
-    /// Starts a single service by spawning a supervisor process and setting up output handling.
-    /// The supervisor manages the actual service process and maintains its state.
+    /// Starts a single service by spawning a supervisor process.
+    /// Handles IP assignment for the service's group and passes the IP through
+    /// to the supervisor and microvm processes.
     async fn start_service(&mut self, service: &Service) -> MonocoreResult<()> {
         if self.running_services.contains_key(service.get_name()) {
             info!("Service {} is already running", service.get_name());
             return Ok(());
         }
 
+        // Get group and prepare configuration data
         let group = self.config.get_group_for_service(service)?;
+        let group_name = group.get_name().to_string();
 
+        // Serialize configuration before IP assignment to avoid borrow checker issues
         let service_json = serde_json::to_string(service)?;
-        let group_json = serde_json::to_string(group)?;
+        let group_json = serde_json::to_string(&group)?;
 
-        // Use the supervisor binary path and pipe stdout/stderr
+        // Assign IP address to the group
+        let group_ip = self.assign_group_ip(&group_name)?;
+        let group_ip_json = serde_json::to_string(&group_ip)?;
+
+        // Start the supervisor process with all necessary configuration
         let child = Command::new(&self.supervisor_exe_path)
             .arg("--run-supervisor")
             .args([
                 &service_json,
                 &group_json,
+                &group_ip_json,
                 self.rootfs_path.to_str().unwrap(),
             ])
             .stdout(Stdio::piped())
@@ -569,12 +612,46 @@ impl Orchestrator {
             .groups(groups)
             .build()?;
 
+        // Initialize IP assignment tracking
+        let mut assigned_ips = HashMap::new();
+        let mut used_ips = BTreeSet::new();
+
+        let mut dir = fs::read_dir(&*MICROVM_STATE_DIR).await?;
+        while let Some(entry) = dir.next_entry().await? {
+            let path = entry.path();
+            if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
+                match fs::read_to_string(&path).await {
+                    Ok(contents) => match serde_json::from_str::<MicroVmState>(&contents) {
+                        Ok(state) => {
+                            if let Some(group_ip) = state.get_group_ip() {
+                                assigned_ips
+                                    .insert(state.get_group().get_name().to_string(), *group_ip);
+                                used_ips.insert(group_ip.octets()[3]);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to parse state file {:?}: {}", path, e);
+                            // Clean up invalid state file
+                            if let Err(e) = fs::remove_file(&path).await {
+                                warn!("Failed to remove invalid state file {:?}: {}", path, e);
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        warn!("Failed to read state file {:?}: {}", path, e);
+                    }
+                }
+            }
+        }
+
         Ok(Self {
             config,
             rootfs_path: rootfs_path.as_ref().to_path_buf(),
             supervisor_exe_path,
             running_services,
             log_retention_policy,
+            assigned_ips,
+            used_ips,
         })
     }
 
@@ -621,6 +698,41 @@ impl Orchestrator {
             .output()
             .await
             .map_or(false, |output| output.status.success())
+    }
+
+    /// Assigns an IP address to a group from the 127.0.0.x range.
+    /// Returns the existing IP if the group already has one assigned.
+    ///
+    /// The IP assignment follows these rules:
+    /// - Uses addresses in the range 127.0.0.2 to 127.0.0.254
+    /// - Skips 127.0.0.0, 127.0.0.1, and 127.0.0.255
+    /// - Reuses IPs from terminated groups
+    /// - Maintains consistent IP assignment for a group
+    fn assign_group_ip(&mut self, group_name: &str) -> MonocoreResult<Option<Ipv4Addr>> {
+        // Return existing IP if already assigned
+        if let Some(ip) = self.assigned_ips.get(group_name) {
+            return Ok(Some(*ip));
+        }
+
+        // Find first available last octet (2-254, skipping 0, 1, and 255)
+        let last_octet = match (2..=254).find(|&n| !self.used_ips.contains(&n)) {
+            Some(n) => n,
+            None => return Ok(None), // No IPs available
+        };
+
+        let ip = Ipv4Addr::new(127, 0, 0, last_octet);
+        self.used_ips.insert(last_octet);
+        self.assigned_ips.insert(group_name.to_string(), ip);
+
+        Ok(Some(ip))
+    }
+
+    /// Releases an IP address assigned to a group, making it available for reuse.
+    /// This should be called when a group no longer has any running services.
+    fn release_group_ip(&mut self, group_name: &str) {
+        if let Some(ip) = self.assigned_ips.remove(group_name) {
+            self.used_ips.remove(&ip.octets()[3]);
+        }
     }
 }
 

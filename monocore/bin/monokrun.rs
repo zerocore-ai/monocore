@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf};
+use std::{env, net::Ipv4Addr, path::PathBuf};
 
 use monocore::{
     config::{EnvPair, Group, Service},
@@ -21,27 +21,28 @@ use tracing::{error, info};
 ///
 /// Expected arguments for supervisor mode:
 /// ```text
-/// monokrun --run-supervisor <service_json> <group_json> <rootfs_path>
+/// monokrun --run-supervisor <service_json> <group_json> <group_ip> <rootfs_path>
 /// ```
 ///
 /// Expected arguments for subprocess mode:
 /// ```text
-/// monokrun --run-microvm <service_json> <env_json> <rootfs_path>
+/// monokrun --run-microvm <service_json> <env_json> <local_only> <group_ip> <rootfs_path>
 /// ```
 #[tokio::main]
 pub async fn main() -> MonocoreResult<()> {
     let args: Vec<_> = env::args().collect();
 
-    // Check for subprocess mode first
-    if args.len() == 6 && args[1] == "--run-microvm" {
-        // Handle subprocess mode
+    // Check for microvm mode first
+    if args.len() == 7 && args[1] == "--run-microvm" {
+        // Handle microvm mode
         let service: Service = serde_json::from_str(&args[2])?;
         let env: Vec<EnvPair> = serde_json::from_str(&args[3])?;
         let local_only: bool = serde_json::from_str(&args[4])?;
-        let rootfs_path = PathBuf::from(&args[5]);
+        let group_ip: Option<Ipv4Addr> = serde_json::from_str(&args[5])?;
+        let rootfs_path = PathBuf::from(&args[6]);
 
         // Set up micro VM options
-        let microvm = MicroVm::builder()
+        let mut builder = MicroVm::builder()
             .root_path(rootfs_path)
             .num_vcpus(service.get_cpus())
             .ram_mib(service.get_ram())
@@ -56,23 +57,30 @@ pub async fn main() -> MonocoreResult<()> {
                     .map(|s| s.as_str()),
             )
             .env(env)
-            .local_only(local_only)
-            .build()?;
+            .local_only(local_only);
+
+        // Only set assigned_ip if Some
+        if let Some(ip) = group_ip {
+            builder = builder.assigned_ip(ip);
+        }
+
+        let microvm = builder.build()?;
 
         microvm.start()?;
         return Ok(());
     }
 
     // Check for supervisor mode
-    if args.len() == 5 && args[1] == "--run-supervisor" {
+    if args.len() == 6 && args[1] == "--run-supervisor" {
         tracing_subscriber::fmt().init();
 
         let service: Service = serde_json::from_str(&args[2])?;
         let group: Group = serde_json::from_str(&args[3])?;
-        let rootfs_path = PathBuf::from(&args[4]);
+        let group_ip: Option<Ipv4Addr> = serde_json::from_str(&args[4])?;
+        let rootfs_path = PathBuf::from(&args[5]);
 
         // Create and start the supervisor
-        let mut supervisor = Supervisor::new(service, group, rootfs_path).await?;
+        let mut supervisor = Supervisor::new(service, group, group_ip, rootfs_path).await?;
 
         // Set up signal handler for graceful shutdown
         let mut term_signal = signal(SignalKind::terminate())?;
@@ -104,6 +112,6 @@ pub async fn main() -> MonocoreResult<()> {
 
     // If we get here, no valid subcommand was provided
     Err(MonocoreError::InvalidSupervisorArgs(
-        "Usage: monocore --run-supervisor <service_json> <group_json> <rootfs_path>\n       monocore --run-microvm <service_json> <env_json> <argv_json> <rootfs_path>".into(),
+        "Usage: monocore --run-supervisor <service_json> <group_json> <group_ip> <rootfs_path>\n       monocore --run-microvm <service_json> <env_json> <local_only> <group_ip> <rootfs_path>".into(),
     ))
 }

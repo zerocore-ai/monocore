@@ -1,5 +1,6 @@
 use std::{
     env,
+    net::Ipv4Addr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{self, Stdio},
@@ -55,16 +56,11 @@ pub struct Supervisor {
 impl Supervisor {
     const MAX_LOG_SIZE: u64 = 10 * 1024 * 1024; // 10MB max log size
 
-    /// Creates a new  instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `service` - The service configuration to supervise
-    /// * `group` - The group configuration the service belongs to
-    /// * `rootfs_path` - Path to the root filesystem for the micro VM
+    /// Creates a new Supervisor instance.
     pub async fn new(
         service: Service,
         group: Group,
+        group_ip: Option<Ipv4Addr>,
         rootfs_path: impl AsRef<Path>,
     ) -> MonocoreResult<Self> {
         // Generate unique IDs for the files
@@ -91,7 +87,7 @@ impl Supervisor {
         let (shutdown_tx, _) = broadcast::channel(1);
 
         Ok(Self {
-            state: MicroVmState::new(service, group, rootfs_path),
+            state: MicroVmState::new(service, group, group_ip, rootfs_path),
             runtime_state_path,
             stdout_log_path,
             stderr_log_path,
@@ -156,7 +152,7 @@ impl Supervisor {
 
         let current_exe = env::current_exe()?;
 
-        // Serialize the service and group
+        // Serialize the service and environment variables
         let service_json = serde_json::to_string(self.state.get_service())?;
         let env_pairs = self
             .state
@@ -164,6 +160,8 @@ impl Supervisor {
             .get_group_env(self.state.get_group())?;
         let env_json = serde_json::to_string(&env_pairs)?;
         let local_only_json = serde_json::to_string(self.state.get_group().get_local_only())?;
+        let group_ip_json =
+            serde_json::to_string(&self.state.get_group_ip().unwrap_or(Ipv4Addr::LOCALHOST))?;
         let rootfs_path = self.state.get_rootfs_path().to_str().unwrap();
 
         // Start the micro VM sub process
@@ -173,6 +171,7 @@ impl Supervisor {
                 &service_json,
                 &env_json,
                 &local_only_json,
+                &group_ip_json,
                 rootfs_path,
             ])
             .stdout(Stdio::piped())

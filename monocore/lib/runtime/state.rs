@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    net::Ipv4Addr,
+    path::{Path, PathBuf},
+};
 
 use chrono::{DateTime, Utc};
 use getset::{Getters, Setters};
@@ -37,8 +40,9 @@ pub struct MicroVmState {
 
     /// The metrics of the micro VM sub process.
     metrics: MicroVmMetrics,
-    // /// The IP address of the group.
-    // group_addr: Ip4Addr,
+
+    /// The IP address of the group.
+    group_ip: Option<Ipv4Addr>,
 }
 
 /// The status of the micro VM sub process.
@@ -86,16 +90,22 @@ pub struct MicroVmMetrics {
 
 impl MicroVmState {
     /// Creates a new micro VM state.
-    pub fn new(service: Service, group: Group, rootfs_path: impl AsRef<Path>) -> Self {
+    pub fn new(
+        service: Service,
+        group: Group,
+        group_ip: Option<Ipv4Addr>,
+        rootfs_path: impl AsRef<Path>,
+    ) -> Self {
         Self {
             pid: None,
             created_at: Utc::now(),
             modified_at: Utc::now(),
             service,
             group,
-            rootfs_path: rootfs_path.as_ref().into(),
+            rootfs_path: rootfs_path.as_ref().to_path_buf(),
             status: MicroVmStatus::Unstarted,
             metrics: MicroVmMetrics::default(),
+            group_ip,
         }
     }
 
@@ -130,6 +140,7 @@ mod tests {
         let state = MicroVmState::new(
             Service::default(),
             Group::builder().name("test-group").build(),
+            None,
             temp_dir.path(),
         );
 
@@ -147,6 +158,7 @@ mod tests {
         assert_eq!(state.get_rootfs_path(), loaded_state.get_rootfs_path());
         assert_eq!(state.get_status(), loaded_state.get_status());
         assert_eq!(state.get_metrics(), loaded_state.get_metrics());
+        assert_eq!(state.get_group_ip(), loaded_state.get_group_ip());
 
         Ok(())
     }

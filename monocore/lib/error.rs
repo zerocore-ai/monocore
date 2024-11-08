@@ -160,6 +160,10 @@ pub enum MonocoreError {
     /// An error that occurred when merging configurations
     #[error("configuration merge error: {0}")]
     ConfigMerge(String),
+
+    /// An error that occurred when no more IP addresses are available for assignment
+    #[error("no available IP addresses in the pool")]
+    NoAvailableIPs,
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

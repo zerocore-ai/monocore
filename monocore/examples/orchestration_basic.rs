@@ -24,7 +24,7 @@ use monocore::{
     config::{Group, Monocore, Service},
     orchestration::{LogRetentionPolicy, Orchestrator},
 };
-use std::time::Duration;
+use std::{net::Ipv4Addr, time::Duration};
 use tokio::time;
 
 //--------------------------------------------------------------------------------------------------
@@ -87,25 +87,32 @@ async fn main() -> anyhow::Result<()> {
 
 // Helper function to print service status
 async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()> {
-    println!("\nCurrent service status:");
+    println!("\nCurrent Service Status:");
+    println!();
     let statuses = orchestrator.status().await?;
 
     println!(
-        "{:<15} {:<10} {:<15} {:<12} {:<14}",
-        "Service", "PID", "Status", "CPU Usage", "Memory Usage"
+        "{:<15} {:<10} {:<10} {:<15} {:<15} {:<12} {:<14}",
+        "Service", "Group", "PID", "Status", "IP Address", "CPU Usage", "Memory Usage"
     );
-    println!("{:-<67}", "");
+    println!("{:-<92}", "");
 
     for status in statuses {
         println!(
-            "{:<15} {:<10} {:<15} {:<12} {:<14}",
+            "{:<15} {:<10} {:<10} {:<15} {:<15} {:<12} {:<14}",
             status.get_name(),
+            status.get_state().get_group().get_name(),
             status.get_pid().unwrap_or(0),
             format!("{:?}", status.get_state().get_status()),
+            status
+                .get_state()
+                .get_group_ip()
+                .map_or_else(|| Ipv4Addr::LOCALHOST, |ip| ip),
             status.get_state().get_metrics().get_cpu_usage(),
             status.get_state().get_metrics().get_memory_usage()
         );
     }
+    println!();
     Ok(())
 }
 
