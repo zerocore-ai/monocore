@@ -117,7 +117,7 @@ fn create_initial_config() -> anyhow::Result<Monocore> {
         .base("alpine:latest")
         .group("main")
         .command("/usr/bin/tail")
-        .args(["-f".to_string(), "/dev/null".to_string()])
+        .args(["-f", "/dev/null"])
         .build();
 
     let sleep_service = Service::builder_default()
@@ -125,7 +125,7 @@ fn create_initial_config() -> anyhow::Result<Monocore> {
         .base("alpine:latest")
         .group("main")
         .command("/bin/sleep")
-        .args(vec!["infinity".to_string()])
+        .args(["infinity"])
         .build();
 
     // Create the Monocore configuration
@@ -148,7 +148,7 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
         .base("alpine:latest")
         .group("main")
         .command("/usr/bin/tail")
-        .args(["-f".to_string(), "/etc/hosts".to_string()]) // Changed from /dev/null to /etc/hosts
+        .args(["-f", "/etc/hosts"]) // Changed from /dev/null to /etc/hosts
         .build();
 
     // Keep sleep service unchanged
@@ -157,7 +157,7 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
         .base("alpine:latest")
         .group("main")
         .command("/bin/sleep")
-        .args(vec!["infinity".to_string()])
+        .args(["infinity"])
         .build();
 
     // Add new echo service
@@ -166,9 +166,9 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
         .base("alpine:latest")
         .group("main")
         .command("/bin/sh")
-        .args(vec![
-            "-c".to_string(),
-            "while true; do echo 'Hello from echo service'; sleep 5; done".to_string(),
+        .args([
+            "-c",
+            "while true; do echo 'Hello from echo service'; sleep 5; done",
         ])
         .build();
 

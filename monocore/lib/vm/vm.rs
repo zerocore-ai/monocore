@@ -1,4 +1,4 @@
-use std::{ffi::CString, path::PathBuf};
+use std::{ffi::CString, net::Ipv4Addr, path::PathBuf};
 
 use getset::Getters;
 use typed_path::Utf8UnixPathBuf;
@@ -110,6 +110,12 @@ pub struct MicroVmConfig {
 
     /// The console output path to use for the MicroVm.
     pub console_output: Option<Utf8UnixPathBuf>,
+
+    /// The assigned IP address for the MicroVm.
+    pub assigned_ip: Option<Ipv4Addr>,
+
+    /// Whether the MicroVm is restricted to local connections only.
+    pub local_only: bool,
 }
 
 /// The log level to use for the MicroVm.
@@ -232,12 +238,11 @@ impl MicroVm {
     }
 
     fn apply_config(ctx_id: u32, config: &MicroVmConfig) {
-        // TODO: There is a bug where any log level even 0, enables all logs which sucks.
-        // // Set log level
-        // unsafe {
-        //     let status = ffi::krun_set_log_level(config.log_level as u32);
-        //     assert!(status >= 0, "Failed to set log level: {}", status);
-        // }
+        // Set log level
+        unsafe {
+            let status = ffi::krun_set_log_level(config.log_level as u32);
+            assert!(status >= 0, "Failed to set log level: {}", status);
+        }
 
         // Set basic VM configuration
         unsafe {
@@ -356,16 +361,79 @@ impl MicroVm {
                 assert!(status >= 0, "Failed to set console output: {}", status);
             }
         }
+
+        // Set assigned IP if configured
+        if let Some(assigned_ip) = &config.assigned_ip {
+            let ip_str = assigned_ip.to_string();
+            let c_assigned_ip = CString::new(ip_str).unwrap();
+            unsafe {
+                let status = ffi::krun_set_tsi_rewrite_ip(ctx_id, c_assigned_ip.as_ptr());
+                assert!(status >= 0, "Failed to set assigned IP: {}", status);
+            }
+        }
+
+        // Set local_only mode
+        unsafe {
+            let status = ffi::krun_enable_tsi_local_only(ctx_id, config.local_only);
+            assert!(status >= 0, "Failed to set local only mode: {}", status);
+        }
     }
 }
 
 impl MicroVmConfig {
-    /// Creates a builder for a MicroVm configuration.
+    /// Creates a builder for configuring a new MicroVm configuration.
+    ///
+    /// This is the recommended way to create a new MicroVmConfig instance. The builder pattern
+    /// provides a more ergonomic interface and ensures all required fields are set.
+    ///
+    /// ## Examples
+    ///
+    /// ```rust
+    /// use monocore::vm::MicroVmConfig;
+    /// use tempfile::TempDir;
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// let temp_dir = TempDir::new()?;
+    /// let config = MicroVmConfig::builder()
+    ///     .root_path(temp_dir.path())
+    ///     .ram_mib(1024)
+    ///     .build()?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn builder() -> MicroVmConfigBuilder<(), ()> {
         MicroVmConfigBuilder::default()
     }
 
     /// Validates the MicroVm configuration.
+    ///
+    /// Performs a series of checks to ensure the configuration is valid:
+    /// - Verifies the root path exists
+    /// - Ensures number of vCPUs is non-zero
+    /// - Ensures RAM allocation is non-zero
+    /// - Validates executable path and arguments contain only printable ASCII characters
+    ///
+    /// ## Returns
+    /// - `Ok(())` if the configuration is valid
+    /// - `Err(MonocoreError::InvalidMicroVMConfig)` if any validation check fails
+    ///
+    /// ## Examples
+    ///
+    /// ```rust
+    /// use monocore::vm::MicroVmConfig;
+    /// use tempfile::TempDir;
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// let temp_dir = TempDir::new()?;
+    /// let config = MicroVmConfig::builder()
+    ///     .root_path(temp_dir.path())
+    ///     .ram_mib(1024)
+    ///     .build()?;
+    ///
+    /// assert!(config.validate().is_ok());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn validate(&self) -> MonocoreResult<()> {
         if !self.root_path.exists() {
             return Err(MonocoreError::InvalidMicroVMConfig(
@@ -387,7 +455,34 @@ impl MicroVmConfig {
             ));
         }
 
+        if let Some(exec_path) = &self.exec_path {
+            Self::validate_command_line(exec_path.as_ref())?;
+        }
+
+        for arg in &self.args {
+            Self::validate_command_line(arg)?;
+        }
+
         Ok(())
+    }
+
+    /// Validates that a command line string contains only allowed characters.
+    ///
+    /// Command line strings (executable paths and arguments) must contain only printable ASCII
+    /// characters in the range from space (0x20) to tilde (0x7E). This excludes control characters
+    /// like newlines and tabs, as well as any non-ASCII Unicode characters.
+    fn validate_command_line(s: &str) -> MonocoreResult<()> {
+        fn valid_char(c: char) -> bool {
+            matches!(c, ' '..='~')
+        }
+
+        if s.chars().all(valid_char) {
+            Ok(())
+        } else {
+            Err(MonocoreError::InvalidMicroVMConfig(
+                InvalidMicroVMConfigError::InvalidCommandLineString(s.to_string()),
+            ))
+        }
     }
 }
 
@@ -468,6 +563,75 @@ mod tests {
             config.validate(),
             Err(MonocoreError::InvalidMicroVMConfig(
                 InvalidMicroVMConfigError::RamIsZero
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_validate_command_line_valid_strings() {
+        // Test basic ASCII strings
+        assert!(MicroVmConfig::validate_command_line("hello").is_ok());
+        assert!(MicroVmConfig::validate_command_line("hello world").is_ok());
+        assert!(MicroVmConfig::validate_command_line("Hello, World!").is_ok());
+
+        // Test edge cases of valid range (space to tilde)
+        assert!(MicroVmConfig::validate_command_line(" ").is_ok()); // space (0x20)
+        assert!(MicroVmConfig::validate_command_line("~").is_ok()); // tilde (0x7E)
+
+        // Test special characters within valid range
+        assert!(MicroVmConfig::validate_command_line("!@#$%^&*()").is_ok());
+        assert!(MicroVmConfig::validate_command_line("path/to/file").is_ok());
+        assert!(MicroVmConfig::validate_command_line("user-name_123").is_ok());
+    }
+
+    #[test]
+    fn test_validate_command_line_invalid_strings() {
+        // Test control characters
+        assert!(MicroVmConfig::validate_command_line("\n").is_err()); // newline
+        assert!(MicroVmConfig::validate_command_line("\t").is_err()); // tab
+        assert!(MicroVmConfig::validate_command_line("\r").is_err()); // carriage return
+        assert!(MicroVmConfig::validate_command_line("\x1B").is_err()); // escape
+
+        // Test non-ASCII Unicode characters
+        assert!(MicroVmConfig::validate_command_line("hello🌎").is_err()); // emoji
+        assert!(MicroVmConfig::validate_command_line("über").is_err()); // umlaut
+        assert!(MicroVmConfig::validate_command_line("café").is_err()); // accent
+        assert!(MicroVmConfig::validate_command_line("你好").is_err()); // Chinese characters
+
+        // Test strings mixing valid and invalid characters
+        assert!(MicroVmConfig::validate_command_line("hello\nworld").is_err());
+        assert!(MicroVmConfig::validate_command_line("path/to/file\0").is_err()); // null byte
+        assert!(MicroVmConfig::validate_command_line("hello\x7F").is_err()); // DEL character
+    }
+
+    #[test]
+    fn test_validate_command_line_in_config() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Test invalid executable path
+        let config = MicroVmConfig::builder()
+            .root_path(temp_dir.path().to_path_buf())
+            .ram_mib(512)
+            .exec_path("/bin/hello\nworld")
+            .build();
+        assert!(matches!(
+            config.validate(),
+            Err(MonocoreError::InvalidMicroVMConfig(
+                InvalidMicroVMConfigError::InvalidCommandLineString(_)
+            ))
+        ));
+
+        // Test invalid argument
+        let config = MicroVmConfig::builder()
+            .root_path(temp_dir.path().to_path_buf())
+            .ram_mib(512)
+            .exec_path("/bin/echo")
+            .args(["hello\tworld"])
+            .build();
+        assert!(matches!(
+            config.validate(),
+            Err(MonocoreError::InvalidMicroVMConfig(
+                InvalidMicroVMConfigError::InvalidCommandLineString(_)
             ))
         ));
     }

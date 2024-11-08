@@ -176,6 +176,10 @@ pub enum InvalidMicroVMConfigError {
     /// The amount of RAM is zero.
     #[error("amount of RAM is zero")]
     RamIsZero,
+
+    /// The command line contains invalid characters. Only printable ASCII characters (space through tilde) are allowed.
+    #[error("command line contains invalid characters (only ASCII characters between space and tilde are allowed): {0}")]
+    InvalidCommandLineString(String),
 }
 
 /// An error that can represent any error.

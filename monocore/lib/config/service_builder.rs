@@ -117,8 +117,8 @@ impl<Name> ServiceDefaultBuilder<Name> {
     }
 
     /// Sets the command arguments for the service
-    pub fn args(mut self, args: impl IntoIterator<Item = String>) -> Self {
-        self.args = args.into_iter().collect();
+    pub fn args<'a>(mut self, args: impl IntoIterator<Item = &'a str>) -> Self {
+        self.args = args.into_iter().map(|s| s.to_string()).collect();
         self
     }
 
@@ -410,7 +410,7 @@ mod tests {
             .port("8080:80".parse()?)
             .workdir("/app")
             .command("./app")
-            .args(vec!["--port".to_string(), "80".to_string()])
+            .args(vec!["--port", "80"])
             .cpus(2)
             .ram(1024)
             .build();

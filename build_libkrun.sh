@@ -52,7 +52,7 @@ do
         NO_CLEANUP=true
         shift
         ;;
-      --force-build)
+      --force|--force-build)
         FORCE_BUILD=true
         shift
         ;;

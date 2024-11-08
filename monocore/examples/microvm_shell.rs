@@ -16,7 +16,7 @@
 //! The shell has basic functionality and access to busybox commands.
 
 use anyhow::{Context, Result};
-use monocore::vm::MicroVm;
+use monocore::vm::{LogLevel, MicroVm};
 
 //--------------------------------------------------------------------------------------------------
 // Functions: main
@@ -30,6 +30,7 @@ fn main() -> Result<()> {
 
     // Build the MicroVm
     let vm = MicroVm::builder()
+        .log_level(LogLevel::Info)
         .root_path(&rootfs_path)
         .num_vcpus(2)
         .exec_path("/bin/sh")
@@ -37,6 +38,7 @@ fn main() -> Result<()> {
         .env(["PATH=/bin".parse()?])
         .ram_mib(1024)
         .port_map(["8080:8080".parse()?])
+        .local_only(false)
         .build()
         .context("Failed to build MicroVm")?;
 

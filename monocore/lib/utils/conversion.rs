@@ -50,15 +50,15 @@ pub fn convert_bounds(range: impl RangeBounds<u64>) -> (u64, u64) {
 ///
 /// This function is useful for FFI calls that expect a null-terminated array of C-style strings.
 ///
-/// # Arguments
+/// ## Arguments
 ///
 /// * `strings` - A slice of strings to convert
 ///
-/// # Returns
+/// ## Returns
 ///
 /// A vector of pointers to null-terminated C strings, with a null pointer appended at the end.
 ///
-/// # Safety
+/// ## Safety
 ///
 /// The returned vector must be kept alive as long as the pointers are in use.
 pub fn to_null_terminated_c_array(strings: &[CString]) -> Vec<*const c_char> {
