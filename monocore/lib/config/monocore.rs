@@ -48,6 +48,17 @@ pub struct Group {
     #[serde(rename = "env", skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
     pub(super) envs: Vec<GroupEnv>,
+
+    /// Whether services in this group are restricted to local connections only.
+    #[serde(default = "Group::default_local_only")]
+    #[builder(default = true)]
+    pub(super) local_only: bool,
+}
+
+impl Group {
+    fn default_local_only() -> bool {
+        true
+    }
 }
 
 /// The volume to mount.

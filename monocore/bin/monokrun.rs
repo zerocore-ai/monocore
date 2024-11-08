@@ -26,18 +26,19 @@ use tracing::{error, info};
 ///
 /// Expected arguments for subprocess mode:
 /// ```text
-/// monokrun --run-microvm-subprocess <service_json> <env_json> <rootfs_path>
+/// monokrun --run-microvm <service_json> <env_json> <rootfs_path>
 /// ```
 #[tokio::main]
 pub async fn main() -> MonocoreResult<()> {
     let args: Vec<_> = env::args().collect();
 
     // Check for subprocess mode first
-    if args.len() >= 5 && args[1] == "--run-microvm-subprocess" {
+    if args.len() == 6 && args[1] == "--run-microvm" {
         // Handle subprocess mode
         let service: Service = serde_json::from_str(&args[2])?;
         let env: Vec<EnvPair> = serde_json::from_str(&args[3])?;
-        let rootfs_path = PathBuf::from(&args[4]);
+        let local_only: bool = serde_json::from_str(&args[4])?;
+        let rootfs_path = PathBuf::from(&args[5]);
 
         // Set up micro VM options
         let microvm = MicroVm::builder()
@@ -55,6 +56,7 @@ pub async fn main() -> MonocoreResult<()> {
                     .map(|s| s.as_str()),
             )
             .env(env)
+            .local_only(local_only)
             .build()?;
 
         microvm.start()?;
@@ -62,7 +64,7 @@ pub async fn main() -> MonocoreResult<()> {
     }
 
     // Check for supervisor mode
-    if args.len() >= 5 && args[1] == "--run-supervisor" {
+    if args.len() == 5 && args[1] == "--run-supervisor" {
         tracing_subscriber::fmt().init();
 
         let service: Service = serde_json::from_str(&args[2])?;
@@ -102,6 +104,6 @@ pub async fn main() -> MonocoreResult<()> {
 
     // If we get here, no valid subcommand was provided
     Err(MonocoreError::InvalidSupervisorArgs(
-        "Usage: monocore --run-supervisor <service_json> <group_json> <rootfs_path>\n       monocore --run-microvm-subprocess <service_json> <env_json> <argv_json> <rootfs_path>".into(),
+        "Usage: monocore --run-supervisor <service_json> <group_json> <rootfs_path>\n       monocore --run-microvm <service_json> <env_json> <argv_json> <rootfs_path>".into(),
     ))
 }

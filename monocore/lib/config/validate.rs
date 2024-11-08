@@ -479,6 +479,7 @@ mod tests {
                 name: name.to_string(),
                 volumes: vec![],
                 envs: vec![],
+                local_only: true,
             }
         }
     }
