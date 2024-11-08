@@ -1,6 +1,6 @@
 //! Monocore configuration types and helpers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use getset::{Getters, Setters};
 use serde::{Deserialize, Serialize};
@@ -343,7 +343,7 @@ impl Monocore {
     /// If service_names is None, removes all services.
     /// Groups are preserved unless all services are removed.
     ///
-    /// # Arguments
+    /// ## Arguments
     /// * `service_names` - Optional set of service names to remove. If None, removes all services.
     pub fn remove_services(&mut self, service_names: Option<&[String]>) {
         match service_names {
@@ -360,6 +360,54 @@ impl Monocore {
             }
         }
     }
+
+    /// Gets all services ordered by their dependencies, such that dependencies come before dependents.
+    /// This is useful for starting services in the correct order.
+    ///
+    /// ## Returns
+    /// A vector of service references ordered by dependencies (dependencies first)
+    ///
+    /// ## Note
+    /// This method assumes the configuration has already been validated (no circular dependencies).
+    /// The validation is performed during configuration building.
+    pub fn get_ordered_services(&self) -> Vec<&Service> {
+        let mut ordered = Vec::new();
+        let mut visited = HashSet::new();
+
+        // Helper function for depth-first topological sort
+        fn visit<'a>(
+            service_name: &str,
+            monocore: &'a Monocore,
+            ordered: &mut Vec<&'a Service>,
+            visited: &mut HashSet<String>,
+        ) {
+            // Skip if already visited
+            if visited.contains(service_name) {
+                return;
+            }
+
+            // Mark as visited
+            visited.insert(service_name.to_string());
+
+            // Get the service
+            let service = monocore.get_service(service_name).unwrap(); // Safe because config is validated
+
+            // Visit all dependencies first
+            for dep in service.get_depends_on() {
+                visit(dep, monocore, ordered, visited);
+            }
+
+            // Add service after its dependencies
+            ordered.push(service);
+        }
+
+        // Visit all services
+        for service in &self.services {
+            visit(service.get_name(), self, &mut ordered, &mut visited);
+        }
+
+        ordered
+    }
 }
 
 impl Service {
@@ -368,7 +416,7 @@ impl Service {
     /// This builder provides a fluent interface for configuring and creating a default service.
     /// Default services are general-purpose services that can run any command with custom configuration.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```rust
     /// use monocore::config::Service;
@@ -388,7 +436,7 @@ impl Service {
     /// This builder provides a fluent interface for configuring and creating an HTTP handler service.
     /// HTTP handler services are specialized services that handle HTTP requests in a serverless-like manner.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```rust
     /// use monocore::config::Service;
@@ -408,7 +456,7 @@ impl Service {
     /// This builder provides a fluent interface for configuring and creating a precursor service.
     /// Precursor services are ephemeral services that run setup tasks before other services start.
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// ```rust
     /// use monocore::config::Service;
@@ -1026,6 +1074,120 @@ mod tests {
             result,
             Err(MonocoreError::ServiceBelongsToNoGroup(name)) if name == "test-service"
         ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_ordered_services() -> anyhow::Result<()> {
+        // Create services with dependencies
+        let service1 = Service::builder_default()
+            .name("service1")
+            .command("./service1")
+            .build();
+
+        let service2 = Service::builder_default()
+            .name("service2")
+            .command("./service2")
+            .depends_on(vec!["service1".to_string()])
+            .build();
+
+        let service3 = Service::builder_default()
+            .name("service3")
+            .command("./service3")
+            .depends_on(vec!["service2".to_string()])
+            .build();
+
+        // Create Monocore config with services in reverse order
+        let config = Monocore::builder()
+            .services(vec![service3.clone(), service2.clone(), service1.clone()])
+            .build()?;
+
+        // Get ordered services
+        let ordered = config.get_ordered_services();
+
+        // Check order
+        assert_eq!(ordered.len(), 3);
+        assert_eq!(ordered[0].get_name(), "service1");
+        assert_eq!(ordered[1].get_name(), "service2");
+        assert_eq!(ordered[2].get_name(), "service3");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_ordered_services_circular() -> anyhow::Result<()> {
+        // Create services with circular dependencies
+        let service1 = Service::builder_default()
+            .name("service1")
+            .command("./service1")
+            .depends_on(vec!["service2".to_string()])
+            .build();
+
+        let service2 = Service::builder_default()
+            .name("service2")
+            .command("./service2")
+            .depends_on(vec!["service1".to_string()])
+            .build();
+
+        // Create Monocore config - this should fail due to circular dependency
+        let result = Monocore::builder()
+            .services(vec![service1, service2])
+            .build();
+
+        // The builder should fail validation
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Circular dependency"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_ordered_services_complex() -> anyhow::Result<()> {
+        // Create a more complex dependency graph
+        let service1 = Service::builder_default()
+            .name("service1")
+            .command("./service1")
+            .build();
+
+        let service2 = Service::builder_default()
+            .name("service2")
+            .command("./service2")
+            .depends_on(vec!["service1".to_string()])
+            .build();
+
+        let service3 = Service::builder_default()
+            .name("service3")
+            .command("./service3")
+            .depends_on(vec!["service1".to_string()])
+            .build();
+
+        let service4 = Service::builder_default()
+            .name("service4")
+            .command("./service4")
+            .depends_on(vec!["service2".to_string(), "service3".to_string()])
+            .build();
+
+        // Create Monocore config
+        let config = Monocore::builder()
+            .services(vec![service4, service3, service2, service1])
+            .build()?;
+
+        // Get ordered services
+        let ordered = config.get_ordered_services();
+
+        // Check order
+        assert_eq!(ordered.len(), 4);
+        assert_eq!(ordered[0].get_name(), "service1");
+        // service2 and service3 can be in either order since they both depend only on service1
+        assert!(
+            (ordered[1].get_name() == "service2" && ordered[2].get_name() == "service3")
+                || (ordered[1].get_name() == "service3" && ordered[2].get_name() == "service2")
+        );
+        assert_eq!(ordered[3].get_name(), "service4");
 
         Ok(())
     }

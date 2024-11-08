@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     process::Stdio,
     time::{Duration, SystemTime},
@@ -133,21 +133,37 @@ impl Orchestrator {
         let current_config = self.config.clone();
 
         // Get the services that changed or were added
-        let changed_services = current_config.get_changed_services(&new_config);
+        let changed_services: HashSet<_> = current_config
+            .get_changed_services(&new_config)
+            .into_iter()
+            .map(|s| s.get_name().to_string())
+            .collect();
 
         // Merge the configurations
         self.config = current_config.merge(&new_config)?;
 
-        // Start/restart changed services
-        for service in changed_services {
+        // Get ordered list of changed services based on dependencies
+        let ordered_services: Vec<_> = self
+            .config
+            .get_ordered_services()
+            .into_iter()
+            .filter(|s| changed_services.contains(s.get_name()))
+            .collect();
+
+        // Clone the ordered services to avoid borrow issues
+        let ordered_services: Vec<_> = ordered_services.into_iter().cloned().collect();
+
+        // Start/restart changed services in dependency order
+        for service in ordered_services {
             // Stop the service if it's running
             if let Some(pid) = self.running_services.get(service.get_name()) {
-                self.stop_service(*pid).await?;
+                let pid = *pid; // Copy the pid to avoid borrow issues
+                self.stop_service(pid).await?;
                 self.running_services.remove(service.get_name());
             }
 
             // Start the service with new configuration
-            self.start_service(service).await?;
+            self.start_service(&service).await?;
         }
 
         Ok(())
@@ -162,12 +178,28 @@ impl Orchestrator {
             }
         }
 
-        let services_to_stop: Vec<String> = match service_name {
-            Some(name) => vec![name.to_string()],
+        // Get the services to stop
+        let services_to_stop: HashSet<String> = match service_name {
+            Some(name) => vec![name.to_string()].into_iter().collect(),
             None => self.running_services.keys().cloned().collect(),
         };
 
-        for service_name in &services_to_stop {
+        // Get all services in dependency order (reversed for shutdown)
+        let ordered_services: Vec<_> = self
+            .config
+            .get_ordered_services()
+            .into_iter()
+            .filter(|s| services_to_stop.contains(s.get_name()))
+            .rev() // Reverse the order for shutdown
+            .collect();
+
+        // Clone the ordered services to avoid borrow issues
+        let ordered_services: Vec<_> = ordered_services.into_iter().cloned().collect();
+
+        // Stop services in reverse dependency order
+        for service in ordered_services {
+            let service_name = service.get_name();
+
             // Stop the service if it's running
             if let Some(pid) = self.running_services.remove(service_name) {
                 info!(
@@ -195,6 +227,9 @@ impl Orchestrator {
                 }
             }
         }
+
+        // Convert HashSet back to Vec for remove_services
+        let services_to_stop: Vec<_> = services_to_stop.into_iter().collect();
 
         // Remove services from config in place
         self.config.remove_services(Some(&services_to_stop));

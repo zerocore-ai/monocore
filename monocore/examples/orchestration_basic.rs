@@ -33,7 +33,10 @@ use tokio::time;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    // Initialize tracing with debug level by default
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
 
     // Use the architecture-specific build directory
     let rootfs_path = format!("build/rootfs-alpine-{}", get_current_arch());
@@ -118,6 +121,7 @@ fn create_initial_config() -> anyhow::Result<Monocore> {
         .group("main")
         .command("/usr/bin/tail")
         .args(["-f", "/dev/null"])
+        .depends_on(["sleep-service".to_string()])
         .build();
 
     let sleep_service = Service::builder_default()
