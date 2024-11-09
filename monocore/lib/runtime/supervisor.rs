@@ -4,17 +4,20 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{self, Stdio},
+    sync::Arc,
+    time::Duration,
 };
 
+use sysinfo::System;
 use tokio::{
     fs::{self, File, OpenOptions},
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
-    sync::broadcast,
+    sync::{broadcast, Mutex},
     task::JoinHandle,
     time,
+    time::interval,
 };
-
 use tracing::{error, info, warn};
 
 use crate::{
@@ -34,7 +37,7 @@ use super::MicroVmState;
 #[derive(Debug)]
 pub struct Supervisor {
     /// The state of the micro VM process.
-    state: MicroVmState,
+    state: Arc<Mutex<MicroVmState>>,
 
     /// The path to the state file of the micro VM process.
     runtime_state_path: PathBuf,
@@ -68,7 +71,7 @@ impl Supervisor {
 
         // Create paths with service name for better identification
         let runtime_state_path =
-            MICROVM_STATE_DIR.join(format!("{}-{}.json", service_name, process::id()));
+            MICROVM_STATE_DIR.join(format!("{}__{}.json", service_name, process::id()));
         let stdout_log_path = MICROVM_LOG_DIR.join(format!("{}.stdout.log", service_name));
         let stderr_log_path = MICROVM_LOG_DIR.join(format!("{}.stderr.log", service_name));
 
@@ -87,7 +90,12 @@ impl Supervisor {
         let (shutdown_tx, _) = broadcast::channel(1);
 
         Ok(Self {
-            state: MicroVmState::new(service, group, group_ip, rootfs_path),
+            state: Arc::new(Mutex::new(MicroVmState::new(
+                service,
+                group,
+                group_ip,
+                rootfs_path,
+            ))),
             runtime_state_path,
             stdout_log_path,
             stderr_log_path,
@@ -147,46 +155,59 @@ impl Supervisor {
     /// 2. Sets up stdout/stderr logging
     /// 3. Initializes process monitoring
     pub async fn start(&mut self) -> MonocoreResult<JoinHandle<MonocoreResult<()>>> {
-        self.state.set_status(MicroVmStatus::Starting);
-        self.save_runtime_state().await?;
+        {
+            let mut state = self.state.lock().await;
+            state.set_status(MicroVmStatus::Starting);
+            state.save(&self.runtime_state_path).await?;
+        }
 
         let current_exe = env::current_exe()?;
 
-        // Serialize the service and environment variables
-        let service_json = serde_json::to_string(self.state.get_service())?;
-        let env_pairs = self
-            .state
-            .get_service()
-            .get_group_env(self.state.get_group())?;
-        let env_json = serde_json::to_string(&env_pairs)?;
-        let local_only_json = serde_json::to_string(self.state.get_group().get_local_only())?;
-        let group_ip_json =
-            serde_json::to_string(&self.state.get_group_ip().unwrap_or(Ipv4Addr::LOCALHOST))?;
-        let rootfs_path = self.state.get_rootfs_path().to_str().unwrap();
+        // Get all the needed data under a single lock
+        let (service_json, env_pairs, local_only_json, group_ip_json, rootfs_path) = {
+            let state = self.state.lock().await;
+            let service_json = serde_json::to_string(state.get_service())?;
+            let env_pairs = state.get_service().get_group_env(state.get_group())?;
+            let env_json = serde_json::to_string(&env_pairs)?;
+            let local_only_json = serde_json::to_string(state.get_group().get_local_only())?;
+            let group_ip_json =
+                serde_json::to_string(&state.get_group_ip().unwrap_or(Ipv4Addr::LOCALHOST))?;
+            let rootfs_path = state.get_rootfs_path().to_str().unwrap().to_string();
+            (
+                service_json,
+                env_json,
+                local_only_json,
+                group_ip_json,
+                rootfs_path,
+            )
+        };
 
         // Start the micro VM sub process
         let mut child = Command::new(current_exe)
             .args([
                 "--run-microvm",
                 &service_json,
-                &env_json,
+                &env_pairs,
                 &local_only_json,
                 &group_ip_json,
-                rootfs_path,
+                &rootfs_path,
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
 
         // Set the status and PID of the micro VM process
-        self.state.set_status(MicroVmStatus::Started);
-        self.state.set_pid(child.id());
-        self.save_runtime_state().await?;
+        {
+            let mut state = self.state.lock().await;
+            state.set_status(MicroVmStatus::Started);
+            state.set_pid(child.id());
+            state.save(&self.runtime_state_path).await?;
+        }
 
         // Handle stdout
         let stdout = child.stdout.take().unwrap();
         let stdout_path = self.stdout_log_path.clone();
-        let service_name = self.state.get_service().get_name().to_string();
+        let service_name = self.state.lock().await.get_service().get_name().to_string();
         let stdout_handle = tokio::spawn(async move {
             let mut file = match Self::create_log_file(&stdout_path).await {
                 Ok(f) => f,
@@ -226,6 +247,7 @@ impl Supervisor {
                 if let Err(e) = file.write_all(formatted_line.as_bytes()).await {
                     error!("Failed to write to stdout log: {}", e);
                 }
+
                 if let Err(e) = file.flush().await {
                     error!("Failed to flush stdout log: {}", e);
                 }
@@ -235,7 +257,7 @@ impl Supervisor {
         // Handle stderr
         let stderr = child.stderr.take().unwrap();
         let stderr_path = self.stderr_log_path.clone();
-        let service_name = self.state.get_service().get_name().to_string();
+        let service_name = self.state.lock().await.get_service().get_name().to_string();
         let stderr_handle = tokio::spawn(async move {
             let mut file = match Self::create_log_file(&stderr_path).await {
                 Ok(f) => f,
@@ -281,13 +303,47 @@ impl Supervisor {
             }
         });
 
-        // Handle process lifecycle
+        // Handle metrics
+        let metrics_state = self.state.clone();
+        let metrics_runtime_state_path = self.runtime_state_path.clone();
+        let pid = child.id().unwrap();
+        let metrics_handle = tokio::spawn(async move {
+            let mut sys = System::new_all();
+            let mut interval = interval(Duration::from_secs(2)); // Update every 2 seconds
+
+            loop {
+                sys.refresh_all();
+
+                if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) {
+                    let cpu_usage = process.cpu_usage();
+                    let memory_usage = process.memory();
+
+                    // Update metrics in state
+                    let mut state = metrics_state.lock().await;
+                    state.get_metrics_mut().set_cpu_usage(cpu_usage);
+                    state.get_metrics_mut().set_memory_usage(memory_usage);
+
+                    // Save updated state
+                    if let Err(e) = state.save(&metrics_runtime_state_path).await {
+                        error!("Failed to save state with updated metrics: {}", e);
+                    }
+                } else {
+                    // Process no longer exists
+                    break;
+                }
+
+                interval.tick().await;
+            }
+        });
+
+        // Create shutdown receiver before spawning the main handle
         let mut shutdown_rx = self.shutdown_tx.subscribe();
         let runtime_state_path = self.runtime_state_path.clone();
+
+        // Update the handle spawning to include metrics_handle
         let handle = tokio::spawn(async move {
             let result = tokio::select! {
                 _ = shutdown_rx.recv() => {
-                    // Received shutdown signal, terminate the process
                     info!("Received shutdown signal, terminating micro VM process");
                     let _ = child.kill().await;
                     Ok(())
@@ -323,9 +379,10 @@ impl Supervisor {
                 }
             };
 
-            // Ensure log tasks are cleaned up
+            // Ensure log tasks and metrics task are cleaned up
             stdout_handle.abort();
             stderr_handle.abort();
+            metrics_handle.abort();
 
             result
         });
@@ -337,8 +394,11 @@ impl Supervisor {
     ///
     /// Sends a shutdown signal to the process and waits for it to terminate.
     pub async fn stop(&mut self) -> MonocoreResult<()> {
-        self.state.set_status(MicroVmStatus::Stopping);
-        self.save_runtime_state().await?;
+        {
+            let mut state = self.state.lock().await;
+            state.set_status(MicroVmStatus::Stopping);
+            state.save(&self.runtime_state_path).await?;
+        }
 
         if let Err(e) = self.shutdown_tx.send(()) {
             error!("Failed to send shutdown signal: {}", e);
@@ -361,8 +421,10 @@ impl Supervisor {
             );
         }
 
-        self.state
-            .set_status(MicroVmStatus::Stopped { exit_code: 0 });
+        {
+            let mut state = self.state.lock().await;
+            state.set_status(MicroVmStatus::Stopped { exit_code: 0 });
+        }
         Ok(())
     }
 
@@ -370,7 +432,7 @@ impl Supervisor {
     ///
     /// The state is saved to a JSON file at the path specified by `runtime_state_path`.
     pub async fn save_runtime_state(&self) -> MonocoreResult<()> {
-        let state_json = serde_json::to_string_pretty(&self.state)?;
+        let state_json = serde_json::to_string_pretty(&*self.state.lock().await)?;
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)

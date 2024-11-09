@@ -733,6 +733,11 @@ impl Orchestrator {
             self.used_ips.remove(&ip.octets()[3]);
         }
     }
+
+    /// Gets a reference to the map of running services and their supervisor PIDs
+    pub fn get_running_services(&self) -> &HashMap<String, u32> {
+        &self.running_services
+    }
 }
 
 impl LogRetentionPolicy {

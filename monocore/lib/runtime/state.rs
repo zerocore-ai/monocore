@@ -4,7 +4,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use getset::{Getters, Setters};
+use getset::{Getters, MutGetters, Setters};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{Group, Service};
@@ -14,8 +14,12 @@ use crate::config::{Group, Service};
 //--------------------------------------------------------------------------------------------------
 
 /// The state of the micro VM sub process.
-#[derive(Debug, Clone, Getters, Setters, Serialize, Deserialize)]
-#[getset(get = "pub with_prefix", set = "pub with_prefix")]
+#[derive(Debug, Clone, Getters, Setters, MutGetters, Serialize, Deserialize)]
+#[getset(
+    get = "pub with_prefix",
+    set = "pub with_prefix",
+    get_mut = "pub with_prefix"
+)]
 pub struct MicroVmState {
     /// The process ID of the micro VM sub process.
     pid: Option<u32>,
@@ -74,13 +78,19 @@ pub enum MicroVmStatus {
 }
 
 /// The metrics of the micro VM sub process.
-#[derive(Debug, Clone, Default, Getters, Setters, PartialEq, Serialize, Deserialize)]
-#[getset(get = "pub with_prefix", set = "pub with_prefix")]
+#[derive(
+    Debug, Clone, Default, Getters, Setters, MutGetters, PartialEq, Serialize, Deserialize,
+)]
+#[getset(
+    get = "pub with_prefix",
+    set = "pub with_prefix",
+    get_mut = "pub with_prefix"
+)]
 pub struct MicroVmMetrics {
-    /// The CPU usage of the micro VM.
-    cpu_usage: f64,
+    /// The CPU usage of the micro VM process in percentage.
+    cpu_usage: f32,
 
-    /// The memory usage of the micro VM.
+    /// The memory usage of the micro VM process in bytes.
     memory_usage: u64,
 }
 
