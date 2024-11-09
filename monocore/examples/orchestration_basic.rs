@@ -89,27 +89,52 @@ async fn main() -> anyhow::Result<()> {
 async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()> {
     println!("\nCurrent Service Status:");
     println!();
+    println!(
+        "{:<15} {:<10} {:<8} {:<8} {:<10} {:<10} {:<15} {:<15} {:<10} {:<10}",
+        "Service",
+        "Group",
+        "vCPUs",
+        "RAM",
+        "Sup PID",
+        "VM PID",
+        "Status",
+        "Assigned IP",
+        "CPU Usage",
+        "Mem Usage"
+    );
+    println!("{:-<120}", "");
+
     let statuses = orchestrator.status().await?;
 
-    println!(
-        "{:<15} {:<10} {:<10} {:<15} {:<15} {:<12} {:<14}",
-        "Service", "Group", "PID", "Status", "IP Address", "CPU Usage", "Memory Usage"
-    );
-    println!("{:-<92}", "");
-
     for status in statuses {
+        // Get supervisor PID from orchestrator's running_services map
+        let sup_pid = orchestrator
+            .get_running_services()
+            .get(status.get_name())
+            .copied()
+            .unwrap_or(0);
+
+        // Format CPU as percentage
+        let cpu_pct = (*status.get_state().get_metrics().get_cpu_usage() * 100.0).ceil();
+        // Format memory in MiB (1 MiB = 1024 * 1024 bytes)
+        let mem_mib =
+            (*status.get_state().get_metrics().get_memory_usage() as f64) / (1024.0 * 1024.0);
+
         println!(
-            "{:<15} {:<10} {:<10} {:<15} {:<15} {:<12} {:<14}",
+            "{:<15} {:<10} {:<8} {:<8} {:<10} {:<10} {:<15} {:<15} {:<10} {:<10}",
             status.get_name(),
             status.get_state().get_group().get_name(),
+            status.get_state().get_service().get_cpus(),
+            status.get_state().get_service().get_ram(),
+            sup_pid,
             status.get_pid().unwrap_or(0),
             format!("{:?}", status.get_state().get_status()),
             status
                 .get_state()
                 .get_group_ip()
                 .map_or_else(|| Ipv4Addr::LOCALHOST, |ip| ip),
-            status.get_state().get_metrics().get_cpu_usage(),
-            status.get_state().get_metrics().get_memory_usage()
+            format!("{}%", cpu_pct as u64),
+            format!("{}MiB", mem_mib.ceil() as u64)
         );
     }
     println!();
@@ -125,6 +150,7 @@ fn create_initial_config() -> anyhow::Result<Monocore> {
     let tail_service = Service::builder_default()
         .name("tail-service")
         .base("alpine:latest")
+        .ram(200)
         .group("main")
         .command("/usr/bin/tail")
         .args(["-f", "/dev/null"])
@@ -134,6 +160,7 @@ fn create_initial_config() -> anyhow::Result<Monocore> {
     let sleep_service = Service::builder_default()
         .name("sleep-service")
         .base("alpine:latest")
+        .ram(200)
         .group("main")
         .command("/bin/sleep")
         .args(["infinity"])
@@ -157,6 +184,7 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
     let tail_service = Service::builder_default()
         .name("tail-service")
         .base("alpine:latest")
+        .ram(200)
         .group("main")
         .command("/usr/bin/tail")
         .args(["-f", "/etc/hosts"]) // Changed from /dev/null to /etc/hosts
@@ -166,6 +194,7 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
     let sleep_service = Service::builder_default()
         .name("sleep-service")
         .base("alpine:latest")
+        .ram(200)
         .group("main")
         .command("/bin/sleep")
         .args(["infinity"])
@@ -175,6 +204,7 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
     let echo_service = Service::builder_default()
         .name("echo-service")
         .base("alpine:latest")
+        .ram(200)
         .group("main")
         .command("/bin/sh")
         .args([

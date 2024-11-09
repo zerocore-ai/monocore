@@ -57,6 +57,7 @@ typed-builder.workspace = true
 typed-path.workspace = true
 uuid.workspace = true
 xattr.workspace = true
+sysinfo = "0.32.0"
 
 [dev-dependencies]
 test-log.workspace = true
