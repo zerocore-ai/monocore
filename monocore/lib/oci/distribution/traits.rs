@@ -28,7 +28,9 @@ pub trait AuthProvider {
 /// including pulling images, fetching manifests, and fetching blobs.
 #[async_trait::async_trait]
 pub trait OciRegistryPull {
-    /// Pulls an OCI image from the specified repository.
+    /// Pulls an OCI image from the specified repository. This includes downloading
+    /// the image manifest, fetching the image configuration, and downloading the image layers.
+    ///
     /// If no tag is provided, defaults to the "latest" tag according to OCI specifications.
     async fn pull_image(
         &self,
