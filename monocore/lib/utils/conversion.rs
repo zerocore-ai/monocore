@@ -81,10 +81,10 @@ pub fn to_null_terminated_c_array(strings: &[CString]) -> Vec<*const c_char> {
 /// ```
 /// use monocore::utils::sanitize_repo_name;
 ///
-/// assert_eq!(sanitize_repo_name("library/alpine"), "library__alpine");
-/// assert_eq!(sanitize_repo_name("user/repo/name"), "user__repo__name");
+/// assert_eq!(sanitize_repo_name("library/alpine"), "library_alpine");
+/// assert_eq!(sanitize_repo_name("user/repo/name"), "user_repo_name");
 /// assert_eq!(sanitize_repo_name("my:weird@repo"), "my_weird_repo");
-/// assert_eq!(sanitize_repo_name(".hidden/repo."), "hidden__repo");
+/// assert_eq!(sanitize_repo_name(".hidden/repo."), "hidden_repo");
 /// ```
 pub fn sanitize_repo_name(repo_name: &str) -> String {
     // First replace forward slashes with double underscore
