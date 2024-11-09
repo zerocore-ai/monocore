@@ -61,7 +61,7 @@ pub struct MicroVm {
 /// ## Examples
 ///
 /// ```rust
-/// use monocore::vm::MicroVmConfig;
+/// use monocore::vm::{MicroVm, MicroVmConfig};
 /// use tempfile::TempDir;
 ///
 /// # fn main() -> anyhow::Result<()> {
@@ -69,7 +69,9 @@ pub struct MicroVm {
 /// let config = MicroVmConfig::builder()
 ///     .root_path(temp_dir.path())
 ///     .ram_mib(1024)
-///     .build()?;
+///     .build();
+///
+/// let vm = MicroVm::from_config(config)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -206,10 +208,10 @@ impl MicroVm {
     /// let vm = MicroVm::builder()
     ///     .root_path(temp_dir.path())
     ///     .ram_mib(1024)
-    ///     .exec_path("/bin/true")
+    ///     .exec_path("/usr/bin/python3")
+    ///     .args(["-c", "print('Hello from MicroVm!')"])
     ///     .build()?;
     ///
-    /// // // Start the MicroVm
     /// // let status = vm.start()?;
     /// // assert_eq!(status, 0);  // Process exited successfully
     /// # Ok(())
@@ -397,7 +399,7 @@ impl MicroVmConfig {
     /// let config = MicroVmConfig::builder()
     ///     .root_path(temp_dir.path())
     ///     .ram_mib(1024)
-    ///     .build()?;
+    ///     .build();
     /// # Ok(())
     /// # }
     /// ```
@@ -428,7 +430,7 @@ impl MicroVmConfig {
     /// let config = MicroVmConfig::builder()
     ///     .root_path(temp_dir.path())
     ///     .ram_mib(1024)
-    ///     .build()?;
+    ///     .build();
     ///
     /// assert!(config.validate().is_ok());
     /// # Ok(())

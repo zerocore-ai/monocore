@@ -41,7 +41,7 @@ pub struct MicroVmConfigBuilder<RootPath, RamMib> {
 /// ## Examples
 ///
 /// ```rust
-/// use monocore::runtime::{MicroVmBuilder, LogLevel};
+/// use monocore::vm::{MicroVmBuilder, LogLevel};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> anyhow::Result<()> {
@@ -55,7 +55,7 @@ pub struct MicroVmConfigBuilder<RootPath, RamMib> {
 ///     .rlimits(["RLIMIT_NOFILE=1024:1024".parse()?])
 ///     .workdir_path("/workdir")
 ///     .exec_path("/bin/example")
-///     .argv(["arg1".to_string(), "arg2".to_string()])
+///     .args(["arg1", "arg2"])
 ///     .env(["KEY1=VALUE1".parse()?, "KEY2=VALUE2".parse()?])
 ///     .console_output("/tmp/console.log")
 ///     .build()?;
@@ -78,7 +78,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::{MicroVmConfigBuilder, LogLevel};
+    /// use monocore::vm::{MicroVmConfigBuilder, LogLevel};
     ///
     /// let config = MicroVmConfigBuilder::default()
     ///     .log_level(LogLevel::Debug);  // Enable debug logging
@@ -104,7 +104,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     ///
     /// let config = MicroVmConfigBuilder::default()
     ///     .root_path("/path/to/alpine-rootfs");  // Use Alpine Linux root filesystem
@@ -140,7 +140,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     ///
     /// let config = MicroVmConfigBuilder::default()
     ///     .num_vcpus(2);  // Allocate 2 virtual CPU cores
@@ -162,7 +162,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     ///
     /// let config = MicroVmConfigBuilder::default()
     ///     .ram_mib(1024);  // Allocate 1 GiB of RAM
@@ -199,7 +199,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let config = MicroVmConfigBuilder::default()
@@ -234,7 +234,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     /// use monocore::config::PortPair;
     ///
     /// # fn main() -> anyhow::Result<()> {
@@ -276,7 +276,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let config = MicroVmConfigBuilder::default()
@@ -311,7 +311,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     ///
     /// let config = MicroVmConfigBuilder::default()
     ///     .workdir_path("/app")  // Set working directory to /app
@@ -335,7 +335,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     ///
     /// let config = MicroVmConfigBuilder::default()
     ///     .exec_path("/usr/local/bin/nginx")  // Run nginx web server
@@ -358,7 +358,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     ///
     /// let config = MicroVmConfigBuilder::default()
     ///     .exec_path("/usr/bin/python3")
@@ -386,7 +386,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let config = MicroVmConfigBuilder::default()
@@ -422,7 +422,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     ///
     /// let config = MicroVmConfigBuilder::default()
     ///     .console_output("/var/log/microvm.log")  // Save output to log file
@@ -447,7 +447,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     /// use std::net::Ipv4Addr;
     ///
     /// let config = MicroVmConfigBuilder::default()
@@ -473,7 +473,8 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmConfigBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
+    /// use std::net::Ipv4Addr;
     ///
     /// let config = MicroVmConfigBuilder::default()
     ///     .assigned_ip(Ipv4Addr::new(10, 0, 2, 15))
@@ -497,7 +498,7 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::{LogLevel, MicroVmBuilder};
+    /// use monocore::vm::{LogLevel, MicroVmBuilder};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
@@ -531,7 +532,7 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmBuilder;
+    /// use monocore::vm::MicroVmBuilder;
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
@@ -562,7 +563,7 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmBuilder;
+    /// use monocore::vm::MicroVmBuilder;
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
@@ -592,7 +593,7 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmBuilder;
+    /// use monocore::vm::MicroVmBuilder;
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
@@ -621,7 +622,7 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmBuilder;
+    /// use monocore::vm::MicroVmBuilder;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// MicroVmBuilder::default().virtiofs(["/guest/mount:/host/mount".parse()?]);
@@ -642,13 +643,11 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmBuilder;
+    /// use monocore::vm::MicroVmBuilder;
     /// use monocore::config::PortPair;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let vm = MicroVmBuilder::default()
-    ///     .root_path("/path/to/root")
-    ///     .ram_mib(1024)
     ///     .port_map([
     ///         // Map host port 8080 to guest port 80 (for web server)
     ///         "8080:80".parse()?,
@@ -656,8 +655,7 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     ///         "2222:22".parse()?,
     ///         // Use same port (3000) on both host and guest
     ///         "3000".parse()?
-    ///     ])
-    ///     .build()?;
+    ///     ]);
     /// # Ok(())
     /// # }
     /// ```
@@ -678,7 +676,7 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmBuilder;
+    /// use monocore::vm::MicroVmBuilder;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// MicroVmBuilder::default().rlimits(["RLIMIT_NOFILE=1024:1024".parse()?]);
@@ -695,7 +693,7 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmBuilder;
+    /// use monocore::vm::MicroVmBuilder;
     ///
     /// MicroVmBuilder::default().workdir_path("/path/to/workdir");
     /// ```
@@ -709,7 +707,7 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmBuilder;
+    /// use monocore::vm::MicroVmBuilder;
     ///
     /// MicroVmBuilder::default().exec_path("/path/to/exec");
     /// ```
@@ -725,19 +723,17 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmBuilder;
+    /// use monocore::vm::MicroVmBuilder;
     ///
+    /// # fn main() -> anyhow::Result<()> {
     /// let vm = MicroVmBuilder::default()
-    ///     .root_path("/path/to/root")
-    ///     .ram_mib(1024)
-    ///     .exec_path("/usr/bin/python3")
     ///     .args([
     ///         "-m", "http.server",  // Run Python's HTTP server module
     ///         "8080",               // Listen on port 8080
     ///         "--directory", "/data" // Serve files from /data
-    ///     ])
-    ///     .build()?;
+    ///     ]);
     /// # Ok(())
+    /// # }
     /// ```
     ///
     /// ## Notes
@@ -757,12 +753,10 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmBuilder;
+    /// use monocore::vm::MicroVmBuilder;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let vm = MicroVmBuilder::default()
-    ///     .root_path("/path/to/root")
-    ///     .ram_mib(1024)
     ///     .env([
     ///         // Set application environment
     ///         "APP_ENV=production".parse()?,
@@ -772,8 +766,7 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     ///         "TZ=UTC".parse()?,
     ///         // Multiple values are OK
     ///         "ALLOWED_HOSTS=localhost,127.0.0.1".parse()?
-    ///     ])
-    ///     .build()?;
+    ///     ]);
     /// # Ok(())
     /// # }
     /// ```
@@ -796,15 +789,14 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmBuilder;
+    /// use monocore::vm::MicroVmBuilder;
     ///
+    /// # fn main() -> anyhow::Result<()> {
     /// let vm = MicroVmBuilder::default()
-    ///     .root_path("/path/to/root")
-    ///     .ram_mib(1024)
     ///     .console_output("/var/log/microvm.log")  // Save output to log file
-    ///     .exec_path("/usr/local/bin/myapp")       // Run application
-    ///     .build()?;
+    ///     .exec_path("/usr/local/bin/myapp");      // Run application
     /// # Ok(())
+    /// # }
     /// ```
     ///
     /// ## Notes
@@ -861,7 +853,7 @@ impl MicroVmBuilder<PathBuf, u32> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::runtime::MicroVmBuilder;
+    /// use monocore::vm::MicroVmBuilder;
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
@@ -1019,7 +1011,7 @@ mod tests {
 
         // Check that other fields have default values
         assert_eq!(builder.inner.log_level, LogLevel::default());
-        assert_eq!(builder.inner.num_vcpus, None);
+        assert_eq!(builder.inner.num_vcpus, Some(DEFAULT_NUM_VCPUS));
         assert!(builder.inner.virtiofs.is_empty());
         assert!(builder.inner.port_map.is_empty());
         assert!(builder.inner.rlimits.is_empty());

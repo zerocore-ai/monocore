@@ -15,19 +15,19 @@ use std::{fmt, str::FromStr};
 /// ## Examples
 ///
 /// ```
-/// use monocore::runtime::EnvPair;
+/// use monocore::config::EnvPair;
 /// use std::str::FromStr;
 ///
 /// // Create a new environment variable pair
 /// let env_pair = EnvPair::new("PATH", "/usr/local/bin:/usr/bin");
 ///
-/// assert_eq!(env_pair.get_var(), "PATH");
+/// assert_eq!(env_pair.get_name(), "PATH");
 /// assert_eq!(env_pair.get_value(), "/usr/local/bin:/usr/bin");
 ///
 /// // Parse an environment variable pair from a string
 /// let env_pair = EnvPair::from_str("USER=alice").unwrap();
 ///
-/// assert_eq!(env_pair.get_var(), "USER");
+/// assert_eq!(env_pair.get_name(), "USER");
 /// assert_eq!(env_pair.get_value(), "alice");
 /// ```
 #[derive(Debug, Hash, Clone, PartialEq, Eq, Getters)]
@@ -55,7 +55,7 @@ impl EnvPair {
     /// ## Examples
     ///
     /// ```
-    /// use monocore::runtime::EnvPair;
+    /// use monocore::config::EnvPair;
     ///
     /// let env_pair = EnvPair::new("HOME", "/home/user");
     /// assert_eq!(env_pair.get_name(), "HOME");

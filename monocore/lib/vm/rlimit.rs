@@ -70,7 +70,7 @@ pub enum LinuxRLimitResource {
 /// ## Examples
 ///
 /// ```
-/// use monocore::runtime::{LinuxRlimit, LinuxRLimitResource};
+/// use monocore::vm::{LinuxRlimit, LinuxRLimitResource};
 ///
 /// // Create a new resource limit for CPU time
 /// let cpu_limit = LinuxRlimit::new(LinuxRLimitResource::RLIMIT_CPU, 10, 20);
@@ -126,7 +126,7 @@ impl LinuxRlimit {
     /// ## Examples
     ///
     /// ```
-    /// use monocore::runtime::{LinuxRlimit, LinuxRLimitResource};
+    /// use monocore::vm::{LinuxRlimit, LinuxRLimitResource};
     ///
     /// let cpu_limit = LinuxRlimit::new(LinuxRLimitResource::RLIMIT_CPU, 10, 20);
     /// assert_eq!(cpu_limit.get_resource(), &LinuxRLimitResource::RLIMIT_CPU);

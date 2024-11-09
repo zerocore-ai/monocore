@@ -529,8 +529,7 @@ impl Orchestrator {
     ///
     /// ## Example
     /// ```no_run
-    /// use monocore::orchestration::Orchestrator;
-    /// use monocore::config::LogRetentionPolicy;
+    /// use monocore::orchestration::{Orchestrator, LogRetentionPolicy};
     /// use std::time::Duration;
     ///
     /// # async fn example() -> anyhow::Result<()> {

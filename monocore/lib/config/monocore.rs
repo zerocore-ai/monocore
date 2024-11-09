@@ -711,7 +711,7 @@ mod tests {
         base = "ubuntu:24.04"
         group = "app"
         volumes = [
-            { name = "main", mount = "/:/project" }
+            { name = "main", mount = "/project:/" }
         ]
         envs = ["main"]
         depends_on = ["precursor"]
@@ -724,6 +724,7 @@ mod tests {
         [[group]]
         name = "app"
         address = "10.0.0.1"
+        local_only = true
 
         [[group.volume]]
         name = "main"
@@ -765,8 +766,8 @@ mod tests {
                     .volumes(vec![ServiceVolume::builder()
                         .name("main")
                         .mount(PathPair::Distinct {
-                            guest: "/".parse()?,
                             host: "/project".parse()?,
+                            guest: "/".parse()?,
                         })
                         .build()])
                     .envs(vec!["main".to_string()])
@@ -789,6 +790,7 @@ mod tests {
                         "PROJECT_PATH=/project".parse()?,
                     ])
                     .build()])
+                .local_only(true)
                 .build()])
             .build()?;
 
@@ -821,7 +823,7 @@ mod tests {
                     "volumes": [
                         {
                             "name": "main",
-                            "mount": "/:/project"
+                            "mount": "/project:/"
                         }
                     ],
                     "envs": ["main"],
@@ -836,6 +838,7 @@ mod tests {
             "group": [
                 {
                     "name": "app",
+                    "local_only": true,
                     "volume": [
                         {
                             "name": "main",
@@ -881,8 +884,8 @@ mod tests {
                     .volumes(vec![ServiceVolume::builder()
                         .name("main".to_string())
                         .mount(PathPair::Distinct {
-                            guest: "/".parse()?,
                             host: "/project".parse()?,
+                            guest: "/".parse()?,
                         })
                         .build()])
                     .envs(vec!["main".to_string()])
@@ -905,6 +908,7 @@ mod tests {
                         "PROJECT_PATH=/project".parse()?,
                     ])
                     .build()])
+                .local_only(true)
                 .build()])
             .build()?;
 
