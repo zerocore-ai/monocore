@@ -133,3 +133,7 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](../CONTRIBUTING.md)
 ## License
 
 This project is licensed under the [Apache License 2.0](../LICENSE).
+
+## Acknowledgements
+
+monofs draws inspiration from the [WNFS (Webnative File System)](https://github.com/wnfs-wg/rs-wnfs) project.

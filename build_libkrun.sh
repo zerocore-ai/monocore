@@ -1,40 +1,10 @@
 #!/bin/sh
 
-# Elevate privileges at the start to avoid repeated prompts
-sudo -v
-
-# Store the original working directory
-ORIGINAL_DIR="$(pwd)"
-
-# Set up variables
-BUILD_DIR="$ORIGINAL_DIR/build"
-LIBKRUNFW_REPO="https://github.com/containers/libkrunfw.git"
-LIBKRUN_REPO="https://github.com/appcypher/libkrun.git"
-LIB_DIR="/usr/local/lib"
-LIB64_DIR="/usr/local/lib64"
-NO_CLEANUP=false
-FORCE_BUILD=false
-
 # Color variables
 RED="\033[1;31m"
 GREEN="\033[1;32m"
 YELLOW="\033[1;33m"
 RESET="\033[0m"
-
-# Parse command line arguments
-for arg in "$@"
-do
-    case $arg in
-      --no-clean|--no-cleanup)
-        NO_CLEANUP=true
-        shift
-        ;;
-      --force-build)
-        FORCE_BUILD=true
-        shift
-        ;;
-    esac
-done
 
 # Logging functions
 info() {
@@ -48,6 +18,46 @@ warn() {
 error() {
     printf "${RED}:: %s${RESET}\n" "$1"
 }
+
+# Elevate privileges at the start to avoid repeated prompts
+if ! sudo -v; then
+    error "This script requires sudo privileges. Please run with sudo or grant sudo access."
+    exit 1
+fi
+
+# Keep sudo alive in the background
+while true; do
+    sudo -n true
+    sleep 60
+    kill -0 "$$" || exit
+done 2>/dev/null &
+
+# Store the original working directory
+ORIGINAL_DIR="$(pwd)"
+
+# Set up variables
+BUILD_DIR="$ORIGINAL_DIR/build"
+LIBKRUNFW_REPO="https://github.com/appcypher/libkrunfw.git"
+LIBKRUN_REPO="https://github.com/appcypher/libkrun.git"
+LIB_DIR="/usr/local/lib"
+LIB64_DIR="/usr/local/lib64"
+NO_CLEANUP=false
+FORCE_BUILD=false
+
+# Parse command line arguments
+for arg in "$@"
+do
+    case $arg in
+      --no-clean|--no-cleanup)
+        NO_CLEANUP=true
+        shift
+        ;;
+      --force|--force-build)
+        FORCE_BUILD=true
+        shift
+        ;;
+    esac
+done
 
 # Determine the OS type
 OS_TYPE="$(uname -s)"
@@ -199,7 +209,15 @@ build_and_install_lib() {
   sudo make install
   check_success "Failed to install $lib_name"
 
-  # Create non-versioned variant of libkrunfw
+  # On macOS, patch the dylib install name to point to its actual location
+  if [ "$OS_TYPE" = "Darwin" ]; then
+    info "Patching dylib install name for $lib_name..."
+    sudo install_name_tool -id "$LIB_DIR/${lib_name}.dylib" "$LIB_DIR/${lib_name}.dylib"
+    check_success "Failed to patch dylib install name for $lib_name"
+  fi
+
+  # Create non-versioned variant of libkrunfw.
+  # Needed for GH action CI builds.
   if [ "$lib_name" = "libkrunfw" ]; then
     info "Creating non-versioned variant of $lib_name..."
     case "$OS_TYPE" in

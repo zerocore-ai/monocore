@@ -57,4 +57,13 @@ pub enum MonocoreSubcommand {
 
     /// Prints the status of the specified Monocore service or services.
     Status {},
+
+    /// Installs a package from the registry.
+    Install {},
+
+    /// Initializes a new monocore configuration.
+    Init {},
+
+    /// Runs the monocore agent.
+    Agent {},
 }

@@ -1,47 +1,57 @@
 //! If you are trying to run this example, please make sure to run `make example microvm_shell` from
-//! the `monocore` subdirectory
+//! the `monocore` subdirectory.
+//!
+//! This example demonstrates running a basic shell inside a microvm with:
+//! - 2 virtual CPUs
+//! - 1024 MiB of RAM
+//! - Basic environment setup (PATH=/bin)
+//! - Resource limits (RLIMIT_NOFILE set to 256:512)
+//!
+//! To run the example:
+//! ```bash
+//! make example microvm_shell
+//! ```
+//!
+//! Once running, you can interact with the shell inside the microvm.
+//! The shell has basic functionality and access to busybox commands.
 
-use monocore::runtime::MicroVM;
+use anyhow::{Context, Result};
+use monocore::vm::{LogLevel, MicroVm};
 
 //--------------------------------------------------------------------------------------------------
-// Function: main
+// Functions: main
 //--------------------------------------------------------------------------------------------------
 
-fn main() -> anyhow::Result<()> {
-    // Get the current architecture
-    let arch = get_current_arch();
+fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
 
     // Use the architecture-specific build directory
-    let rootfs_path = format!("build/rootfs-alpine-{}", arch);
+    let rootfs_path = format!("build/rootfs-alpine-{}", get_current_arch());
 
-    // Update the set_xattr call // TODO: Not sure how important this is
-    set_xattr(&rootfs_path, "user.containers.override_stat", b"0:0:0555")?;
-
-    // Build the microVM
-    let vm = MicroVM::builder()
+    // Build the MicroVm
+    let vm = MicroVm::builder()
+        .log_level(LogLevel::Info)
         .root_path(&rootfs_path)
         .num_vcpus(2)
         .exec_path("/bin/sh")
         .rlimits(["RLIMIT_NOFILE=256:512".parse()?])
-        .env(["ALIEN_GREETING=Hello puny humans!".parse()?])
+        .env(["PATH=/bin".parse()?])
         .ram_mib(1024)
-        .build()?;
+        .port_map(["8080:8080".parse()?])
+        .local_only(false)
+        .build()
+        .context("Failed to build MicroVm")?;
 
-    // Start the microVM
-    vm.start();
+    // Start the MicroVm
+    tracing::info!("Starting MicroVm...");
+    vm.start()?;
 
     Ok(())
 }
 
 //--------------------------------------------------------------------------------------------------
-// Function: *
+// Functions: *
 //--------------------------------------------------------------------------------------------------
-
-// Set an extended attribute on a file
-fn set_xattr(path: impl AsRef<std::path::Path>, name: &str, value: &[u8]) -> anyhow::Result<()> {
-    xattr::set(path, name, value)?;
-    Ok(())
-}
 
 // Add this function to determine the current architecture
 fn get_current_arch() -> &'static str {

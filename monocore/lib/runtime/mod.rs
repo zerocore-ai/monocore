@@ -1,12 +1,11 @@
-//! Runtime management and configuration.
+//! Supervisor for managing vm lifecycles.
 
-mod ffi;
-mod vm;
+mod state;
+mod supervisor;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-#[allow(unused)]
-pub use ffi::*;
-pub use vm::*;
+pub use state::*;
+pub use supervisor::*;

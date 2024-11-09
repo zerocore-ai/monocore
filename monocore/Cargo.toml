@@ -14,6 +14,10 @@ path = "lib/lib.rs"
 name = "monocore"
 path = "bin/monocore.rs"
 
+[[bin]]
+name = "monokrun"
+path = "bin/monokrun.rs"
+
 [[bench]]
 name = "microvm_provision"
 harness = false
@@ -33,21 +37,25 @@ getset.workspace = true
 hex.workspace = true
 lazy_static.workspace = true
 libc.workspace = true
-oci-spec = { git = "https://github.com/containers/oci-spec-rs", branch = "main" }
+oci-spec = { git = "https://github.com/containers/oci-spec-rs", rev = "e436a3024778cf734336952f4d37b69864488d0e" }
+procspawn.workspace = true
 reqwest.workspace = true
 reqwest-middleware.workspace = true
 reqwest-retry.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+signal-hook = "0.3.17"
 structstruck.workspace = true
+tempfile = "3.13.0"
 thiserror.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 typed-builder.workspace = true
 typed-path.workspace = true
+uuid.workspace = true
 xattr.workspace = true
 
 [dev-dependencies]

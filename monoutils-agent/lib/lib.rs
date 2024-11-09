@@ -1,8 +1,8 @@
-//! Monocore proxy server types and helpers.
+//! `monoutils-agent` is a library for building AI agents.
+
+#![warn(missing_docs)]
+#![allow(clippy::module_inception)]
 
 //--------------------------------------------------------------------------------------------------
-// Types
+// Exports
 //--------------------------------------------------------------------------------------------------
-
-/// The monocore proxy server.
-pub struct ProxyServer;

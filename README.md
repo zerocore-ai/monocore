@@ -47,7 +47,7 @@ Follow these steps to set up monocore for development:
 ### Prerequisites
 
 - [Git][git_home]
-- [Rust toolchain][rustup_home] (latest stable version)
+- [Rust toolchain][rustup_home]
 - On macOS: [Homebrew][brew_home]
 
 ### Setup
@@ -77,23 +77,9 @@ Follow these steps to set up monocore for development:
 3. **Build and install monocore**
 
    ```sh
-   cd monocore # Ensure you are in the monocore subdirectory
+   cd monocore
    make
    sudo make install
-   ```
-
-4. **Run examples**
-
-   ```sh
-   cd monocore # Ensure you are in the monocore subdirectory
-   make example microvm_shell
-   ```
-
-5. **Run benchmarks**
-
-   ```sh
-   cd monocore # Ensure you are in the monocore subdirectory
-   make bench microvm_provision
    ```
 
 ## Contributing

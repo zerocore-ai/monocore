@@ -19,7 +19,7 @@ use tokio::{
 };
 
 use crate::{
-    utils::{self, IMAGE_LAYERS_SUBDIR},
+    utils::{self, IMAGE_LAYERS_SUBDIR, OCI_SUBDIR},
     MonocoreError, MonocoreResult,
 };
 
@@ -144,7 +144,7 @@ impl DockerRegistry {
 
     /// Gets the size of a downloaded file if it exists.
     fn get_downloaded_file_size(&self, path: &Path) -> u64 {
-        // If the file does not exist, return 0
+        // If the file does not exist, return 0 indicating no bytes have been downloaded
         if !path.exists() {
             return 0;
         }
@@ -196,8 +196,7 @@ impl DockerRegistry {
             file.write_all(&bytes).await?;
         }
 
-        // TODO: Check that the downloaded file has the same digest as the one we wanted
-        // TODO: Use the hash method derived from the digest to verify the download
+        // Verify the hash of the downloaded file
         let algorithm = digest.algorithm();
         let expected_hash = digest.digest();
         let actual_hash = hex::encode(utils::get_file_hash(&destination, algorithm).await?);
@@ -278,6 +277,7 @@ impl OciRegistryPull for DockerRegistry {
             .map(|layer| {
                 let layer_path = self
                     .path
+                    .join(OCI_SUBDIR)
                     .join(IMAGE_LAYERS_SUBDIR)
                     .join(layer.digest().to_string());
                 self.download_image_blob(repository, layer.digest(), layer.size(), layer_path)
@@ -446,7 +446,7 @@ mod tests {
 
     #[ignore]
     #[test_log::test(tokio::test)]
-    async fn test_authenticate() -> anyhow::Result<()> {
+    async fn test_docker_registry_authenticate() -> anyhow::Result<()> {
         let registry = DockerRegistry::new();
 
         let auth_material = registry
@@ -460,7 +460,7 @@ mod tests {
 
     #[ignore]
     #[test_log::test(tokio::test)]
-    async fn test_fetch_index() -> anyhow::Result<()> {
+    async fn test_docker_registry_fetch_index() -> anyhow::Result<()> {
         let registry = DockerRegistry::new();
 
         let index = registry
@@ -476,7 +476,7 @@ mod tests {
 
     #[ignore]
     #[test_log::test(tokio::test)]
-    async fn test_fetch_manifest() -> anyhow::Result<()> {
+    async fn test_docker_registry_fetch_manifest() -> anyhow::Result<()> {
         let registry = DockerRegistry::new();
 
         let index = registry
@@ -498,7 +498,7 @@ mod tests {
 
     #[ignore]
     #[test_log::test(tokio::test)]
-    async fn test_fetches() -> anyhow::Result<()> {
+    async fn test_docker_registry_fetch_config() -> anyhow::Result<()> {
         let registry = DockerRegistry::new();
 
         let index = registry
@@ -526,7 +526,7 @@ mod tests {
 
     #[ignore]
     #[test_log::test(tokio::test)]
-    async fn test_pull_image() -> anyhow::Result<()> {
+    async fn test_docker_registry_pull_image() -> anyhow::Result<()> {
         let registry = DockerRegistry::new();
 
         let result = registry.pull_image("library/alpine", None).await;

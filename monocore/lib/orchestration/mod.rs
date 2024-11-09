@@ -1,11 +1,9 @@
-//! A server for managing monocore orchestration group.
+//! The orchestration module of the monocore.
 
-mod config;
-mod server;
+mod orchestrator;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use config::*;
-pub use server::*;
+pub use orchestrator::*;

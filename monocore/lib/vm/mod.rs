@@ -1,7 +1,7 @@
 //! Runtime management and configuration.
 
 mod builder;
-mod env_pair;
+mod ffi;
 mod rlimit;
 mod vm;
 
@@ -10,6 +10,7 @@ mod vm;
 //--------------------------------------------------------------------------------------------------
 
 pub use builder::*;
-pub use env_pair::*;
+#[allow(unused)]
+pub use ffi::*;
 pub use rlimit::*;
 pub use vm::*;

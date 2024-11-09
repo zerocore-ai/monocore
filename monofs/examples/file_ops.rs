@@ -1,3 +1,26 @@
+//! This example demonstrates file operations in monofs using an in-memory store.
+//!
+//! The example shows how to:
+//! - Create and manipulate files
+//! - Read and write file content
+//! - Work with file streams
+//! - Handle file metadata
+//! - Store and load files from CIDs
+//!
+//! Operations demonstrated:
+//! 1. Creating new files
+//! 2. Writing content using FileOutputStream
+//! 3. Reading content using FileInputStream and BufReader
+//! 4. Checking file status (empty/size)
+//! 5. Working with file metadata
+//! 6. Storing and loading files using CIDs
+//! 7. Truncating files
+//!
+//! To run the example:
+//! ```bash
+//! cargo run --example file_ops
+//! ```
+
 use monofs::filesystem::{File, FileInputStream, FileOutputStream};
 use monoutils_store::{MemoryStore, Storable};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};

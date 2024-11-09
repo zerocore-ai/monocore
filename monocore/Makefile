@@ -10,6 +10,7 @@ endif
 
 PREFIX ?= /usr/local
 MONOCORE_RELEASE_BIN := ../target/release/monocore
+MONOKRUN_RELEASE_BIN := ../target/release/monokrun
 EXAMPLES_DIR := ../target/release/examples
 FIXTURES_DIR := fixtures
 DISTRO_ROOTFS := rootfs-alpine
@@ -21,10 +22,19 @@ DARWIN_LIB_PATH := /usr/local/lib
 LINUX_LIB_PATH := /usr/local/lib64
 
 # Phony targets
-.PHONY: all install clean example unpack_rootfs bench
+.PHONY: all install clean example unpack_rootfs bench build_monokrun
 
 # Default target
 all: $(MONOCORE_RELEASE_BIN)
+
+# Build monokrun in release mode
+build_monokrun: $(MONOKRUN_RELEASE_BIN)
+
+$(MONOKRUN_RELEASE_BIN):
+	cargo build --release --bin monokrun
+ifeq ($(OS),Darwin)
+	codesign --entitlements monocore.entitlements --force -s - $@
+endif
 
 # Build the release binary
 $(MONOCORE_RELEASE_BIN):
@@ -52,33 +62,34 @@ $(BUILD_DIR)/$(DISTRO_ROOTFS)-$(ARCH): $(FIXTURES_DIR)/$(DISTRO_ROOTFS)-$(ARCH).
 	touch $@
 
 # Run examples
-example: unpack_rootfs
+example: build_monokrun unpack_rootfs
 	@if [ -z "$(word 2,$(MAKECMDGOALS))" ]; then \
-		echo "Usage: make example <example_name>"; \
-		exit 1; \
+		echo "Usage: make example <example_name> [-- <args>]"; \
+			exit 1; \
 	fi
-	@$(MAKE) _run_example EXAMPLE_NAME=$(word 2,$(MAKECMDGOALS))
+	@$(eval EXAMPLE_ARGS := $(filter-out example $(word 2,$(MAKECMDGOALS)) --, $(MAKECMDGOALS)))
+	@$(MAKE) _run_example EXAMPLE_NAME=$(word 2,$(MAKECMDGOALS)) ARGS="$(EXAMPLE_ARGS)"
 
 _run_example:
 ifeq ($(OS),Darwin)
 	cargo build --example $(EXAMPLE_NAME) --release
 	codesign --entitlements monocore.entitlements --force -s - $(EXAMPLES_DIR)/$(EXAMPLE_NAME)
-	DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME)
+	DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$RUST_DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME) $(ARGS) || exit $$?
 else
-	LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --example $(EXAMPLE_NAME) --release
+	LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
 endif
 
 # Run benchmarks
 bench:
 	@if [ -z "$(word 2,$(MAKECMDGOALS))" ]; then \
 		echo "Usage: make bench <benchmark_name>"; \
-		exit 1; \
+			exit 1; \
 	fi
 	@$(MAKE) _run_bench BENCH_NAME=$(word 2,$(MAKECMDGOALS))
 
 _run_bench:
 	cargo bench --bench $(BENCH_NAME)
 
-# Catch-all target to allow example names
+# Catch-all target to allow example names and arguments
 %:
 	@:
