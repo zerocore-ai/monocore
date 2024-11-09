@@ -9,14 +9,26 @@ use super::MONOCORE_HOME_ENV_VAR;
 /// The sub directory where monocore artifacts, configs, etc are stored.
 pub const MONOCORE_SUBDIR: &str = ".monocore";
 
-/// The OCI sub directory.
+/// The OCI sub directory where the OCI image layers, index, configurations, etc are stored.
 pub const OCI_SUBDIR: &str = "oci";
 
 /// The sub directory where monocore OCI image layers are cached.
-pub const IMAGE_LAYERS_SUBDIR: &str = "layers";
+pub const OCI_LAYER_SUBDIR: &str = "layer";
 
 /// The sub directory where monocore OCI image index, configurations, etc. are cached.
-pub const IMAGE_REPOS_SUBDIR: &str = "repos";
+pub const OCI_REPO_SUBDIR: &str = "repo";
+
+/// The filename for the OCI image index JSON file
+pub const OCI_INDEX_FILENAME: &str = "index.json";
+
+/// The filename for the OCI image manifest JSON file
+pub const OCI_MANIFEST_FILENAME: &str = "manifest.json";
+
+/// The filename for the OCI image config JSON file
+pub const OCI_CONFIG_FILENAME: &str = "config.json";
+
+/// The microvm sub directory where the rootfs and other related files associated with the microvm are stored.
+pub const MICROVM_SUBDIR: &str = "microvm";
 
 /// The sub directory where runtime state is stored.
 pub const STATE_SUBDIR: &str = "run";

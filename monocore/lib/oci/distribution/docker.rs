@@ -19,7 +19,10 @@ use tokio::{
 };
 
 use crate::{
-    utils::{self, IMAGE_LAYERS_SUBDIR, OCI_SUBDIR},
+    utils::{
+        self, OCI_CONFIG_FILENAME, OCI_INDEX_FILENAME, OCI_LAYER_SUBDIR, OCI_MANIFEST_FILENAME,
+        OCI_REPO_SUBDIR, OCI_SUBDIR,
+    },
     MonocoreError, MonocoreResult,
 };
 
@@ -117,21 +120,19 @@ pub struct DockerRegistryResponseError {
 /// Creates a new instance of `DockerRegistry` with an HTTP client configured for retrying transient errors.
 /// This client is used to interact with the Docker Registry HTTP API.
 impl DockerRegistry {
-    /// Creates a new DockerRegistry instance with an HTTP client configured for retrying transient errors.
+    /// Creates a new DockerRegistry instance with the default path (MONOCORE_HOME).
     pub fn new() -> Self {
-        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
-        let client_builder = ClientBuilder::new(Client::new());
-        let client = client_builder
-            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-            .build();
-
-        Self {
-            client,
-            path: utils::monocore_home_path(),
-        }
+        Self::with_path(utils::monocore_home_path())
     }
 
-    /// Creates a new DockerRegistry instance with a custom path.
+    /// Creates a new DockerRegistry instance with a custom base path.
+    ///
+    /// This is useful for testing or when you need to store OCI artifacts
+    /// in a different location than the default MONOCORE_HOME.
+    ///
+    /// ## Arguments
+    /// * `path` - The base path where OCI artifacts will be stored. The OCI directory
+    ///            structure will be created under this path.
     pub fn with_path(path: PathBuf) -> Self {
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
         let client_builder = ClientBuilder::new(Client::new());
@@ -253,46 +254,70 @@ impl AuthProvider for DockerRegistry {
 #[async_trait::async_trait]
 impl OciRegistryPull for DockerRegistry {
     async fn pull_image(&self, repository: &str, tag: Option<&str>) -> MonocoreResult<()> {
-        let index = self.fetch_index(repository, tag).await?;
+        let tag = tag.unwrap_or("latest");
+        let repo_tag = format!(
+            "{}__{}",
+            utils::sanitize_repo_name(repository),
+            utils::sanitize_repo_name(tag)
+        );
+
+        // Create the repository tag directory
+        let repo_tag_dir = self
+            .path
+            .join(OCI_SUBDIR)
+            .join(OCI_REPO_SUBDIR)
+            .join(&repo_tag);
+        fs::create_dir_all(&repo_tag_dir).await?;
+
+        // Fetch and save index
+        let index = self.fetch_index(repository, Some(tag)).await?;
+        let index_path = repo_tag_dir.join(OCI_INDEX_FILENAME);
+        fs::write(&index_path, serde_json::to_string_pretty(&index)?).await?;
 
         // Select the right manifest for the platform or choose first if not specified
         let platform = Platform::default();
-        let manifest = index
+        let manifest_desc = index
             .manifests()
             .iter()
             .find(|m| m.platform().as_ref().map_or(false, |p| p == &platform))
             .or_else(|| index.manifests().first())
             .ok_or(MonocoreError::ManifestNotFound)?;
 
-        // Fetch the manifest
-        let manifest = self.fetch_manifest(repository, manifest.digest()).await?;
+        // Fetch and save manifest
+        let manifest = self
+            .fetch_manifest(repository, manifest_desc.digest())
+            .await?;
+        let manifest_path = repo_tag_dir.join(OCI_MANIFEST_FILENAME);
+        fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?).await?;
 
-        // Fetch the config
-        let config_future = self.fetch_config(repository, manifest.config().digest());
+        // Fetch and save config
+        let config = self
+            .fetch_config(repository, manifest.config().digest())
+            .await?;
+        let config_path = repo_tag_dir.join(OCI_CONFIG_FILENAME);
+        fs::write(&config_path, serde_json::to_string_pretty(&config)?).await?;
 
         // Download layers concurrently
         let layer_futures: Vec<_> = manifest
             .layers()
             .iter()
-            .map(|layer| {
+            .map(|layer_desc| {
                 let layer_path = self
                     .path
                     .join(OCI_SUBDIR)
-                    .join(IMAGE_LAYERS_SUBDIR)
-                    .join(layer.digest().to_string());
-                self.download_image_blob(repository, layer.digest(), layer.size(), layer_path)
+                    .join(OCI_LAYER_SUBDIR)
+                    .join(layer_desc.digest().to_string());
+                self.download_image_blob(
+                    repository,
+                    layer_desc.digest(),
+                    layer_desc.size(),
+                    layer_path,
+                )
             })
             .collect();
 
-        let results = future::join_all(layer_futures);
-
-        let (config, results) = tokio::join!(config_future, results);
-
-        // Check for errors in the config fetch
-        config?;
-
-        // Check for errors in the download results
-        for result in results {
+        // Wait for all layers to download
+        for result in future::join_all(layer_futures).await {
             result?;
         }
 
@@ -443,11 +468,13 @@ impl Default for DockerRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[ignore]
     #[test_log::test(tokio::test)]
-    async fn test_docker_registry_authenticate() -> anyhow::Result<()> {
-        let registry = DockerRegistry::new();
+    async fn test_oci_docker_registry_authenticate() -> anyhow::Result<()> {
+        let temp_dir = tempdir()?;
+        let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
 
         let auth_material = registry
             .get_auth_material("library/alpine", DOCKER_AUTH_SERVICE, &["pull"])
@@ -460,8 +487,9 @@ mod tests {
 
     #[ignore]
     #[test_log::test(tokio::test)]
-    async fn test_docker_registry_fetch_index() -> anyhow::Result<()> {
-        let registry = DockerRegistry::new();
+    async fn test_oci_docker_registry_fetch_index() -> anyhow::Result<()> {
+        let temp_dir = tempdir()?;
+        let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
 
         let index = registry
             .fetch_index("library/alpine", Some("latest"))
@@ -476,8 +504,9 @@ mod tests {
 
     #[ignore]
     #[test_log::test(tokio::test)]
-    async fn test_docker_registry_fetch_manifest() -> anyhow::Result<()> {
-        let registry = DockerRegistry::new();
+    async fn test_oci_docker_registry_fetch_manifest() -> anyhow::Result<()> {
+        let temp_dir = tempdir()?;
+        let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
 
         let index = registry
             .fetch_index("library/alpine", Some("latest"))
@@ -498,8 +527,9 @@ mod tests {
 
     #[ignore]
     #[test_log::test(tokio::test)]
-    async fn test_docker_registry_fetch_config() -> anyhow::Result<()> {
-        let registry = DockerRegistry::new();
+    async fn test_oci_docker_registry_fetch_config() -> anyhow::Result<()> {
+        let temp_dir = tempdir()?;
+        let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
 
         let index = registry
             .fetch_index("library/alpine", Some("latest"))
@@ -524,14 +554,46 @@ mod tests {
         Ok(())
     }
 
-    #[ignore]
     #[test_log::test(tokio::test)]
-    async fn test_docker_registry_pull_image() -> anyhow::Result<()> {
-        let registry = DockerRegistry::new();
+    async fn test_oci_docker_registry_pull_image() -> anyhow::Result<()> {
+        let temp_dir = tempdir()?;
+        let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
 
-        let result = registry.pull_image("library/alpine", None).await;
+        // Pull the image
+        registry.pull_image("library/alpine", None).await?;
 
-        assert!(result.is_ok());
+        // Verify the OCI directory structure exists
+        let oci_dir = temp_dir.path().join(OCI_SUBDIR);
+        assert!(oci_dir.exists());
+
+        // Verify repo directory and files exist
+        let repo_dir = oci_dir.join(OCI_REPO_SUBDIR).join("library_alpine__latest");
+        assert!(repo_dir.exists());
+        assert!(repo_dir.join(OCI_INDEX_FILENAME).exists());
+        assert!(repo_dir.join(OCI_MANIFEST_FILENAME).exists());
+        assert!(repo_dir.join(OCI_CONFIG_FILENAME).exists());
+
+        // Verify layers directory exists and contains files
+        let layers_dir = oci_dir.join(OCI_LAYER_SUBDIR);
+        assert!(layers_dir.exists());
+        assert!(
+            layers_dir.read_dir()?.next().is_some(),
+            "Layers directory is empty"
+        );
+
+        // Get the manifest to verify layer downloads
+        let manifest_contents = fs::read_to_string(repo_dir.join(OCI_MANIFEST_FILENAME)).await?;
+        let manifest: ImageManifest = serde_json::from_str(&manifest_contents)?;
+
+        // Verify each layer exists
+        for layer in manifest.layers() {
+            let layer_path = layers_dir.join(layer.digest().to_string());
+            assert!(
+                layer_path.exists(),
+                "Layer {} not found",
+                layer.digest().to_string()
+            );
+        }
 
         Ok(())
     }
