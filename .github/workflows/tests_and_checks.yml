@@ -221,4 +221,7 @@ jobs:
         run: |
           LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LIBRARY_PATH }} \
           LD_LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LD_LIBRARY_PATH }} \
-          cargo test --all-features
+          cargo test --all-features && \
+          LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LIBRARY_PATH }} \
+          LD_LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LD_LIBRARY_PATH }} \
+          cargo test --all-features -- --ignored

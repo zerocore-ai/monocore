@@ -13,9 +13,9 @@ use tracing::{error, info};
 // Function: main
 //--------------------------------------------------------------------------------------------------
 
-/// Entry point for the runtime supervisor process.
+/// Entry point for the runtime supervisor and microvm subprocess.
 ///
-/// Handles both supervisor and subprocess modes based on command line arguments.
+/// Handles both supervisor and microvm subprocess modes based on command line arguments.
 ///
 /// # Arguments
 ///

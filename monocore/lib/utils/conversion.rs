@@ -84,7 +84,7 @@ pub fn to_null_terminated_c_array(strings: &[CString]) -> Vec<*const c_char> {
 /// assert_eq!(sanitize_repo_name("library/alpine"), "library_alpine");
 /// assert_eq!(sanitize_repo_name("user/repo/name"), "user_repo_name");
 /// assert_eq!(sanitize_repo_name("my:weird@repo"), "my_weird_repo");
-/// assert_eq!(sanitize_repo_name(".hidden/repo."), "hidden_repo");
+/// assert_eq!(sanitize_repo_name(".hidden/repo."), ".hidden_repo.");
 /// ```
 pub fn sanitize_repo_name(repo_name: &str) -> String {
     // First replace forward slashes with double underscore
@@ -94,7 +94,7 @@ pub fn sanitize_repo_name(repo_name: &str) -> String {
     let sanitized = with_safe_slashes
         .chars()
         .map(|c| {
-            if c.is_alphanumeric() || c == '_' || c == '-' {
+            if c.is_alphanumeric() || c == '_' || c == '-' || c == '.' {
                 c
             } else {
                 '_'
@@ -102,8 +102,8 @@ pub fn sanitize_repo_name(repo_name: &str) -> String {
         })
         .collect::<String>();
 
-    // Trim leading/trailing dots and whitespace
-    let trimmed: &str = sanitized.trim_matches(|c: char| c == '.' || c.is_whitespace());
+    // Trim leading/trailing whitespace
+    let trimmed: &str = sanitized.trim_matches(|c: char| c.is_whitespace());
 
     // Collapse multiple consecutive separators
     trimmed
@@ -130,9 +130,9 @@ mod tests {
         // Test special characters
         assert_eq!(sanitize_repo_name("my:weird@repo"), "my_weird_repo");
         assert_eq!(sanitize_repo_name("repo#with$chars"), "repo_with_chars");
+        assert_eq!(sanitize_repo_name(".hidden/repo."), ".hidden_repo.");
 
-        // Test leading/trailing characters
-        assert_eq!(sanitize_repo_name(".hidden/repo."), "hidden_repo");
+        // Test leading/trailing whitespace
         assert_eq!(sanitize_repo_name(" spaces /repo "), "spaces_repo");
 
         // Test multiple consecutive separators
@@ -145,7 +145,7 @@ mod tests {
         // Test mixed cases
         assert_eq!(
             sanitize_repo_name("my.weird/repo@with/special:chars"),
-            "my_weird_repo_with_special_chars"
+            "my.weird_repo_with_special_chars"
         );
     }
 }

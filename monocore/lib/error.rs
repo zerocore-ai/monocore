@@ -1,6 +1,9 @@
+use nix::errno::Errno;
 use std::{
     error::Error,
     fmt::{self, Display},
+    path::StripPrefixError,
+    time::SystemTimeError,
 };
 use thiserror::Error;
 
@@ -164,6 +167,22 @@ pub enum MonocoreError {
     /// An error that occurred when no more IP addresses are available for assignment
     #[error("no available IP addresses in the pool")]
     NoAvailableIPs,
+
+    /// An error that occurred during a walkdir operation
+    #[error("walkdir error: {0}")]
+    WalkDir(#[from] walkdir::Error),
+
+    /// An error that occurred when stripping a path prefix
+    #[error("strip prefix error: {0}")]
+    StripPrefix(#[from] StripPrefixError),
+
+    /// An error that occurred during a system call
+    #[error("system call error: {0}")]
+    SystemCall(#[from] Errno),
+
+    /// An error that occurred when converting system time
+    #[error("system time error: {0}")]
+    SystemTime(#[from] SystemTimeError),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

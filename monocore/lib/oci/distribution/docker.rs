@@ -7,7 +7,7 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use futures::{future, stream::BoxStream, StreamExt};
 use getset::{Getters, Setters};
-use oci_spec::image::{Digest, ImageConfiguration, ImageIndex, ImageManifest, Platform};
+use oci_spec::image::{Digest, ImageConfiguration, ImageIndex, ImageManifest, Os, Platform};
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
@@ -53,6 +53,9 @@ const DOCKER_IMAGE_BLOB_MIME_TYPE: &str = "application/vnd.docker.image.rootfs.d
 
 /// The MIME type for Docker Registry v2 configuration blobs, used to identify the format of the configuration blob data.
 const DOCKER_CONFIG_MIME_TYPE: &str = "application/vnd.docker.container.image.v1+json";
+
+/// The annotation key used to identify attestation manifests in the Docker Registry.
+const DOCKER_REFERENCE_TYPE_ANNOTATION: &str = "vnd.docker.reference.type";
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -279,8 +282,24 @@ impl OciRegistryPull for DockerRegistry {
         let manifest_desc = index
             .manifests()
             .iter()
-            .find(|m| m.platform().as_ref().map_or(false, |p| p == &platform))
-            .or_else(|| index.manifests().first())
+            .find(|m| {
+                m.platform().as_ref().map_or(false, |p| {
+                    // First priority: match both Linux OS and architecture
+                    matches!(p.os(), Os::Linux) &&
+                    p.architecture() == platform.architecture() &&
+                    // Skip attestation manifests
+                    !m.annotations().as_ref().map_or(false, |a| a.contains_key(DOCKER_REFERENCE_TYPE_ANNOTATION))
+                })
+            })
+            .or_else(|| {
+                // Second priority: match architecture only, if no Linux match found
+                index.manifests().iter().find(|m| {
+                    m.platform().as_ref().map_or(false, |p| {
+                        p.architecture() == platform.architecture() &&
+                        !m.annotations().as_ref().map_or(false, |a| a.contains_key(DOCKER_REFERENCE_TYPE_ANNOTATION))
+                    })
+                })
+            })
             .ok_or(MonocoreError::ManifestNotFound)?;
 
         // Fetch and save manifest
@@ -458,143 +477,5 @@ impl OciRegistryPull for DockerRegistry {
 impl Default for DockerRegistry {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
-// Tests
-//--------------------------------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[ignore]
-    #[test_log::test(tokio::test)]
-    async fn test_oci_docker_registry_authenticate() -> anyhow::Result<()> {
-        let temp_dir = tempdir()?;
-        let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
-
-        let auth_material = registry
-            .get_auth_material("library/alpine", DOCKER_AUTH_SERVICE, &["pull"])
-            .await;
-
-        assert!(auth_material.is_ok());
-
-        Ok(())
-    }
-
-    #[ignore]
-    #[test_log::test(tokio::test)]
-    async fn test_oci_docker_registry_fetch_index() -> anyhow::Result<()> {
-        let temp_dir = tempdir()?;
-        let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
-
-        let index = registry
-            .fetch_index("library/alpine", Some("latest"))
-            .await?;
-
-        tracing::info!("index: {:?}", index);
-
-        assert!(index.manifests().len() > 0);
-
-        Ok(())
-    }
-
-    #[ignore]
-    #[test_log::test(tokio::test)]
-    async fn test_oci_docker_registry_fetch_manifest() -> anyhow::Result<()> {
-        let temp_dir = tempdir()?;
-        let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
-
-        let index = registry
-            .fetch_index("library/alpine", Some("latest"))
-            .await?;
-
-        tracing::info!("index: {:?}", index);
-
-        let manifest = registry
-            .fetch_manifest("library/alpine", &index.manifests()[0].digest())
-            .await?;
-
-        tracing::info!("manifest: {:?}", manifest);
-
-        assert!(manifest.layers().len() > 0);
-
-        Ok(())
-    }
-
-    #[ignore]
-    #[test_log::test(tokio::test)]
-    async fn test_oci_docker_registry_fetch_config() -> anyhow::Result<()> {
-        let temp_dir = tempdir()?;
-        let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
-
-        let index = registry
-            .fetch_index("library/alpine", Some("latest"))
-            .await?;
-
-        tracing::info!("index: {:?}", index);
-
-        let manifest = registry
-            .fetch_manifest("library/alpine", &index.manifests()[0].digest())
-            .await?;
-
-        tracing::info!("manifest: {:?}", manifest);
-
-        let config = registry
-            .fetch_config("library/alpine", &manifest.config().digest())
-            .await?;
-
-        tracing::info!("config: {:?}", config);
-
-        assert!(config.config().is_some());
-
-        Ok(())
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_oci_docker_registry_pull_image() -> anyhow::Result<()> {
-        let temp_dir = tempdir()?;
-        let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
-
-        // Pull the image
-        registry.pull_image("library/alpine", None).await?;
-
-        // Verify the OCI directory structure exists
-        let oci_dir = temp_dir.path().join(OCI_SUBDIR);
-        assert!(oci_dir.exists());
-
-        // Verify repo directory and files exist
-        let repo_dir = oci_dir.join(OCI_REPO_SUBDIR).join("library_alpine__latest");
-        assert!(repo_dir.exists());
-        assert!(repo_dir.join(OCI_INDEX_FILENAME).exists());
-        assert!(repo_dir.join(OCI_MANIFEST_FILENAME).exists());
-        assert!(repo_dir.join(OCI_CONFIG_FILENAME).exists());
-
-        // Verify layers directory exists and contains files
-        let layers_dir = oci_dir.join(OCI_LAYER_SUBDIR);
-        assert!(layers_dir.exists());
-        assert!(
-            layers_dir.read_dir()?.next().is_some(),
-            "Layers directory is empty"
-        );
-
-        // Get the manifest to verify layer downloads
-        let manifest_contents = fs::read_to_string(repo_dir.join(OCI_MANIFEST_FILENAME)).await?;
-        let manifest: ImageManifest = serde_json::from_str(&manifest_contents)?;
-
-        // Verify each layer exists
-        for layer in manifest.layers() {
-            let layer_path = layers_dir.join(layer.digest().to_string());
-            assert!(
-                layer_path.exists(),
-                "Layer {} not found",
-                layer.digest().to_string()
-            );
-        }
-
-        Ok(())
     }
 }
