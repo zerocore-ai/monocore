@@ -2,7 +2,7 @@ use monocore::{
     oci::distribution::{AuthProvider, DockerRegistry, OciRegistryPull},
     utils::{
         OCI_CONFIG_FILENAME, OCI_INDEX_FILENAME, OCI_LAYER_SUBDIR, OCI_MANIFEST_FILENAME,
-        OCI_REPO_SUBDIR, OCI_SUBDIR,
+        OCI_REPO_SUBDIR,
     },
 };
 use std::path::PathBuf;
@@ -23,7 +23,7 @@ const DOCKER_AUTH_SERVICE: &str = "registry.docker.io";
 #[ignore = "requires Docker registry authentication"]
 async fn test_oci_distribution_docker_registry_authentication() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
+    let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
     let auth_material = registry
         .get_auth_material("library/alpine", DOCKER_AUTH_SERVICE, &["pull"])
@@ -49,7 +49,7 @@ async fn test_oci_distribution_docker_registry_authentication() -> anyhow::Resul
 #[ignore = "requires Docker registry access"]
 async fn test_oci_distribution_docker_fetch_image_index() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
+    let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
     let index = registry
         .fetch_index("library/alpine", Some("latest"))
@@ -73,7 +73,7 @@ async fn test_oci_distribution_docker_fetch_image_index() -> anyhow::Result<()> 
 #[ignore = "requires Docker registry access and image download"]
 async fn test_oci_distribution_docker_fetch_manifest_and_config() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
+    let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
     // First fetch the index
     let index = registry
@@ -122,7 +122,7 @@ async fn test_oci_distribution_docker_fetch_manifest_and_config() -> anyhow::Res
 #[ignore = "requires pulling Alpine Linux image"]
 async fn test_oci_distribution_docker_pull_alpine_image() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
+    let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
     // Pull Alpine Linux image
     registry
@@ -135,7 +135,6 @@ async fn test_oci_distribution_docker_pull_alpine_image() -> anyhow::Result<()> 
     // Verify layer contents
     let manifest_path = temp_dir
         .path()
-        .join(OCI_SUBDIR)
         .join(OCI_REPO_SUBDIR)
         .join("library_alpine__latest")
         .join(OCI_MANIFEST_FILENAME);
@@ -144,7 +143,7 @@ async fn test_oci_distribution_docker_pull_alpine_image() -> anyhow::Result<()> 
     let manifest: oci_spec::image::ImageManifest = serde_json::from_str(&manifest_contents)?;
 
     // Check each layer exists
-    let layers_dir = temp_dir.path().join(OCI_SUBDIR).join(OCI_LAYER_SUBDIR);
+    let layers_dir = temp_dir.path().join(OCI_LAYER_SUBDIR);
     for layer in manifest.layers() {
         let layer_path = layers_dir.join(layer.digest().to_string());
         assert!(layer_path.exists(), "Layer {} not found", layer.digest());
@@ -166,7 +165,7 @@ async fn test_oci_distribution_docker_pull_alpine_image() -> anyhow::Result<()> 
 #[ignore = "requires pulling Busybox image"]
 async fn test_oci_distribution_docker_pull_busybox_image() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
+    let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
     // Pull Busybox image
     registry
@@ -183,7 +182,7 @@ async fn test_oci_distribution_docker_pull_busybox_image() -> anyhow::Result<()>
 #[ignore = "tests error handling with nonexistent image"]
 async fn test_oci_distribution_docker_pull_nonexistent_image() {
     let temp_dir = tempdir().unwrap();
-    let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
+    let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
     // Try to pull a nonexistent image
     let result = registry
@@ -197,7 +196,7 @@ async fn test_oci_distribution_docker_pull_nonexistent_image() {
 #[ignore = "requires pulling Node.js image (large, multiple layers)"]
 async fn test_oci_distribution_docker_pull_image_with_multiple_layers() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
+    let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
     // Pull Node.js image (known to have multiple layers)
     registry.pull_image("library/node", Some("alpine")).await?;
@@ -208,7 +207,6 @@ async fn test_oci_distribution_docker_pull_image_with_multiple_layers() -> anyho
     // Verify multiple layers exist
     let manifest_path = temp_dir
         .path()
-        .join(OCI_SUBDIR)
         .join(OCI_REPO_SUBDIR)
         .join("library_node__alpine")
         .join(OCI_MANIFEST_FILENAME);
@@ -229,11 +227,7 @@ async fn test_oci_distribution_docker_pull_image_with_multiple_layers() -> anyho
 //--------------------------------------------------------------------------------------------------
 
 /// Helper function to verify the OCI directory structure and files after pulling an image
-async fn verify_oci_structure(base_path: PathBuf, repo_tag: &str) -> anyhow::Result<()> {
-    // Verify OCI directory exists
-    let oci_dir = base_path.join(OCI_SUBDIR);
-    assert!(oci_dir.exists(), "OCI directory does not exist");
-
+async fn verify_oci_structure(oci_dir: PathBuf, repo_tag: &str) -> anyhow::Result<()> {
     // Verify repo directory and files exist
     let repo_dir = oci_dir.join(OCI_REPO_SUBDIR).join(repo_tag);
     assert!(repo_dir.exists(), "Repository directory does not exist");

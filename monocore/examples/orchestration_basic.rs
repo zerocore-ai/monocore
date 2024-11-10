@@ -39,7 +39,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     // Use the architecture-specific build directory
-    let rootfs_path = format!("build/rootfs-alpine-{}", get_current_arch());
+    let rootfs_path = format!(
+        "{}/build/rootfs-alpine-{}",
+        env!("CARGO_MANIFEST_DIR"),
+        get_current_arch()
+    );
 
     // Path to supervisor binary - adjust this path as needed
     let supervisor_path = "../target/release/monokrun";

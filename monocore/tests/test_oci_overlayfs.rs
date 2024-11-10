@@ -5,12 +5,9 @@ use tar::Builder;
 use tempfile::tempdir;
 use tokio::fs as tokio_fs;
 
-use monocore::{
-    oci::{
-        distribution::{DockerRegistry, OciRegistryPull},
-        overlayfs::OverlayFsMerger,
-    },
-    utils::OCI_SUBDIR,
+use monocore::oci::{
+    distribution::{DockerRegistry, OciRegistryPull},
+    overlayfs::OverlayFsMerger,
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -22,7 +19,7 @@ use monocore::{
 async fn test_oci_merge_basic_merge() -> anyhow::Result<()> {
     // Create temporary directory for test
     let temp_dir = tempdir()?;
-    let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
+    let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
     // Pull a small image with multiple layers (alpine:latest)
     registry
@@ -33,7 +30,7 @@ async fn test_oci_merge_basic_merge() -> anyhow::Result<()> {
     let dest_dir = temp_dir.path().join("merged_test");
     fs::create_dir_all(&dest_dir)?;
 
-    let merger = OverlayFsMerger::new(temp_dir.path().join(OCI_SUBDIR), dest_dir.clone());
+    let merger = OverlayFsMerger::new(temp_dir.path(), dest_dir.clone());
 
     // Merge layers
     merger.merge("library_alpine__latest").await?;
@@ -59,9 +56,6 @@ async fn test_oci_merge_basic_merge() -> anyhow::Result<()> {
 async fn test_oci_merge_whiteout_handling() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
 
-    // TODO: Debugging...
-    println!("temp_dir: {}", temp_dir.path().display());
-
     // Create test layers and get repo tag
     let repo_tag = create_test_layers(&temp_dir.path().to_path_buf()).await?;
 
@@ -69,13 +63,10 @@ async fn test_oci_merge_whiteout_handling() -> anyhow::Result<()> {
     let dest_dir = temp_dir.path().join("merged_whiteout_test");
     tokio_fs::create_dir_all(&dest_dir).await?;
 
-    let merger = OverlayFsMerger::new(temp_dir.path().join(OCI_SUBDIR), dest_dir.clone());
+    let merger = OverlayFsMerger::new(temp_dir.path(), dest_dir.clone());
 
     // Merge layers using the standard merge function
     merger.merge(&repo_tag).await?;
-
-    // TODO: Debugging...
-    tokio::time::sleep(tokio::time::Duration::from_secs(60 * 5)).await;
 
     // Verify regular whiteout
     let merged_dir = dest_dir.join("merged");
@@ -117,7 +108,7 @@ async fn test_oci_merge_whiteout_handling() -> anyhow::Result<()> {
 #[ignore = "requires pulling Docker images"]
 async fn test_oci_merge_layer_permissions() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
+    let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
     // Pull nginx image which has specific file permissions
     registry.pull_image("library/nginx", Some("alpine")).await?;
@@ -125,7 +116,7 @@ async fn test_oci_merge_layer_permissions() -> anyhow::Result<()> {
     let dest_dir = temp_dir.path().join("merged_perms_test");
     fs::create_dir_all(&dest_dir)?;
 
-    let merger = OverlayFsMerger::new(temp_dir.path().join(OCI_SUBDIR), dest_dir.clone());
+    let merger = OverlayFsMerger::new(temp_dir.path(), dest_dir.clone());
 
     // Merge layers
     merger.merge("library_nginx__alpine").await?;
@@ -150,7 +141,7 @@ async fn test_oci_merge_layer_permissions() -> anyhow::Result<()> {
 #[ignore = "requires pulling Docker images"]
 async fn test_oci_merge_merge_cleanup() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
+    let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
     // Pull a small image
     registry
@@ -160,22 +151,18 @@ async fn test_oci_merge_merge_cleanup() -> anyhow::Result<()> {
     let dest_dir = temp_dir.path().join("merged_cleanup_test");
     fs::create_dir_all(&dest_dir)?;
 
-    let merger = OverlayFsMerger::new(temp_dir.path().join(OCI_SUBDIR), dest_dir.clone());
+    let merger = OverlayFsMerger::new(temp_dir.path(), dest_dir.clone());
 
     // Merge layers
     merger.merge("library_alpine__latest").await?;
 
-    // Verify work directories are created
-    assert!(dest_dir.join("work").exists());
-    assert!(dest_dir.join("upper").exists());
+    // Verify merged directory is created
     assert!(dest_dir.join("merged").exists());
 
     // Unmount and cleanup
     merger.unmount().await?;
 
-    // Verify cleanup
-    assert!(!dest_dir.join("work").exists());
-    assert!(!dest_dir.join("upper").exists());
+    // Verify merged directory is cleaned up
     assert!(!dest_dir.join("merged").exists());
 
     Ok(())
@@ -185,7 +172,7 @@ async fn test_oci_merge_merge_cleanup() -> anyhow::Result<()> {
 #[ignore = "requires pulling Docker images"]
 async fn test_oci_merge_concurrent_merges() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
+    let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
     // Pull two different images
     let pull_tasks = tokio::join!(
@@ -201,8 +188,8 @@ async fn test_oci_merge_concurrent_merges() -> anyhow::Result<()> {
     fs::create_dir_all(&dest_dir1)?;
     fs::create_dir_all(&dest_dir2)?;
 
-    let merger1 = OverlayFsMerger::new(temp_dir.path().join(OCI_SUBDIR), dest_dir1.clone());
-    let merger2 = OverlayFsMerger::new(temp_dir.path().join(OCI_SUBDIR), dest_dir2.clone());
+    let merger1 = OverlayFsMerger::new(temp_dir.path(), dest_dir1.clone());
+    let merger2 = OverlayFsMerger::new(temp_dir.path(), dest_dir2.clone());
 
     // Merge concurrently
     let merge_results = tokio::join!(
@@ -235,7 +222,7 @@ async fn test_oci_merge_error_handling() -> anyhow::Result<()> {
     let dest_dir = temp_dir.path().join("merged_error_test");
     fs::create_dir_all(&dest_dir)?;
 
-    let merger = OverlayFsMerger::new(temp_dir.path().join(OCI_SUBDIR), dest_dir.clone());
+    let merger = OverlayFsMerger::new(temp_dir.path(), dest_dir.clone());
 
     // This should fail because no image was pulled
     let result = merger.merge("nonexistent_image").await;
@@ -291,7 +278,7 @@ async fn create_test_layers(base_dir: &PathBuf) -> anyhow::Result<String> {
     use serde_json::to_string_pretty;
 
     // Create OCI directory structure
-    let oci_dir = base_dir.join(OCI_SUBDIR);
+    let oci_dir = base_dir;
     let layers_dir = oci_dir.join(OCI_LAYER_SUBDIR);
     let repo_dir = oci_dir.join(OCI_REPO_SUBDIR).join("test_layers");
 

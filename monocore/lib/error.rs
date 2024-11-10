@@ -183,6 +183,21 @@ pub enum MonocoreError {
     /// An error that occurred when converting system time
     #[error("system time error: {0}")]
     SystemTime(#[from] SystemTimeError),
+
+    /// An error that occurred during layer extraction.
+    /// This typically happens when the join handle for the blocking task fails.
+    #[error("layer extraction error: {0}")]
+    LayerExtraction(String),
+
+    /// An error that occurred during layer handling operations like opening files or unpacking archives.
+    /// Contains both the underlying IO error and the path to the layer being processed.
+    #[error("layer handling error: {source}")]
+    LayerHandling {
+        /// The underlying IO error that occurred
+        source: std::io::Error,
+        /// The path to the layer being processed when the error occurred
+        layer: String,
+    },
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

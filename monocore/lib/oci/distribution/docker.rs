@@ -76,8 +76,8 @@ pub struct DockerRegistry {
     /// The HTTP client used to make requests to the Docker registry.
     client: ClientWithMiddleware,
 
-    /// The path to the where files are downloaded.
-    path: PathBuf,
+    /// The path to the OCI directory where artifacts like repositories metadata and layers are stored.
+    oci_dir: PathBuf,
 }
 
 /// Stores authentication credentials obtained from the Docker registry, including tokens and expiration details.
@@ -123,9 +123,9 @@ pub struct DockerRegistryResponseError {
 /// Creates a new instance of `DockerRegistry` with an HTTP client configured for retrying transient errors.
 /// This client is used to interact with the Docker Registry HTTP API.
 impl DockerRegistry {
-    /// Creates a new DockerRegistry instance with the default path (MONOCORE_HOME).
+    /// Creates a new DockerRegistry instance with the default artifacts directory (MONOCORE_HOME).
     pub fn new() -> Self {
-        Self::with_path(utils::monocore_home_path())
+        Self::with_oci_dir(utils::monocore_home_path().join(OCI_SUBDIR))
     }
 
     /// Creates a new DockerRegistry instance with a custom base path.
@@ -134,16 +134,16 @@ impl DockerRegistry {
     /// in a different location than the default MONOCORE_HOME.
     ///
     /// ## Arguments
-    /// * `path` - The base path where OCI artifacts will be stored. The OCI directory
-    ///            structure will be created under this path.
-    pub fn with_path(path: PathBuf) -> Self {
+    /// * `oci_dir` - The base path where OCI artifacts will be stored. The OCI directory
+    ///               structure will be created under this path.
+    pub fn with_oci_dir(oci_dir: PathBuf) -> Self {
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
         let client_builder = ClientBuilder::new(Client::new());
         let client = client_builder
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
 
-        Self { client, path }
+        Self { client, oci_dir }
     }
 
     /// Gets the size of a downloaded file if it exists.
@@ -265,11 +265,8 @@ impl OciRegistryPull for DockerRegistry {
         );
 
         // Create the repository tag directory
-        let repo_tag_dir = self
-            .path
-            .join(OCI_SUBDIR)
-            .join(OCI_REPO_SUBDIR)
-            .join(&repo_tag);
+        let repo_tag_dir = self.oci_dir.join(OCI_REPO_SUBDIR).join(&repo_tag);
+
         fs::create_dir_all(&repo_tag_dir).await?;
 
         // Fetch and save index
@@ -322,10 +319,10 @@ impl OciRegistryPull for DockerRegistry {
             .iter()
             .map(|layer_desc| {
                 let layer_path = self
-                    .path
-                    .join(OCI_SUBDIR)
+                    .oci_dir
                     .join(OCI_LAYER_SUBDIR)
                     .join(layer_desc.digest().to_string());
+
                 self.download_image_blob(
                     repository,
                     layer_desc.digest(),

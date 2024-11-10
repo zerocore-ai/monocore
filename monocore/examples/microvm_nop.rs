@@ -11,7 +11,11 @@ fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     // Use the architecture-specific build directory
-    let rootfs_path = format!("build/rootfs-alpine-{}", get_current_arch());
+    let rootfs_path = format!(
+        "{}/build/rootfs-alpine-{}",
+        env!("CARGO_MANIFEST_DIR"),
+        get_current_arch()
+    );
 
     // Build the MicroVm
     let vm = MicroVm::builder()

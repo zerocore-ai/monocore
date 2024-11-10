@@ -74,7 +74,7 @@ pub fn to_null_terminated_c_array(strings: &[CString]) -> Vec<*const c_char> {
 /// ## Rules:
 /// - Replaces '/' with '__' (double underscore to avoid collisions)
 /// - Replaces other invalid path chars with '_'
-/// - Trims leading/trailing whitespace and dots
+/// - Trims leading/trailing whitespace
 /// - Collapses multiple consecutive separators
 ///
 /// ## Examples:
