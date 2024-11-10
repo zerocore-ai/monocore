@@ -3,6 +3,7 @@
 mod conversion;
 mod env;
 mod file;
+mod oci;
 mod path;
 
 //--------------------------------------------------------------------------------------------------
@@ -12,4 +13,5 @@ mod path;
 pub use conversion::*;
 pub use env::*;
 pub use file::*;
+pub use oci::*;
 pub use path::*;

@@ -12,7 +12,7 @@
 
 use monocore::{
     oci::distribution::{DockerRegistry, OciRegistryPull},
-    utils::{OCI_LAYER_SUBDIR, OCI_REPO_SUBDIR, OCI_SUBDIR},
+    utils::{OCI_LAYER_SUBDIR, OCI_REPO_SUBDIR},
 };
 use std::path::PathBuf;
 use tempfile::tempdir;
@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
     println!("\nUsing temporary directory: {}", temp_dir.path().display());
 
     // Create Docker registry client
-    let registry = DockerRegistry::with_path(temp_dir.path().to_path_buf());
+    let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
     // Pull Alpine Linux image
     println!("\nPulling Alpine Linux image...");
@@ -52,9 +52,7 @@ async fn main() -> anyhow::Result<()> {
 //--------------------------------------------------------------------------------------------------
 
 // Helper function to print the OCI directory structure and files
-fn print_oci_files(base_path: PathBuf) -> anyhow::Result<()> {
-    let oci_dir = base_path.join(OCI_SUBDIR);
-
+fn print_oci_files(oci_dir: PathBuf) -> anyhow::Result<()> {
     println!("\nOCI Directory Structure:");
     println!("------------------------");
 

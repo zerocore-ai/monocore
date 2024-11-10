@@ -15,7 +15,7 @@ use tokio::io::AsyncRead;
 /// An [`IpldStore`][zeroutils_store::IpldStore] with two underlying stores: an ephemeral in-memory
 /// store for writes and a user-provided store for back-up reads.
 ///
-/// This store is useful for creating a temporary buffer for writes
+/// This store is useful for creating a temporary buffer for writes that is stored in memory.
 #[derive(Debug, Clone)]
 pub struct MemoryBufferStore<S>
 where

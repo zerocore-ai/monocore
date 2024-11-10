@@ -25,7 +25,6 @@
 - [Directory Structure](#directory-structure)
 - [Quick Start](#quick-start)
 - [Development](#development)
-- [Contributing](#contributing)
 - [License](#license)
 
 ## Features
@@ -71,15 +70,13 @@ graph TD
     oci_layer --> oci_layer_hash["[hash]"]
 
     monocore_root --> microvm[microvm/]
-    microvm --> microvm_tag["[repo-name]__[tag]/"]
-    microvm --> microvm_instance["[repo-name]__[tag]__[uuid]/"]
-    microvm_tag --> microvm_service[service.toml]
-    microvm_tag --> microvm_cid["[repo-name]__[tag].cid"]
-    microvm_tag --> microvm_rootfs[rootfs/]
-    microvm_instance --> microvm_instance_rootfs[rootfs/]
+    microvm --> microvm_service["[service-name]/"]
+    microvm_service --> microvm_toml[service.toml]
+    microvm_service --> microvm_cid["[service-name].cid"]
+    microvm_service --> microvm_rootfs[rootfs/]
 
     monocore_root --> run[run/]
-    run --> run_service["[service-name]__[supervisor-pid].json"]
+    run --> run_service["[service-name]__[pid].json"]
 
     monocore_root --> log[log/]
     log --> log_stderr["[service-name].stderr.log"]
@@ -137,19 +134,9 @@ async fn main() -> anyhow::Result<()> {
 
 ### Prerequisites
 - Rust toolchain (1.75+)
-- libkrun development files
-
-### Building
-```bash
-# Build the library
-cargo build
-
-# Run tests
-cargo test
-
-# Try an example
-cargo run --example microvm_shell
-```
+- libkrun (see [monocore/README.md](http://github.com/appcypher/monocore#setup))
+- Linux OS for full functionality (OverlayFS support)
+  - macOS users should use Docker Desktop or a Linux VM for development
 
 ### Examples
 The `examples/` directory showcases key features:
@@ -158,14 +145,8 @@ The `examples/` directory showcases key features:
 - `orchestration_basic.rs`: Service orchestration
 - `orchestration_load.rs`: Load testing
 
-## Contributing
-
-Please read our [Contributing Guide](../../CONTRIBUTING.md) for details on:
-- Code style and conventions
-- Commit message format
-- Pull request process
-- Testing requirements
+Check the top of each file for usage instructions.
 
 ## License
 
-This project is licensed under the [Apache License 2.0](../../LICENSE).
+This project is licensed under the [Apache License 2.0](./LICENSE).
