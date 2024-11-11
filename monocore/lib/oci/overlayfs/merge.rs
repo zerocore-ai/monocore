@@ -179,12 +179,17 @@ impl OverlayFsMerger {
         let mut stack = vec![layer_path.to_path_buf()];
 
         while let Some(current_path) = stack.pop() {
+            // Make the current path readable while processing its contents
+            let _read_guard = Self::make_path_temporarily_readable(&current_path).await?;
+
+            tracing::debug!("Processing directory: {}", current_path.display());
+
             let mut entries = fs::read_dir(&current_path).await?;
             let target_dir = dest_path.join(current_path.strip_prefix(layer_path).unwrap());
             fs::create_dir_all(&target_dir).await?;
 
-            // Make the directory writable while processing its contents
-            let _guard = Self::make_dir_temporarily_writable(&target_dir).await?;
+            // Make the target directory writable while processing its contents
+            let _write_guard = Self::make_dir_temporarily_writable(&target_dir).await?;
 
             while let Some(entry) = entries.next_entry().await? {
                 let path = entry.path();
@@ -266,10 +271,11 @@ impl OverlayFsMerger {
     #[cfg(not(target_os = "linux"))]
     /// Handles copying, creating directories, or creating symlinks from source to target path
     async fn handle_fs_entry(source_path: &Path, target_path: &Path) -> io::Result<()> {
+        let metadata = fs::symlink_metadata(source_path).await?;
+
         // Make source temporarily readable for all operations
         let _guard = Self::make_path_temporarily_readable(source_path).await?;
 
-        let metadata = fs::symlink_metadata(source_path).await?;
         let file_type = metadata.file_type();
 
         if file_type.is_dir() {
@@ -326,14 +332,12 @@ impl OverlayFsMerger {
             let mode = Mode::from_bits_truncate(metadata.mode() as u16 & 0o777);
             unistd::mkfifo(target_path, mode)?;
         }
-        // Block/character devices are intentionally not supported for security reasons
-        // They would require elevated privileges to create
 
         // Copy permissions
         let permissions = metadata.permissions();
         fs::set_permissions(target_path, permissions.clone()).await?;
 
-        tracing::debug!("Applied permissions: {:?}", permissions);
+        // tracing::debug!("Applied permissions: {:?}", permissions);
 
         Ok(())
     }
@@ -376,27 +380,32 @@ impl OverlayFsMerger {
             Err(_) => return Ok(None),
         };
 
-        let mut perms = metadata.permissions();
-        let original_mode = perms.mode();
+        let old_perms = metadata.permissions();
+
         // Add read and execute permissions while preserving other bits
         // Execute is needed for traversing directories
-        perms.set_mode(original_mode | 0o555);
+        let mut tmp_perms = metadata.permissions();
+        let original_mode = tmp_perms.mode();
+        tmp_perms.set_mode(original_mode | 0o555);
 
         // Try to set permissions - if we can't, return None without creating the guard
-        if fs::set_permissions(path, perms).await.is_err() {
+        if fs::set_permissions(path, tmp_perms.clone()).await.is_err() {
             return Ok(None);
         }
 
         // RAII guard to restore original permissions
         Ok(Some(scopeguard::guard(
-            (path.to_path_buf(), original_mode),
-            |(path, mode)| {
-                // Using sync fs ops since drop can't be async
-                if let Ok(mut perms) = std::fs::metadata(&path).map(|m| m.permissions()) {
-                    perms.set_mode(mode);
-                    std::fs::set_permissions(&path, perms)
-                        .expect("Failed to restore file permissions - this could leave the system in an unsafe state");
-                }
+            (path.to_path_buf(), old_perms, tmp_perms),
+            |(path, old_perms, tmp_perms)| {
+                std::fs::set_permissions(&path, old_perms.clone())
+                    .expect("Failed to restore file permissions - this could leave the system in an unsafe state");
+
+                tracing::debug!(
+                    "Restored permissions for: {}, tmp mode: {:o}, old mode: {:o}",
+                    path.display(),
+                    tmp_perms.mode(),
+                    old_perms.mode()
+                );
             },
         )))
     }
