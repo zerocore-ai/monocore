@@ -10,7 +10,10 @@ use oci_spec::image::ImageManifest;
 use tokio::fs;
 use tracing::info;
 
-use crate::{utils::OCI_REPO_SUBDIR, MonocoreError, MonocoreResult};
+use crate::{
+    utils::{format_mode, OCI_REPO_SUBDIR},
+    MonocoreError, MonocoreResult,
+};
 use futures::future::join_all;
 use std::collections::HashMap;
 
@@ -38,106 +41,13 @@ pub struct OverlayFsMerger {
     is_mounted: bool,
 }
 
-//--------------------------------------------------------------------------------------------------
-// Permission Management
-//--------------------------------------------------------------------------------------------------
-
 /// Tracks original permissions for paths that were temporarily made writable
 struct PermissionGuard {
     /// Maps paths to their original permissions
     original_modes: HashMap<PathBuf, u32>,
+
     /// Paths in order they were modified (for proper restoration)
     modified_paths: Vec<PathBuf>,
-}
-
-impl PermissionGuard {
-    fn new() -> Self {
-        Self {
-            original_modes: HashMap::new(),
-            modified_paths: Vec::new(),
-        }
-    }
-
-    /// Saves original permissions and makes path temporarily writable
-    async fn make_writable(&mut self, path: &Path) -> MonocoreResult<()> {
-        // Get current permissions if we haven't stored them yet
-        if !self.original_modes.contains_key(path) {
-            if let Ok(metadata) = fs::metadata(path).await {
-                let mode = metadata.permissions().mode();
-                self.original_modes.insert(path.to_path_buf(), mode);
-                self.modified_paths.push(path.to_path_buf());
-
-                // Make path writable and executable while preserving other bits
-                let writable_mode = mode | 0o300;
-                fs::set_permissions(path, std::fs::Permissions::from_mode(writable_mode)).await?;
-                tracing::debug!(
-                    "Made path writable: {}, old mode: {:o}, new mode: {:o}",
-                    path.display(),
-                    mode,
-                    writable_mode
-                );
-            }
-        }
-        Ok(())
-    }
-
-    /// Makes path readable and writable
-    async fn make_readable_writable(&mut self, path: &Path) -> MonocoreResult<()> {
-        if !self.original_modes.contains_key(path) {
-            if let Ok(metadata) = fs::metadata(path).await {
-                let mode = metadata.permissions().mode();
-                self.original_modes.insert(path.to_path_buf(), mode);
-                self.modified_paths.push(path.to_path_buf());
-
-                // Make path readable, writable and executable while preserving other bits
-                let rw_mode = mode | 0o700;
-                fs::set_permissions(path, std::fs::Permissions::from_mode(rw_mode)).await?;
-                tracing::debug!(
-                    "Made path readable/writable: {}, old mode: {:o}, new mode: {:o}",
-                    path.display(),
-                    mode,
-                    rw_mode
-                );
-            }
-        }
-        Ok(())
-    }
-
-    /// Restores original permissions for all modified paths in reverse order
-    fn restore_all(&mut self) -> MonocoreResult<()> {
-        while let Some(path) = self.modified_paths.pop() {
-            if let Some(&original_mode) = self.original_modes.get(&path) {
-                if let Err(e) =
-                    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(original_mode))
-                {
-                    tracing::warn!(
-                        "Failed to restore permissions for {}: {}",
-                        path.display(),
-                        e
-                    );
-                    return Err(e.into());
-                } else {
-                    tracing::debug!(
-                        "Restored permissions for: {}, mode: {:o}",
-                        path.display(),
-                        original_mode
-                    );
-                }
-            }
-        }
-        self.original_modes.clear();
-        Ok(())
-    }
-}
-
-impl Drop for PermissionGuard {
-    fn drop(&mut self) {
-        if !self.modified_paths.is_empty() {
-            if let Err(e) = self.restore_all() {
-                tracing::error!("Failed to restore permissions in drop: {}", e);
-            }
-        }
-    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -237,6 +147,8 @@ impl OverlayFsMerger {
             self.apply_layer(&path, &merged_dir).await?;
         }
 
+        tracing::debug!("Merged layers into {}", merged_dir.display());
+
         Ok(())
     }
 
@@ -294,11 +206,6 @@ impl OverlayFsMerger {
                     })?;
 
             let target_dir = dest_path.join(current_path.strip_prefix(layer_path).unwrap());
-
-            // Ensure target directory is writable
-            if target_dir.exists() {
-                perm_guard.make_writable(&target_dir).await?;
-            }
             fs::create_dir_all(&target_dir)
                 .await
                 .map_err(MonocoreError::Io)?;
@@ -322,9 +229,8 @@ impl OverlayFsMerger {
                         let target_dir =
                             dest_path.join(current_path.strip_prefix(layer_path).unwrap());
 
-                        // Make target directory writable before removal
+                        // Remove target directory if it exists
                         if target_dir.exists() {
-                            perm_guard.make_writable(&target_dir).await?;
                             fs::remove_dir_all(&target_dir).await?;
                         }
                         fs::create_dir_all(&target_dir).await?;
@@ -344,7 +250,7 @@ impl OverlayFsMerger {
                             let relative_path = sibling_path.strip_prefix(layer_path).unwrap();
                             let target_path = dest_path.join(relative_path);
 
-                            Self::handle_fs_entry(&sibling_path, &target_path).await?;
+                            Self::handle_fs_entry(&sibling_path, &target_path, &perm_guard).await?;
                             if fs::symlink_metadata(&sibling_path)
                                 .await?
                                 .file_type()
@@ -359,16 +265,13 @@ impl OverlayFsMerger {
                         let target_path = target_dir.join(original_name);
 
                         if target_path.exists() {
-                            // Make parent writable before removal
-                            if let Some(parent) = target_path.parent() {
-                                perm_guard.make_writable(parent).await?;
-                            }
                             if target_path.is_dir() {
                                 fs::remove_dir_all(&target_path).await?;
                             } else {
                                 fs::remove_file(&target_path).await?;
                             }
                         }
+
                         continue;
                     }
                 }
@@ -383,7 +286,7 @@ impl OverlayFsMerger {
                     perm_guard.make_writable(parent).await?;
                 }
 
-                Self::handle_fs_entry(&path, &target_path).await?;
+                Self::handle_fs_entry(&path, &target_path, &perm_guard).await?;
                 if fs::symlink_metadata(&path).await?.file_type().is_dir() {
                     stack.push(path);
                 }
@@ -395,7 +298,11 @@ impl OverlayFsMerger {
 
     #[cfg(not(target_os = "linux"))]
     /// Handles copying, creating directories, or creating symlinks from source to target path
-    async fn handle_fs_entry(source_path: &Path, target_path: &Path) -> MonocoreResult<()> {
+    async fn handle_fs_entry(
+        source_path: &Path,
+        target_path: &Path,
+        perm_guard: &PermissionGuard,
+    ) -> MonocoreResult<()> {
         let metadata = fs::symlink_metadata(source_path).await?;
         let file_type = metadata.file_type();
 
@@ -454,11 +361,20 @@ impl OverlayFsMerger {
             unistd::mkfifo(target_path, mode)?;
         }
 
-        // Copy permissions
-        let permissions = metadata.permissions();
-        fs::set_permissions(target_path, permissions.clone()).await?;
+        // Set the original permissions on the target
+        let original_mode = perm_guard
+            .original_modes
+            .get(source_path)
+            .copied()
+            .unwrap_or_else(|| metadata.permissions().mode());
 
-        tracing::debug!("Applied permissions: {:?}", permissions);
+        fs::set_permissions(target_path, std::fs::Permissions::from_mode(original_mode)).await?;
+        tracing::debug!(
+            "Applied original permissions to {}: {} ({:#o})",
+            target_path.display(),
+            format_mode(original_mode),
+            original_mode
+        );
 
         Ok(())
     }
@@ -467,9 +383,199 @@ impl OverlayFsMerger {
     pub async fn unmount(&self) -> MonocoreResult<()> {
         let merged_dir = self.dest_dir.join("merged");
         if merged_dir.exists() {
-            fs::remove_dir_all(&merged_dir).await?;
+            let mut perm_guard = PermissionGuard::new();
+
+            // Recursively check and fix permissions where needed
+            let mut stack = vec![merged_dir.clone()];
+            while let Some(current_path) = stack.pop() {
+                // Check current permissions
+                if let Ok(metadata) = fs::metadata(&current_path).await {
+                    let mode = metadata.permissions().mode();
+                    let is_readable = mode & 0o444 != 0; // Check read permission
+                    let is_writable = mode & 0o222 != 0; // Check write permission
+                    let is_executable = mode & 0o111 != 0; // Check execute permission for directories
+
+                    // Only modify permissions if necessary
+                    if !is_readable || !is_writable || (!is_executable && metadata.is_dir()) {
+                        tracing::debug!(
+                            "Fixing permissions for {}: {} ({:#o}) - readable: {}, writable: {}, executable: {}",
+                            current_path.display(),
+                            format_mode(mode),
+                            mode,
+                            is_readable,
+                            is_writable,
+                            is_executable
+                        );
+                        perm_guard.make_readable_writable(&current_path).await?;
+                    }
+                } else {
+                    tracing::warn!("Could not read metadata for {}", current_path.display());
+                    // Still try to make it accessible as a fallback
+                    perm_guard.make_readable_writable(&current_path).await?;
+                }
+
+                // Process directory contents
+                if let Ok(mut entries) = fs::read_dir(&current_path).await {
+                    while let Ok(Some(entry)) = entries.next_entry().await {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            stack.push(path);
+                        }
+                    }
+                } else {
+                    tracing::warn!(
+                        "Could not read directory contents of {}",
+                        current_path.display()
+                    );
+                }
+            }
+
+            // Now remove the directory tree
+            match fs::remove_dir_all(&merged_dir).await {
+                Ok(_) => tracing::debug!("Successfully removed {}", merged_dir.display()),
+                Err(e) => {
+                    tracing::error!("Failed to remove {}: {}", merged_dir.display(), e);
+                    return Err(e.into());
+                }
+            }
         }
         Ok(())
+    }
+}
+
+impl PermissionGuard {
+    fn new() -> Self {
+        Self {
+            original_modes: HashMap::new(),
+            modified_paths: Vec::new(),
+        }
+    }
+
+    /// Saves original permissions and makes path temporarily writable
+    async fn make_writable(&mut self, path: &Path) -> MonocoreResult<()> {
+        // Skip if we've already processed this path or if it's a symlink
+        if !self.original_modes.contains_key(path) {
+            if let Ok(metadata) = fs::symlink_metadata(path).await {
+                if metadata.file_type().is_symlink() {
+                    tracing::debug!(
+                        "Skipping permission modification for symlink: {}",
+                        path.display()
+                    );
+                    return Ok(());
+                }
+
+                let mode = metadata.permissions().mode();
+                self.original_modes.insert(path.to_path_buf(), mode);
+                self.modified_paths.push(path.to_path_buf());
+
+                // Make path writable and executable while preserving other bits
+                let wx_mode = mode | 0o300;
+                fs::set_permissions(path, std::fs::Permissions::from_mode(wx_mode)).await?;
+                tracing::debug!(
+                    "Made path writable: {}, mode: {} -> {} ({:#o} -> {:#o})",
+                    path.display(),
+                    format_mode(mode),
+                    format_mode(wx_mode),
+                    mode,
+                    wx_mode
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Makes path readable and writable
+    async fn make_readable_writable(&mut self, path: &Path) -> MonocoreResult<()> {
+        if !self.original_modes.contains_key(path) {
+            if let Ok(metadata) = fs::symlink_metadata(path).await {
+                if metadata.file_type().is_symlink() {
+                    tracing::debug!(
+                        "Skipping permission modification for symlink: {}",
+                        path.display()
+                    );
+                    return Ok(());
+                }
+
+                let mode = metadata.permissions().mode();
+                self.original_modes.insert(path.to_path_buf(), mode);
+                self.modified_paths.push(path.to_path_buf());
+
+                // Make path readable, writable and executable while preserving other bits
+                let rwx_mode = mode | 0o700;
+                fs::set_permissions(path, std::fs::Permissions::from_mode(rwx_mode)).await?;
+                tracing::debug!(
+                    "Made path readable/writable: {}, mode: {} -> {} ({:#o} -> {:#o})",
+                    path.display(),
+                    format_mode(mode),
+                    format_mode(rwx_mode),
+                    mode,
+                    rwx_mode
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Restores original permissions for all modified paths in reverse order
+    fn restore_all(&mut self) -> MonocoreResult<()> {
+        while let Some(path) = self.modified_paths.pop() {
+            if let Some(&original_mode) = self.original_modes.get(&path) {
+                // Skip restoration if path no longer exists
+                if !path.exists() {
+                    tracing::debug!(
+                        "Skipping permission restoration for deleted path: {}",
+                        path.display()
+                    );
+                    continue;
+                }
+
+                // Skip symlinks since we can't set their permissions
+                if let Ok(metadata) = std::fs::symlink_metadata(&path) {
+                    if metadata.file_type().is_symlink() {
+                        tracing::debug!(
+                            "Skipping permission restoration for symlink: {}",
+                            path.display()
+                        );
+                        continue;
+                    }
+                }
+
+                if let Err(e) =
+                    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(original_mode))
+                {
+                    tracing::warn!(
+                        "Failed to restore permissions for {}: {}",
+                        path.display(),
+                        e
+                    );
+                    return Err(e.into());
+                } else {
+                    tracing::debug!(
+                        "Restored permissions for: {}, mode: {} ({:#o})",
+                        path.display(),
+                        format_mode(original_mode),
+                        original_mode
+                    );
+                }
+            }
+        }
+        self.original_modes.clear();
+        Ok(())
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Trait Implementations
+//--------------------------------------------------------------------------------------------------
+
+impl Drop for PermissionGuard {
+    fn drop(&mut self) {
+        if !self.modified_paths.is_empty() {
+            // Don't propagate errors in drop, just log them
+            if let Err(e) = self.restore_all() {
+                tracing::debug!("Error during permission restoration in drop: {}", e);
+            }
+        }
     }
 }
 
@@ -563,92 +669,84 @@ mod tests {
             assert_eq!(
                 mode,
                 expected_mode,
-                "Permission mismatch for {}: expected {:o}, got {:o}",
+                "Permission mismatch for {}: expected {} ({:#o}), got {} ({:#o})",
                 path.display(),
+                format_mode(expected_mode),
                 expected_mode,
+                format_mode(mode),
                 mode
             );
             Ok(())
         };
 
-        // // Test basic file permissions
-        // let no_read_file = merged_dir.join("no_read_file.txt");
-        // assert!(no_read_file.exists());
-        // let content = fs::read_to_string(&no_read_file).await?;
-        // assert_eq!(content, "no read permission content");
-        // verify_perms(&no_read_file, 0o200)?; // write-only
+        // First verify all top-level files and directories
+        // These should all be accessible since merged_dir has standard permissions
 
-        // // Test directory with execute-only permission
-        // let no_read_dir = merged_dir.join("no_read_dir");
-        // assert!(no_read_dir.exists());
-        // verify_perms(&no_read_dir, 0o311)?; // --x--x--x
-        // let inside_file = no_read_dir.join("inside.txt");
-        // assert!(inside_file.exists());
-        // let content = fs::read_to_string(&inside_file).await?;
-        // assert_eq!(content, "inside no-read directory");
+        // Test write-only file permissions
+        let no_read_file = merged_dir.join("no_read_file.txt");
+        assert!(no_read_file.exists());
+        verify_perms(&no_read_file, 0o200)?; // write-only
+
+        // Test directory with execute-only permission
+        let no_read_dir = merged_dir.join("no_read_dir");
+        assert!(no_read_dir.exists());
+        verify_perms(&no_read_dir, 0o311)?; // --x--x--x
 
         // Test read-only directory
         let no_write_dir = merged_dir.join("no_write_dir");
         assert!(no_write_dir.exists());
         verify_perms(&no_write_dir, 0o555)?; // r-xr-xr-x
+
+        // Test directory with no permissions
+        let no_perm_dir = merged_dir.join("no_perm_dir");
+        assert!(no_perm_dir.exists());
+        verify_perms(&no_perm_dir, 0o000)?; // ---------
+
+        // Test blocked directory
+        let blocked_dir = merged_dir.join("blocked_dir");
+        assert!(blocked_dir.exists());
+        verify_perms(&blocked_dir, 0o000)?; // ---------
+
+        // Now check contents of directories that we can access
+
+        // Check contents of read-only directory (we have rx permissions)
         let write_protected_file = no_write_dir.join("protected.txt");
         assert!(write_protected_file.exists());
         verify_perms(&write_protected_file, 0o444)?; // read-only
         let content = fs::read_to_string(&write_protected_file).await?;
         assert_eq!(content, "write protected content");
 
-        // // Test directory with no permissions
-        // let no_perm_dir = merged_dir.join("no_perm_dir");
-        // assert!(no_perm_dir.exists());
-        // verify_perms(&no_perm_dir, 0o000)?; // ---------
-        // let hidden_file = no_perm_dir.join("hidden.txt");
-        // assert!(hidden_file.exists());
-        // let content = fs::read_to_string(&hidden_file).await?;
-        // assert_eq!(content, "hidden content");
+        // Test symlinks (these are in the merged_dir which we can access)
+        let symlink = merged_dir.join("link_to_file.txt");
+        assert!(symlink.exists());
+        assert!(fs::symlink_metadata(&symlink)
+            .await?
+            .file_type()
+            .is_symlink());
 
-        // // Test nested directory structure with mixed permissions
-        // let blocked_dir = merged_dir.join("blocked_dir");
-        // assert!(blocked_dir.exists());
-        // verify_perms(&blocked_dir, 0o000)?; // ---------
+        let relative_symlink = merged_dir.join("relative_link.txt");
+        assert!(relative_symlink.exists());
+        assert!(fs::symlink_metadata(&relative_symlink)
+            .await?
+            .file_type()
+            .is_symlink());
 
-        // let inner_dir = blocked_dir.join("inner_dir");
-        // assert!(inner_dir.exists());
-        // verify_perms(&inner_dir, 0o777)?; // rwxrwxrwx
+        // Test target files (in merged_dir which we can access)
+        let target = merged_dir.join("target.txt");
+        if fs::metadata(&target).await?.permissions().mode() & 0o444 != 0 {
+            let content = fs::read_to_string(&symlink).await?;
+            assert_eq!(content, "target file content");
+        }
 
-        // let nested_file = inner_dir.join("nested.txt");
-        // assert!(nested_file.exists());
-        // verify_perms(&nested_file, 0o666)?; // rw-rw-rw-
-        // let content = fs::read_to_string(&nested_file).await?;
-        // assert_eq!(content, "nested file content");
-
-        // // Test symlinks
-        // let symlink = merged_dir.join("link_to_file.txt");
-        // assert!(symlink.exists());
-        // assert!(fs::symlink_metadata(&symlink)
-        //     .await?
-        //     .file_type()
-        //     .is_symlink());
-        // let content = fs::read_to_string(&symlink).await?;
-        // assert_eq!(content, "target file content");
-
-        // // Test relative symlinks across directories
-        // let relative_symlink = merged_dir.join("relative_link.txt");
-        // assert!(relative_symlink.exists());
-        // assert!(fs::symlink_metadata(&relative_symlink)
-        //     .await?
-        //     .file_type()
-        //     .is_symlink());
-        // let content = fs::read_to_string(&relative_symlink).await?;
-        // assert_eq!(content, "target in subdirectory");
-
-        // // Test FIFO files
-        // let fifo = merged_dir.join("test.fifo");
-        // assert!(fifo.exists());
-        // assert!(fs::symlink_metadata(&fifo).await?.file_type().is_fifo());
-        // verify_perms(&fifo, 0o644)?; // standard fifo perms
+        // Test FIFO files
+        let fifo = merged_dir.join("test.fifo");
+        assert!(fifo.exists());
+        assert!(fs::symlink_metadata(&fifo).await?.file_type().is_fifo());
+        verify_perms(&fifo, 0o644)?; // standard fifo perms
 
         // Cleanup
         merger.unmount().await?;
+
         Ok(())
     }
 
@@ -948,18 +1046,13 @@ mod tests {
                 let inner_dir = blocked_dir.join("inner_dir");
                 fs::create_dir_all(&inner_dir).await?;
                 fs::write(inner_dir.join("nested.txt"), "nested file content").await?;
-
-                // Set permissions from innermost to outermost
                 fs::set_permissions(
                     inner_dir.join("nested.txt"),
                     std::fs::Permissions::from_mode(0o666),
                 )
                 .await?;
-                tracing::debug!("Set permissions for inner_dir: {:?}", inner_dir.display());
-                tracing::debug!(
-                    "Set permissions for blocked_dir: {:?}",
-                    blocked_dir.display()
-                );
+                fs::set_permissions(&inner_dir, std::fs::Permissions::from_mode(0o777)).await?;
+                fs::set_permissions(&blocked_dir, std::fs::Permissions::from_mode(0o000)).await?;
 
                 // Create empty tar.gz file just to satisfy the manifest
                 let layer_file = std::fs::File::create(layers_dir.join(&layer_digests[0]))?;
