@@ -21,6 +21,7 @@
 use monocore::{
     config::{Group, Monocore, Service},
     orchestration::{LogRetentionPolicy, Orchestrator},
+    utils,
 };
 use std::{net::Ipv4Addr, time::Duration};
 use tokio::time;
@@ -37,18 +38,21 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    // Use the architecture-specific build directory
-    let rootfs_path = format!(
-        "{}/build/rootfs-alpine-{}",
-        env!("CARGO_MANIFEST_DIR"),
-        get_current_arch()
-    );
+    // Use specific directories for OCI and rootfs
+    let oci_dir = format!("{}/build/oci", env!("CARGO_MANIFEST_DIR"));
+    let merge_dir = format!("{}/build/rootfs/alpine", env!("CARGO_MANIFEST_DIR"));
+
+    // Pull and merge Alpine image
+    utils::pull_docker_image(&oci_dir, "library/alpine", "latest").await?;
+    utils::merge_image_layers(&oci_dir, &merge_dir, "library/alpine", "latest").await?;
+
+    let root_path = format!("{}/merged", merge_dir);
     let supervisor_path = "../target/release/monokrun";
 
     // Phase 1: Start initial services with first Orchestrator
     info!("Phase 1: Starting initial services with first Orchestrator");
     {
-        let mut orchestrator = Orchestrator::new(&rootfs_path, supervisor_path).await?;
+        let mut orchestrator = Orchestrator::new(&root_path, supervisor_path).await?;
         let initial_config = create_services_config()?;
 
         orchestrator.up(initial_config).await?;
@@ -65,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
     // Phase 2: Load running services into new Orchestrator
     info!("\nPhase 2: Loading existing services into new Orchestrator");
     let mut loaded_orchestrator = Orchestrator::load_with_log_retention_policy(
-        &rootfs_path,
+        root_path,
         supervisor_path,
         LogRetentionPolicy::with_max_age_days(7),
     )
@@ -185,14 +189,4 @@ fn create_services_config() -> anyhow::Result<Monocore> {
         .build()?;
 
     Ok(config)
-}
-
-fn get_current_arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
-        "x86_64"
-    } else if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        panic!("Unsupported architecture")
-    }
 }

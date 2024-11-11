@@ -23,6 +23,7 @@
 use monocore::{
     config::{Group, Monocore, Service},
     orchestration::{LogRetentionPolicy, Orchestrator},
+    utils,
 };
 use std::{net::Ipv4Addr, time::Duration};
 use tokio::time;
@@ -38,19 +39,22 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    // Use the architecture-specific build directory
-    let rootfs_path = format!(
-        "{}/build/rootfs-alpine-{}",
-        env!("CARGO_MANIFEST_DIR"),
-        get_current_arch()
-    );
+    // Use specific directories for OCI and rootfs
+    let oci_dir = format!("{}/build/oci", env!("CARGO_MANIFEST_DIR"));
+    let merge_dir = format!("{}/build/rootfs/alpine", env!("CARGO_MANIFEST_DIR"));
+
+    // Pull and merge Alpine image
+    utils::pull_docker_image(&oci_dir, "library/alpine", "latest").await?;
+    utils::merge_image_layers(&oci_dir, &merge_dir, "library/alpine", "latest").await?;
+
+    let root_path = format!("{}/merged", merge_dir);
 
     // Path to supervisor binary - adjust this path as needed
     let supervisor_path = "../target/release/monokrun";
 
     // Create orchestrator with log retention policy
     let mut orchestrator = Orchestrator::with_log_retention_policy(
-        rootfs_path,
+        root_path,
         supervisor_path,
         LogRetentionPolicy::with_max_age_weeks(1),
     )
@@ -224,15 +228,4 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
         .build()?;
 
     Ok(config)
-}
-
-// Add this function to determine the current architecture
-fn get_current_arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
-        "x86_64"
-    } else if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        panic!("Unsupported architecture")
-    }
 }

@@ -35,7 +35,10 @@
 
 use anyhow::Result;
 use clap::Parser;
-use monocore::vm::{LogLevel, MicroVm};
+use monocore::{
+    utils,
+    vm::{LogLevel, MicroVm},
+};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -57,24 +60,28 @@ struct Args {
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();
 
-    // Use the architecture-specific build directory
-    let rootfs_path = format!(
-        "{}/build/rootfs-alpine-{}",
-        env!("CARGO_MANIFEST_DIR"),
-        get_current_arch()
-    );
+    // Use specific directories for OCI and rootfs
+    let oci_dir = format!("{}/build/oci", env!("CARGO_MANIFEST_DIR"));
+    let merge_dir = format!("{}/build/rootfs/alpine", env!("CARGO_MANIFEST_DIR"));
+
+    // Pull and merge Alpine image
+    utils::pull_docker_image(&oci_dir, "library/alpine", "latest").await?;
+    utils::merge_image_layers(&oci_dir, &merge_dir, "library/alpine", "latest").await?;
+
+    let root_path = format!("{}/merged", merge_dir);
 
     // Build the MicroVm with different configurations based on server/client mode
     let vm = if args.server {
         tracing::info!("Server mode: Listening on {}:3456 (UDP)...", args.ip);
         MicroVm::builder()
             .log_level(LogLevel::Info)
-            .root_path(&rootfs_path)
+            .root_path(root_path)
             .port_map(["3456:3456".parse()?])
             .exec_path("/bin/busybox")
             .args([
@@ -84,8 +91,8 @@ fn main() -> Result<()> {
                 "nc",
                 "-u",                     // UDP mode
                 "-l",                     // Listen mode
-                "-p",                     // Port flag
                 "-v",                     // Verbose output for debugging
+                "-p",                     // Port flag
                 "3456",                   // Port to listen on
                 "-e",                     // Execute following command
                 "echo",                   // Echo command
@@ -98,7 +105,7 @@ fn main() -> Result<()> {
         tracing::info!("Client mode: Connecting to {}:3456 (UDP)...", args.ip);
         MicroVm::builder()
             .log_level(LogLevel::Info)
-            .root_path(&rootfs_path)
+            .root_path(root_path)
             .exec_path("/bin/busybox")
             .args([
                 "nc",        // netcat
@@ -118,19 +125,4 @@ fn main() -> Result<()> {
     vm.start()?;
 
     Ok(())
-}
-
-//--------------------------------------------------------------------------------------------------
-// Functions: *
-//--------------------------------------------------------------------------------------------------
-
-// Add this function to determine the current architecture
-fn get_current_arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
-        "x86_64"
-    } else if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        panic!("Unsupported architecture")
-    }
 }

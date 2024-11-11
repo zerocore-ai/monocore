@@ -12,13 +12,11 @@
 //! ```
 
 use monocore::{
-    oci::{
-        distribution::{DockerRegistry, OciRegistryPull},
-        overlayfs::OverlayFsMerger,
-    },
-    utils::OCI_LAYER_SUBDIR,
+    oci::overlayfs::OverlayFsMerger,
+    utils::{self, OCI_LAYER_SUBDIR},
 };
-use std::path::PathBuf;
+use std::path::Path;
+use tempfile::tempdir;
 use walkdir::WalkDir;
 
 //--------------------------------------------------------------------------------------------------
@@ -29,35 +27,33 @@ use walkdir::WalkDir;
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing with debug level
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
+        .with_max_level(tracing::Level::INFO)
         .init();
 
-    // Create OCI download directory for this example
-    let oci_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("build");
+    let root_path = tempdir()?;
 
-    // Create Docker registry client.
-    let registry = DockerRegistry::with_oci_dir(oci_dir.clone());
+    // Use specific directories for OCI and rootfs
+    let oci_dir = root_path.path().join("oci");
+    let merge_dir = root_path.path().join("rootfs/node");
 
-    // Pull Node.js image (has multiple layers showing overlayfs in action)
-    println!("\nPulling Node.js image...");
-    registry.pull_image("library/node", Some("slim")).await?;
+    // Pull node image
+    utils::pull_docker_image(&oci_dir, "library/node", "slim").await?;
 
     // Show the layer structure before merging
-    print_layer_structure(registry.get_oci_dir())?;
+    print_layer_structure(&oci_dir)?;
 
     // Create destination directory for merged layers
-    let merged_rootfs_dir = oci_dir.join("merged_rootfs");
-    std::fs::create_dir_all(&merged_rootfs_dir)?;
+    std::fs::create_dir_all(&merge_dir)?;
 
     // Create OverlayFsMerger instance
     println!("\nMerging layers...");
-    let merger = OverlayFsMerger::new(oci_dir, merged_rootfs_dir.clone());
+    let merger = OverlayFsMerger::new(oci_dir, merge_dir.clone());
 
     // Merge the layers
     merger.merge("library_node__slim").await?;
 
     // Show the merged rootfs structure focusing on interesting directories
-    print_merged_rootfs(&merged_rootfs_dir.join("merged"))?;
+    print_merged_rootfs(&merge_dir)?;
 
     // // Cleanup
     // merger.unmount().await?;
@@ -70,8 +66,8 @@ async fn main() -> anyhow::Result<()> {
 //--------------------------------------------------------------------------------------------------
 
 // Helper function to print the layer structure before merging
-fn print_layer_structure(base_path: &std::path::Path) -> anyhow::Result<()> {
-    let layers_dir = base_path.join(OCI_LAYER_SUBDIR);
+fn print_layer_structure(base_path: impl AsRef<Path>) -> anyhow::Result<()> {
+    let layers_dir = base_path.as_ref().join(OCI_LAYER_SUBDIR);
 
     println!("\nLayer Structure Before Merge:");
     println!("----------------------------");
@@ -93,7 +89,8 @@ fn print_layer_structure(base_path: &std::path::Path) -> anyhow::Result<()> {
 }
 
 // Helper function to print the merged rootfs directory structure
-fn print_merged_rootfs(merged_dir: &PathBuf) -> anyhow::Result<()> {
+fn print_merged_rootfs(merged_dir: impl AsRef<Path>) -> anyhow::Result<()> {
+    let merged_dir = merged_dir.as_ref().join("merged");
     println!("\nMerged Rootfs Structure:");
     println!("------------------------");
     println!("Root: {}", merged_dir.display());
