@@ -1,21 +1,29 @@
 //! If you are trying to run this example, please make sure to run `make example microvm_nop` from
 //! the `monocore` subdirectory
 
-use monocore::vm::MicroVm;
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
+use monocore::{utils, vm::MicroVm};
 
 //--------------------------------------------------------------------------------------------------
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
-fn main() -> anyhow::Result<()> {
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    // Use the architecture-specific build directory
-    let rootfs_path = format!("build/rootfs-alpine-{}", get_current_arch());
+    // Use specific directories for OCI and rootfs
+    let oci_dir = format!("{}/build/oci", env!("CARGO_MANIFEST_DIR"));
+    let merge_dir = format!("{}/build/rootfs/alpine", env!("CARGO_MANIFEST_DIR"));
+
+    // Pull and merge Alpine image
+    utils::pull_docker_image(&oci_dir, "library/alpine", "latest").await?;
+    utils::merge_image_layers(&oci_dir, &merge_dir, "library/alpine", "latest").await?;
 
     // Build the MicroVm
     let vm = MicroVm::builder()
-        .root_path(&rootfs_path)
+        .root_path(format!("{}/merged", merge_dir))
         .exec_path("/bin/true")
         .ram_mib(1024)
         .build()?;
@@ -27,17 +35,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-//--------------------------------------------------------------------------------------------------
-// Functions: *
-//--------------------------------------------------------------------------------------------------
-
-// Add this function to determine the current architecture
-fn get_current_arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
-        "x86_64"
-    } else if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        panic!("Unsupported architecture")
-    }
+#[cfg(target_os = "linux")] // TODO: Linux support temporarily on hold
+fn main() {
+    panic!("This example is not yet supported on Linux");
 }

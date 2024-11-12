@@ -29,9 +29,11 @@
 //! make example microvm_curl -- --local-only localhost:8080
 //! ```
 
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use anyhow::{Context, Result};
 use clap::Parser;
-use monocore::vm::MicroVm;
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
+use monocore::{utils, vm::MicroVm};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -53,18 +55,27 @@ struct Args {
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
-fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
 
     // Parse command line arguments
     let args = Args::parse();
 
-    // Use the architecture-specific build directory
-    let rootfs_path = format!("build/rootfs-fedora-{}", get_current_arch());
+    // Use specific directories for OCI and rootfs
+    let oci_dir = format!("{}/build/oci", env!("CARGO_MANIFEST_DIR"));
+    let merge_dir = format!("{}/build/rootfs/fedora", env!("CARGO_MANIFEST_DIR"));
+
+    // Pull and merge Fedora image
+    utils::pull_docker_image(&oci_dir, "library/fedora", "latest").await?;
+    utils::merge_image_layers(&oci_dir, &merge_dir, "library/fedora", "latest").await?;
 
     // Build the MicroVm
     let vm = MicroVm::builder()
-        .root_path(&rootfs_path)
+        .root_path(format!("{}/merged", merge_dir))
         .num_vcpus(1)
         .exec_path("/bin/curl")
         .args([args.target.as_str()])
@@ -80,17 +91,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-//--------------------------------------------------------------------------------------------------
-// Functions: *
-//--------------------------------------------------------------------------------------------------
-
-// Add this function to determine the current architecture
-fn get_current_arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
-        "x86_64"
-    } else if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        panic!("Unsupported architecture")
-    }
+#[cfg(target_os = "linux")] // TODO: Linux support temporarily on hold
+fn main() {
+    panic!("This example is not yet supported on Linux");
 }

@@ -18,18 +18,24 @@
 //! 4. Show status of loaded services
 //! 5. Clean up all services
 
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use monocore::{
     config::{Group, Monocore, Service},
     orchestration::{LogRetentionPolicy, Orchestrator},
+    utils,
 };
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use std::{net::Ipv4Addr, time::Duration};
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use tokio::time;
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use tracing::info;
 
 //--------------------------------------------------------------------------------------------------
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing with debug level by default
@@ -37,14 +43,21 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    // Use the architecture-specific build directory
-    let rootfs_path = format!("build/rootfs-alpine-{}", get_current_arch());
+    // Use specific directories for OCI and rootfs
+    let oci_dir = format!("{}/build/oci", env!("CARGO_MANIFEST_DIR"));
+    let merge_dir = format!("{}/build/rootfs/alpine", env!("CARGO_MANIFEST_DIR"));
+
+    // Pull and merge Alpine image
+    utils::pull_docker_image(&oci_dir, "library/alpine", "latest").await?;
+    utils::merge_image_layers(&oci_dir, &merge_dir, "library/alpine", "latest").await?;
+
+    let root_path = format!("{}/merged", merge_dir);
     let supervisor_path = "../target/release/monokrun";
 
     // Phase 1: Start initial services with first Orchestrator
     info!("Phase 1: Starting initial services with first Orchestrator");
     {
-        let mut orchestrator = Orchestrator::new(&rootfs_path, supervisor_path).await?;
+        let mut orchestrator = Orchestrator::new(&root_path, supervisor_path).await?;
         let initial_config = create_services_config()?;
 
         orchestrator.up(initial_config).await?;
@@ -61,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
     // Phase 2: Load running services into new Orchestrator
     info!("\nPhase 2: Loading existing services into new Orchestrator");
     let mut loaded_orchestrator = Orchestrator::load_with_log_retention_policy(
-        &rootfs_path,
+        root_path,
         supervisor_path,
         LogRetentionPolicy::with_max_age_days(7),
     )
@@ -87,7 +100,8 @@ async fn main() -> anyhow::Result<()> {
 // Functions: Helpers
 //--------------------------------------------------------------------------------------------------
 
-// Helper function to print service status
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
+                                            // Helper function to print service status
 async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()> {
     let statuses = orchestrator.status().await?;
 
@@ -143,7 +157,8 @@ async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()>
     Ok(())
 }
 
-// Create configuration with some long-running services
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
+                                            // Create configuration with some long-running services
 fn create_services_config() -> anyhow::Result<Monocore> {
     let main_group = Group::builder().name("main").build();
 
@@ -183,12 +198,7 @@ fn create_services_config() -> anyhow::Result<Monocore> {
     Ok(config)
 }
 
-fn get_current_arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
-        "x86_64"
-    } else if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        panic!("Unsupported architecture")
-    }
+#[cfg(target_os = "linux")] // TODO: Linux support temporarily on hold
+fn main() {
+    panic!("This example is not yet supported on Linux");
 }

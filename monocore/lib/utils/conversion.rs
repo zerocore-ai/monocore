@@ -74,7 +74,7 @@ pub fn to_null_terminated_c_array(strings: &[CString]) -> Vec<*const c_char> {
 /// ## Rules:
 /// - Replaces '/' with '__' (double underscore to avoid collisions)
 /// - Replaces other invalid path chars with '_'
-/// - Trims leading/trailing whitespace and dots
+/// - Trims leading/trailing whitespace
 /// - Collapses multiple consecutive separators
 ///
 /// ## Examples:
@@ -84,7 +84,7 @@ pub fn to_null_terminated_c_array(strings: &[CString]) -> Vec<*const c_char> {
 /// assert_eq!(sanitize_repo_name("library/alpine"), "library_alpine");
 /// assert_eq!(sanitize_repo_name("user/repo/name"), "user_repo_name");
 /// assert_eq!(sanitize_repo_name("my:weird@repo"), "my_weird_repo");
-/// assert_eq!(sanitize_repo_name(".hidden/repo."), "hidden_repo");
+/// assert_eq!(sanitize_repo_name(".hidden/repo."), ".hidden_repo.");
 /// ```
 pub fn sanitize_repo_name(repo_name: &str) -> String {
     // First replace forward slashes with double underscore
@@ -94,7 +94,7 @@ pub fn sanitize_repo_name(repo_name: &str) -> String {
     let sanitized = with_safe_slashes
         .chars()
         .map(|c| {
-            if c.is_alphanumeric() || c == '_' || c == '-' {
+            if c.is_alphanumeric() || c == '_' || c == '-' || c == '.' {
                 c
             } else {
                 '_'
@@ -102,8 +102,8 @@ pub fn sanitize_repo_name(repo_name: &str) -> String {
         })
         .collect::<String>();
 
-    // Trim leading/trailing dots and whitespace
-    let trimmed: &str = sanitized.trim_matches(|c: char| c == '.' || c.is_whitespace());
+    // Trim leading/trailing whitespace
+    let trimmed: &str = sanitized.trim_matches(|c: char| c.is_whitespace());
 
     // Collapse multiple consecutive separators
     trimmed
@@ -111,6 +111,41 @@ pub fn sanitize_repo_name(repo_name: &str) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("_")
+}
+
+/// Converts a file mode to a string representation similar to ls -l
+///
+/// # Examples
+/// ```
+/// use monocore::utils::format_mode;
+/// assert_eq!(format_mode(0o755), "-rwxr-xr-x");
+/// assert_eq!(format_mode(0o644), "-rw-r--r--");
+/// assert_eq!(format_mode(0o40755), "drwxr-xr-x");
+/// ```
+pub fn format_mode(mode: u32) -> String {
+    let file_type = match mode & 0o170000 {
+        0o040000 => 'd', // directory
+        0o120000 => 'l', // symbolic link
+        0o010000 => 'p', // named pipe (FIFO)
+        0o140000 => 's', // socket
+        0o060000 => 'b', // block device
+        0o020000 => 'c', // character device
+        _ => '-',        // regular file
+    };
+
+    let user = format_triplet((mode >> 6) & 0o7);
+    let group = format_triplet((mode >> 3) & 0o7);
+    let other = format_triplet(mode & 0o7);
+
+    format!("{}{}{}{}", file_type, user, group, other)
+}
+
+/// Helper function to convert a permission triplet (3 bits) to rwx format
+fn format_triplet(mode: u32) -> String {
+    let r = if mode & 0o4 != 0 { 'r' } else { '-' };
+    let w = if mode & 0o2 != 0 { 'w' } else { '-' };
+    let x = if mode & 0o1 != 0 { 'x' } else { '-' };
+    format!("{}{}{}", r, w, x)
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -130,9 +165,9 @@ mod tests {
         // Test special characters
         assert_eq!(sanitize_repo_name("my:weird@repo"), "my_weird_repo");
         assert_eq!(sanitize_repo_name("repo#with$chars"), "repo_with_chars");
+        assert_eq!(sanitize_repo_name(".hidden/repo."), ".hidden_repo.");
 
-        // Test leading/trailing characters
-        assert_eq!(sanitize_repo_name(".hidden/repo."), "hidden_repo");
+        // Test leading/trailing whitespace
         assert_eq!(sanitize_repo_name(" spaces /repo "), "spaces_repo");
 
         // Test multiple consecutive separators
@@ -145,7 +180,17 @@ mod tests {
         // Test mixed cases
         assert_eq!(
             sanitize_repo_name("my.weird/repo@with/special:chars"),
-            "my_weird_repo_with_special_chars"
+            "my.weird_repo_with_special_chars"
         );
+    }
+
+    #[test]
+    fn test_format_mode() {
+        assert_eq!(format_mode(0o755), "-rwxr-xr-x");
+        assert_eq!(format_mode(0o644), "-rw-r--r--");
+        assert_eq!(format_mode(0o40755), "drwxr-xr-x");
+        assert_eq!(format_mode(0o100644), "-rw-r--r--");
+        assert_eq!(format_mode(0o120777), "lrwxrwxrwx");
+        assert_eq!(format_mode(0o010644), "prw-r--r--");
     }
 }

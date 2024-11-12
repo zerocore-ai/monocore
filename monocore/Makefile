@@ -12,8 +12,6 @@ PREFIX ?= /usr/local
 MONOCORE_RELEASE_BIN := ../target/release/monocore
 MONOKRUN_RELEASE_BIN := ../target/release/monokrun
 EXAMPLES_DIR := ../target/release/examples
-FIXTURES_DIR := fixtures
-DISTRO_ROOTFS := rootfs-alpine
 BUILD_DIR := build
 BENCHES_DIR := ../target/release
 
@@ -22,7 +20,7 @@ DARWIN_LIB_PATH := /usr/local/lib
 LINUX_LIB_PATH := /usr/local/lib64
 
 # Phony targets
-.PHONY: all install clean example unpack_rootfs bench build_monokrun
+.PHONY: all install clean example bench build_monokrun
 
 # Default target
 all: $(MONOCORE_RELEASE_BIN)
@@ -53,16 +51,8 @@ clean:
 	cargo clean
 	rm -rf $(BUILD_DIR)
 
-# Unpack rootfs
-unpack_rootfs: $(BUILD_DIR)/$(DISTRO_ROOTFS)-$(ARCH)
-
-$(BUILD_DIR)/$(DISTRO_ROOTFS)-$(ARCH): $(FIXTURES_DIR)/$(DISTRO_ROOTFS)-$(ARCH).tar.gz
-	mkdir -p $(BUILD_DIR)/$(DISTRO_ROOTFS)-$(ARCH)
-	tar -xzf $< -C $(BUILD_DIR)
-	touch $@
-
 # Run examples
-example: build_monokrun unpack_rootfs
+example: build_monokrun
 	@if [ -z "$(word 2,$(MAKECMDGOALS))" ]; then \
 		echo "Usage: make example <example_name> [-- <args>]"; \
 			exit 1; \
@@ -74,9 +64,9 @@ _run_example:
 ifeq ($(OS),Darwin)
 	cargo build --example $(EXAMPLE_NAME) --release
 	codesign --entitlements monocore.entitlements --force -s - $(EXAMPLES_DIR)/$(EXAMPLE_NAME)
-	DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$RUST_DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME) $(ARGS) || exit $$?
+	RUST_BACKTRACE=1 DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$RUST_DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME) $(ARGS) || exit $$?
 else
-	LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
+	RUST_BACKTRACE=1 LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
 endif
 
 # Run benchmarks

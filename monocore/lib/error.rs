@@ -1,6 +1,9 @@
+use nix::errno::Errno;
 use std::{
     error::Error,
     fmt::{self, Display},
+    path::StripPrefixError,
+    time::SystemTimeError,
 };
 use thiserror::Error;
 
@@ -164,6 +167,37 @@ pub enum MonocoreError {
     /// An error that occurred when no more IP addresses are available for assignment
     #[error("no available IP addresses in the pool")]
     NoAvailableIPs,
+
+    /// An error that occurred during a walkdir operation
+    #[error("walkdir error: {0}")]
+    WalkDir(#[from] walkdir::Error),
+
+    /// An error that occurred when stripping a path prefix
+    #[error("strip prefix error: {0}")]
+    StripPrefix(#[from] StripPrefixError),
+
+    /// An error that occurred during a system call
+    #[error("system call error: {0}")]
+    SystemCall(#[from] Errno),
+
+    /// An error that occurred when converting system time
+    #[error("system time error: {0}")]
+    SystemTime(#[from] SystemTimeError),
+
+    /// An error that occurred during layer extraction.
+    /// This typically happens when the join handle for the blocking task fails.
+    #[error("layer extraction error: {0}")]
+    LayerExtraction(String),
+
+    /// An error that occurred during layer handling operations like opening files or unpacking archives.
+    /// Contains both the underlying IO error and the path to the layer being processed.
+    #[error("layer handling error: {source}")]
+    LayerHandling {
+        /// The underlying IO error that occurred
+        source: std::io::Error,
+        /// The path to the layer being processed when the error occurred
+        layer: String,
+    },
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.
