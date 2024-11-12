@@ -1,7 +1,7 @@
 <div align="center">
-  <!-- <a href="https://github.com/appcypher/monocore" target="_blank">
-    <img src="https://raw.githubusercontent.com/appcypher/monocore/main/assets/a_logo.png" alt="monocore Logo" width="100"></img>
-  </a> -->
+  <a href="https://github.com/appcypher/monocore" target="_blank">
+    <img src="https://raw.githubusercontent.com/appcypher/monocore/main/assets/monocore_logo.png" alt="monocore logo" width="100"></img>
+  </a>
 
   <h1 align="center">monocore</h1>
 
