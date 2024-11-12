@@ -1,12 +1,12 @@
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
+use crate::oci::overlayfs::OverlayFsMerger;
 use crate::{
-    oci::{
-        distribution::{DockerRegistry, OciRegistryPull},
-        overlayfs::OverlayFsMerger,
-    },
+    oci::distribution::{DockerRegistry, OciRegistryPull},
     utils::conversion::sanitize_repo_name,
     MonocoreResult,
 };
 use std::path::PathBuf;
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use tokio::fs;
 
 use super::OCI_REPO_SUBDIR;
@@ -60,6 +60,7 @@ pub async fn pull_docker_image(
     registry.pull_image(repository, Some(tag)).await
 }
 
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 /// Merges OCI image layers into a single rootfs directory.
 /// If the destination directory already exists, the merge is skipped.
 ///

@@ -33,8 +33,10 @@
 //! By default, both server and client use 127.0.0.1 (localhost) as the IP address.
 //! Use the --ip flag to specify a different IP address for either the server or client.
 
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use anyhow::Result;
 use clap::Parser;
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use monocore::{
     utils,
     vm::{LogLevel, MicroVm},
@@ -60,6 +62,7 @@ struct Args {
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -116,4 +119,9 @@ async fn main() -> Result<()> {
     vm.start()?;
 
     Ok(())
+}
+
+#[cfg(target_os = "linux")] // TODO: Linux support temporarily on hold
+fn main() {
+    panic!("This example is not yet supported on Linux");
 }

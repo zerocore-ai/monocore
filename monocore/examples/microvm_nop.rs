@@ -1,12 +1,14 @@
 //! If you are trying to run this example, please make sure to run `make example microvm_nop` from
 //! the `monocore` subdirectory
 
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use monocore::{utils, vm::MicroVm};
 
 //--------------------------------------------------------------------------------------------------
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -31,4 +33,9 @@ async fn main() -> anyhow::Result<()> {
     vm.start()?;
 
     Ok(())
+}
+
+#[cfg(target_os = "linux")] // TODO: Linux support temporarily on hold
+fn main() {
+    panic!("This example is not yet supported on Linux");
 }

@@ -20,18 +20,22 @@
 //! 4. Wait 10 seconds and show updated status
 //! 5. Stop all services
 
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use monocore::{
     config::{Group, Monocore, Service},
     orchestration::{LogRetentionPolicy, Orchestrator},
     utils,
 };
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use std::{net::Ipv4Addr, time::Duration};
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use tokio::time;
 
 //--------------------------------------------------------------------------------------------------
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing with debug level by default
@@ -93,7 +97,8 @@ async fn main() -> anyhow::Result<()> {
 // Functions: *
 //--------------------------------------------------------------------------------------------------
 
-// Helper function to print service status
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
+                                            // Helper function to print service status
 async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()> {
     println!("\nCurrent Service Status:");
     println!();
@@ -149,7 +154,8 @@ async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()>
     Ok(())
 }
 
-// Create initial configuration with two services
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
+                                            // Create initial configuration with two services
 fn create_initial_config() -> anyhow::Result<Monocore> {
     // Create the main group
     let main_group = Group::builder().name("main").build();
@@ -183,7 +189,8 @@ fn create_initial_config() -> anyhow::Result<Monocore> {
     Ok(config)
 }
 
-// Create updated configuration with modified service and new service
+#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
+                                            // Create updated configuration with modified service and new service
 fn create_updated_config() -> anyhow::Result<Monocore> {
     // Create the main group
     let main_group = Group::builder().name("main").build();
@@ -228,4 +235,9 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
         .build()?;
 
     Ok(config)
+}
+
+#[cfg(target_os = "linux")] // TODO: Linux support temporarily on hold
+fn main() {
+    panic!("This example is not yet supported on Linux");
 }

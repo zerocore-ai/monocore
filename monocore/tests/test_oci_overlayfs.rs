@@ -1,3 +1,5 @@
+#![cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
+
 use std::{fs, os::unix::fs::PermissionsExt};
 use tempfile::tempdir;
 
