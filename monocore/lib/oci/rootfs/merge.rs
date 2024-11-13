@@ -1,16 +1,17 @@
-#![cfg(not(target_os = "linux"))]
-use std::{
-    os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
-};
+#[cfg(all(unix, not(target_os = "linux")))]
+use std::path::PathBuf;
+use std::{os::unix::fs::PermissionsExt, path::Path};
 
+#[cfg(all(unix, not(target_os = "linux")))]
 use futures::future::join_all;
 use oci_spec::image::ImageManifest;
 use tokio::fs;
 
+#[cfg(all(unix, not(target_os = "linux")))]
+use crate::MonocoreError;
 use crate::{
     utils::{self, MERGED_SUBDIR, OCI_MANIFEST_FILENAME, OCI_REPO_SUBDIR},
-    MonocoreError, MonocoreResult,
+    MonocoreResult,
 };
 
 use super::PermissionGuard;
@@ -19,6 +20,7 @@ use super::PermissionGuard;
 // Constants
 //--------------------------------------------------------------------------------------------------
 
+#[cfg(all(unix, not(target_os = "linux")))]
 const EXTRACTED_LAYER_EXTENSION: &str = "extracted";
 
 //--------------------------------------------------------------------------------------------------
@@ -169,14 +171,14 @@ async fn merge_internal(oci_dir: &Path, dest_dir: &Path, repo_tag: &str) -> Mono
 
 #[cfg(target_os = "linux")]
 async fn merge_overlayfs(
-    manifest: &ImageManifest,
-    oci_dir: &Path,
-    dest_dir: &Path,
+    _manifest: &ImageManifest,
+    _oci_dir: &Path,
+    _dest_dir: &Path,
 ) -> MonocoreResult<()> {
-    todo!()
+    todo!("Merging currently not supported on Linux")
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(unix, not(target_os = "linux")))]
 async fn merge_copy(
     manifest: &ImageManifest,
     oci_dir: &Path,
@@ -225,6 +227,7 @@ async fn merge_copy(
 }
 
 /// Extracts a tar.gz layer to the specified path
+#[cfg(all(unix, not(target_os = "linux")))]
 async fn extract_layer(layer_path: &Path, extract_path: &Path) -> MonocoreResult<()> {
     fs::create_dir_all(extract_path).await?;
 
@@ -262,7 +265,7 @@ async fn extract_layer(layer_path: &Path, extract_path: &Path) -> MonocoreResult
 // Tests
 //--------------------------------------------------------------------------------------------------
 
-#[cfg(test)]
+#[cfg(all(test, unix, not(target_os = "linux")))]
 mod tests {
     use std::os::unix::fs::FileTypeExt;
 

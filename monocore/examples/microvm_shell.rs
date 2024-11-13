@@ -15,9 +15,7 @@
 //! Once running, you can interact with the shell inside the microvm.
 //! The shell has basic functionality and access to busybox commands.
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use anyhow::{Context, Result};
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use monocore::{
     utils,
     vm::{LogLevel, MicroVm},
@@ -27,7 +25,6 @@ use monocore::{
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -61,9 +58,4 @@ async fn main() -> Result<()> {
     vm.start()?;
 
     Ok(())
-}
-
-#[cfg(target_os = "linux")] // TODO: Linux support temporarily on hold
-fn main() {
-    panic!("This example is not yet supported on Linux");
 }

@@ -1,4 +1,3 @@
-#![cfg(not(target_os = "linux"))]
 use std::path::Path;
 
 use tokio::fs;
@@ -147,8 +146,7 @@ pub async fn copy(
     Ok(())
 }
 
-/// Handles copying, creating directories, or creating symlinks from source to target path
-#[cfg(not(target_os = "linux"))]
+/// Handles copying, creating directories, or creating symlinks from source to target path\
 async fn handle_fs_entry(
     source_path: &Path,
     target_path: &Path,
@@ -214,7 +212,10 @@ async fn handle_fs_entry(
         }
 
         // Create FIFO with same permissions as source
+        #[cfg(all(unix, not(target_os = "linux")))]
         let mode = Mode::from_bits_truncate(metadata.mode() as u16 & 0o777);
+        #[cfg(target_os = "linux")]
+        let mode = Mode::from_bits_truncate(metadata.mode() & 0o777);
         unistd::mkfifo(target_path, mode)?;
     }
 

@@ -1,13 +1,13 @@
 use std::path::Path;
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
-use crate::oci::rootfs;
 use crate::{
-    oci::distribution::{DockerRegistry, OciRegistryPull},
+    oci::{
+        distribution::{DockerRegistry, OciRegistryPull},
+        rootfs,
+    },
     MonocoreResult,
 };
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use tokio::fs;
 
 use super::OCI_REPO_SUBDIR;
@@ -52,7 +52,6 @@ pub async fn pull_docker_image(oci_dir: impl AsRef<Path>, image_ref: &str) -> Mo
     registry.pull_image(repository, Some(tag)).await
 }
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 /// Merges OCI image layers into a single rootfs directory.
 /// If the destination directory already exists, the merge is skipped.
 ///

@@ -29,10 +29,8 @@
 //! make example microvm_curl -- --local-only localhost:8080
 //! ```
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use anyhow::{Context, Result};
 use clap::Parser;
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use monocore::{utils, vm::MicroVm};
 
 //--------------------------------------------------------------------------------------------------
@@ -55,7 +53,6 @@ struct Args {
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -90,9 +87,4 @@ async fn main() -> Result<()> {
     vm.start()?;
 
     Ok(())
-}
-
-#[cfg(target_os = "linux")] // TODO: Linux support temporarily on hold
-fn main() {
-    panic!("This example is not yet supported on Linux");
 }

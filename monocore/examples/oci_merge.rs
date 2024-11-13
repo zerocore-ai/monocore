@@ -11,22 +11,18 @@
 //! cargo run --example overlayfs_merge
 //! ```
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
-use monocore::oci::rootfs;
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
-use monocore::utils::{self, OCI_LAYER_SUBDIR};
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
+use monocore::{
+    oci::rootfs,
+    utils::{self, OCI_LAYER_SUBDIR},
+};
 use std::path::Path;
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use tempfile::tempdir;
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use walkdir::WalkDir;
 
 //--------------------------------------------------------------------------------------------------
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing with debug level
@@ -64,7 +60,6 @@ async fn main() -> anyhow::Result<()> {
 //--------------------------------------------------------------------------------------------------
 
 // Helper function to print the layer structure before merging
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 fn print_layer_structure(base_path: impl AsRef<Path>) -> anyhow::Result<()> {
     let layers_dir = base_path.as_ref().join(OCI_LAYER_SUBDIR);
 
@@ -88,7 +83,6 @@ fn print_layer_structure(base_path: impl AsRef<Path>) -> anyhow::Result<()> {
 }
 
 // Helper function to print the merged rootfs directory structure
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 fn print_ref_rootfs(rootfs_dir: impl AsRef<Path>) -> anyhow::Result<()> {
     let rootfs_dir = rootfs_dir.as_ref().join("merged");
     println!("\nMerged Rootfs Structure:");
@@ -124,9 +118,4 @@ fn print_ref_rootfs(rootfs_dir: impl AsRef<Path>) -> anyhow::Result<()> {
     println!("(base OS, Node.js runtime, npm packages) are combined into a single filesystem.");
 
     Ok(())
-}
-
-#[cfg(target_os = "linux")] // TODO: Linux support temporarily on hold
-fn main() {
-    panic!("This example is not yet supported on Linux");
 }
