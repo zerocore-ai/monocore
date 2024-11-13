@@ -1,6 +1,9 @@
 <div align="center">
+  <a href="https://github.com/appcypher/monocore" target="_blank">
+    <img src="https://raw.githubusercontent.com/appcypher/monocore/main/assets/monocore_logo.png" alt="monocore logo" width="100"></img>
+  </a>
+
   <h1>monocore</h1>
-  <p>Core library powering secure, sandboxed AI environments</p>
 
   <p>
     <a href="https://github.com/appcypher/monocore/actions?query=">
@@ -12,7 +15,7 @@
   </p>
 </div>
 
-**`monocore`** is the engine behind the monocore platform, providing a robust foundation for running AI workloads in isolated microVMs. It handles everything from VM lifecycle management to OCI image distribution, making it easy to deploy and orchestrate AI agents securely.
+**`monocore`** is the engine behind the monocore platform, providing a robust foundation for running AI workloads in isolated microVMs. It handles everything from VM lifecycle management to OCI image distribution, making it easy to deploy and orchestrate code sandboxes securely.
 
 > [!WARNING]
 > This project is in early development and is not yet ready for production use.
@@ -30,21 +33,25 @@
 ## Features
 
 ### 🔒 Secure by Design
+
 - Isolated microVM environments for each service
 - Resource constraints and limits enforcement
 - Network isolation between service groups
 
 ### 🏃 Efficient Runtime
+
 - Fast microVM provisioning and startup
 - Minimal resource overhead
 - Optimized layer caching and sharing
 
 ### 📦 OCI Integration
+
 - Pull images from any OCI-compliant registry
 - Smart layer management and deduplication
 - Local image caching for faster startups
 
 ### 🎯 Service Orchestration
+
 - Dependency-aware service scheduling
 - Health monitoring and automatic recovery
 - Log rotation with configurable retention
@@ -69,11 +76,12 @@ graph TD
     oci --> oci_layer[layer/]
     oci_layer --> oci_layer_hash["[hash]"]
 
-    monocore_root --> microvm[microvm/]
-    microvm --> microvm_service["[service-name]/"]
-    microvm_service --> microvm_toml[service.toml]
-    microvm_service --> microvm_cid["[service-name].cid"]
-    microvm_service --> microvm_rootfs[rootfs/]
+    monocore_root --> rootfs[rootfs/]
+    rootfs --> rootfs_service[service/]
+    rootfs_service --> rootfs_service_rootfs["[service-name]/"]
+    rootfs --> rootfs_ref[reference/]
+    rootfs_ref --> rootfs_ref_repo["[repo-name]__[tag]/"]
+    rootfs_ref_repo --> rootfs_ref_repo_merged[merged/]
 
     monocore_root --> run[run/]
     run --> run_service["[service-name]__[pid].json"]
@@ -86,6 +94,7 @@ graph TD
 ## Quick Start
 
 ### Basic MicroVM
+
 ```rust
 use monocore::vm::MicroVm;
 
@@ -104,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
 ```
 
 ### Service Orchestration
+
 ```rust
 use monocore::{
     config::{Group, Monocore, Service},
@@ -133,13 +143,16 @@ async fn main() -> anyhow::Result<()> {
 ## Development
 
 ### Prerequisites
+
 - Rust toolchain (1.75+)
 - libkrun (see [monocore/README.md](http://github.com/appcypher/monocore#setup))
 - Linux OS for full functionality (OverlayFS support)
   - macOS users should use Docker Desktop or a Linux VM for development
 
 ### Examples
+
 The `examples/` directory showcases key features:
+
 - `microvm_shell.rs`: Basic microVM usage
 - `oci_pull.rs`: Image pulling and caching
 - `orchestration_basic.rs`: Service orchestration

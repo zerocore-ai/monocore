@@ -27,8 +27,17 @@ pub const OCI_MANIFEST_FILENAME: &str = "manifest.json";
 /// The filename for the OCI image config JSON file
 pub const OCI_CONFIG_FILENAME: &str = "config.json";
 
-/// The microvm sub directory where the rootfs and other related files associated with the microvm are stored.
-pub const MICROVM_SUBDIR: &str = "microvm";
+/// The rootfs sub directory where the rootfs and other related files associated with the microvm are stored.
+pub const ROOTFS_SUBDIR: &str = "rootfs";
+
+/// The reference sub directory where the reference rootfs is stored.
+pub const REFERENCE_SUBDIR: &str = "reference";
+
+/// The services sub directory where the services (rootfs) are stored.
+pub const SERVICE_SUBDIR: &str = "service";
+
+/// The merged sub directory where the merged rootfs is stored.
+pub const MERGED_SUBDIR: &str = "merged";
 
 /// The sub directory where runtime state is stored.
 pub const STATE_SUBDIR: &str = "run";
@@ -40,11 +49,17 @@ lazy_static::lazy_static! {
     /// The path where all monocore artifacts, configs, etc are stored.
     pub static ref DEFAULT_MONOCORE_HOME: PathBuf = dirs::home_dir().unwrap().join(MONOCORE_SUBDIR);
 
-    /// The directory where the micro VM state is stored.
-    pub static ref MICROVM_STATE_DIR: PathBuf = monocore_home_path().join(STATE_SUBDIR);
+    /// The path to the monocore OCI directory
+    pub static ref MONOCORE_OCI_DIR: PathBuf = monocore_home_path().join(OCI_SUBDIR);
 
-    /// The directory where the micro VM logs are stored.
-    pub static ref MICROVM_LOG_DIR: PathBuf = monocore_home_path().join(LOG_SUBDIR);
+    /// The path to the monocore rootfs directory
+    pub static ref MONOCORE_ROOTFS_DIR: PathBuf = monocore_home_path().join(ROOTFS_SUBDIR);
+
+    /// The path to the monocore state directory (e.g. for storing service state files)
+    pub static ref MONOCORE_STATE_DIR: PathBuf = monocore_home_path().join(STATE_SUBDIR);
+
+    /// The path to the monocore log directory (e.g. for storing service stdout/stderr logs)
+    pub static ref MONOCORE_LOG_DIR: PathBuf = monocore_home_path().join(LOG_SUBDIR);
 }
 
 //--------------------------------------------------------------------------------------------------

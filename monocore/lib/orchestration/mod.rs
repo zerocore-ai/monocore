@@ -1,6 +1,7 @@
 //! The orchestration module of the monocore.
 
 mod orchestrator;
+mod utils;
 
 //--------------------------------------------------------------------------------------------------
 // Exports

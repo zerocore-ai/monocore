@@ -44,20 +44,22 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     // Use specific directories for OCI and rootfs
-    let oci_dir = format!("{}/build/oci", env!("CARGO_MANIFEST_DIR"));
-    let merge_dir = format!("{}/build/rootfs/alpine", env!("CARGO_MANIFEST_DIR"));
+    let build_dir = format!("{}/build", env!("CARGO_MANIFEST_DIR"));
+    let oci_dir = format!("{}/oci", build_dir);
+    let rootfs_dir = format!("{}/rootfs", build_dir);
+    let rootfs_alpine_dir = format!("{}/reference/library_alpine__latest", rootfs_dir);
 
     // Pull and merge Alpine image
-    utils::pull_docker_image(&oci_dir, "library/alpine", "latest").await?;
-    utils::merge_image_layers(&oci_dir, &merge_dir, "library/alpine", "latest").await?;
+    utils::pull_docker_image(&oci_dir, "library/alpine:latest").await?;
+    utils::merge_image_layers(&oci_dir, &rootfs_alpine_dir, "library/alpine:latest").await?;
 
-    let root_path = format!("{}/merged", merge_dir);
+    let services_rootfs_dir = format!("{}/rootfs/service", build_dir);
     let supervisor_path = "../target/release/monokrun";
 
     // Phase 1: Start initial services with first Orchestrator
     info!("Phase 1: Starting initial services with first Orchestrator");
     {
-        let mut orchestrator = Orchestrator::new(&root_path, supervisor_path).await?;
+        let mut orchestrator = Orchestrator::new(&services_rootfs_dir, supervisor_path).await?;
         let initial_config = create_services_config()?;
 
         orchestrator.up(initial_config).await?;
@@ -74,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
     // Phase 2: Load running services into new Orchestrator
     info!("\nPhase 2: Loading existing services into new Orchestrator");
     let mut loaded_orchestrator = Orchestrator::load_with_log_retention_policy(
-        root_path,
+        services_rootfs_dir,
         supervisor_path,
         LogRetentionPolicy::with_max_age_days(7),
     )
@@ -100,8 +102,8 @@ async fn main() -> anyhow::Result<()> {
 // Functions: Helpers
 //--------------------------------------------------------------------------------------------------
 
+// Helper function to print service status
 #[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
-                                            // Helper function to print service status
 async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()> {
     let statuses = orchestrator.status().await?;
 
@@ -157,15 +159,15 @@ async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()>
     Ok(())
 }
 
+// Create configuration with some long-running services
 #[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
-                                            // Create configuration with some long-running services
 fn create_services_config() -> anyhow::Result<Monocore> {
     let main_group = Group::builder().name("main").build();
 
     // Create services that will keep running
     let counter_service = Service::builder_default()
         .name("counter")
-        .base("alpine:latest")
+        .base("library/alpine:latest")
         .group("main")
         .command("/bin/sh")
         .args([
@@ -176,7 +178,7 @@ fn create_services_config() -> anyhow::Result<Monocore> {
 
     let date_service = Service::builder_default()
         .name("date-service")
-        .base("alpine:latest")
+        .base("library/alpine:latest")
         .group("main")
         .command("/bin/sh")
         .args(["-c", "while true; do date; sleep 3; done"])
@@ -184,7 +186,7 @@ fn create_services_config() -> anyhow::Result<Monocore> {
 
     let uptime_service = Service::builder_default()
         .name("uptime")
-        .base("alpine:latest")
+        .base("library/alpine:latest")
         .group("main")
         .command("/bin/sh")
         .args(["-c", "while true; do uptime; sleep 4; done"])

@@ -44,21 +44,24 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     // Use specific directories for OCI and rootfs
-    let oci_dir = format!("{}/build/oci", env!("CARGO_MANIFEST_DIR"));
-    let merge_dir = format!("{}/build/rootfs/alpine", env!("CARGO_MANIFEST_DIR"));
+    let build_dir = format!("{}/build", env!("CARGO_MANIFEST_DIR"));
+    let oci_dir = format!("{}/oci", build_dir);
+    let rootfs_dir = format!("{}/rootfs", build_dir);
+    let rootfs_alpine_dir = format!("{}/reference/library_alpine__latest", rootfs_dir);
+    let rootfs_service_dir = format!("{}/service", rootfs_dir);
 
     // Pull and merge Alpine image
-    utils::pull_docker_image(&oci_dir, "library/alpine", "latest").await?;
-    utils::merge_image_layers(&oci_dir, &merge_dir, "library/alpine", "latest").await?;
+    utils::pull_docker_image(&oci_dir, "library/alpine:latest").await?;
+    utils::merge_image_layers(&oci_dir, &rootfs_alpine_dir, "library/alpine:latest").await?;
 
-    let root_path = format!("{}/merged", merge_dir);
+    println!("OCI directory: {}", oci_dir);
 
     // Path to supervisor binary - adjust this path as needed
     let supervisor_path = "../target/release/monokrun";
 
     // Create orchestrator with log retention policy
     let mut orchestrator = Orchestrator::with_log_retention_policy(
-        root_path,
+        rootfs_service_dir,
         supervisor_path,
         LogRetentionPolicy::with_max_age_weeks(1),
     )
@@ -97,8 +100,8 @@ async fn main() -> anyhow::Result<()> {
 // Functions: *
 //--------------------------------------------------------------------------------------------------
 
+// Helper function to print service status
 #[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
-                                            // Helper function to print service status
 async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()> {
     println!("\nCurrent Service Status:");
     println!();
@@ -154,8 +157,8 @@ async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()>
     Ok(())
 }
 
+// Create initial configuration with two services
 #[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
-                                            // Create initial configuration with two services
 fn create_initial_config() -> anyhow::Result<Monocore> {
     // Create the main group
     let main_group = Group::builder().name("main").build();
@@ -163,8 +166,8 @@ fn create_initial_config() -> anyhow::Result<Monocore> {
     // Create initial services
     let tail_service = Service::builder_default()
         .name("tail-service")
-        .base("alpine:latest")
-        .ram(200)
+        .base("library/alpine:latest")
+        .ram(512)
         .group("main")
         .command("/usr/bin/tail")
         .args(["-f", "/dev/null"])
@@ -173,8 +176,8 @@ fn create_initial_config() -> anyhow::Result<Monocore> {
 
     let sleep_service = Service::builder_default()
         .name("sleep-service")
-        .base("alpine:latest")
-        .ram(200)
+        .base("library/alpine:latest")
+        .ram(512)
         .group("main")
         .command("/bin/sleep")
         .args(["infinity"])
@@ -189,8 +192,8 @@ fn create_initial_config() -> anyhow::Result<Monocore> {
     Ok(config)
 }
 
+// Create updated configuration with modified service and new service
 #[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
-                                            // Create updated configuration with modified service and new service
 fn create_updated_config() -> anyhow::Result<Monocore> {
     // Create the main group
     let main_group = Group::builder().name("main").build();
@@ -198,8 +201,8 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
     // Create modified tail service (changed args)
     let tail_service = Service::builder_default()
         .name("tail-service")
-        .base("alpine:latest")
-        .ram(200)
+        .base("library/alpine:latest")
+        .ram(512)
         .group("main")
         .command("/usr/bin/tail")
         .args(["-f", "/etc/hosts"]) // Changed from /dev/null to /etc/hosts
@@ -208,8 +211,8 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
     // Keep sleep service unchanged
     let sleep_service = Service::builder_default()
         .name("sleep-service")
-        .base("alpine:latest")
-        .ram(200)
+        .base("library/alpine:latest")
+        .ram(512)
         .group("main")
         .command("/bin/sleep")
         .args(["infinity"])
@@ -218,8 +221,8 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
     // Add new echo service
     let echo_service = Service::builder_default()
         .name("echo-service")
-        .base("alpine:latest")
-        .ram(200)
+        .base("library/alpine:latest")
+        .ram(512)
         .group("main")
         .command("/bin/sh")
         .args([

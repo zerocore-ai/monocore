@@ -3,9 +3,12 @@
 use std::{fs, os::unix::fs::PermissionsExt};
 use tempfile::tempdir;
 
-use monocore::oci::{
-    distribution::{DockerRegistry, OciRegistryPull},
-    overlayfs::OverlayFsMerger,
+use monocore::{
+    oci::{
+        distribution::{DockerRegistry, OciRegistryPull},
+        rootfs,
+    },
+    utils::MERGED_SUBDIR,
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -14,7 +17,7 @@ use monocore::oci::{
 
 #[test_log::test(tokio::test)]
 #[ignore = "requires pulling Docker images"]
-async fn test_oci_merge_basic_merge() -> anyhow::Result<()> {
+async fn test_oci_rootfs_merge_basic_merge() -> anyhow::Result<()> {
     // Create temporary directory for test
     let temp_dir = tempdir()?;
     let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
@@ -28,30 +31,28 @@ async fn test_oci_merge_basic_merge() -> anyhow::Result<()> {
     let dest_dir = temp_dir.path().join("merged_test");
     fs::create_dir_all(&dest_dir)?;
 
-    let merger = OverlayFsMerger::new(temp_dir.path(), dest_dir.clone());
-
     // Merge layers
-    merger.merge("library_alpine__latest").await?;
+    rootfs::merge(temp_dir.path(), &dest_dir, "library_alpine__latest").await?;
 
     // Verify basic Alpine Linux directories exist
     let expected_dirs = vec!["bin", "etc", "home", "root", "usr", "var"];
 
     for dir in &expected_dirs {
         assert!(
-            dest_dir.join("merged").join(dir).exists(),
+            dest_dir.join(MERGED_SUBDIR).join(dir).exists(),
             "Directory {} should exist",
             dir
         );
     }
 
     // Cleanup
-    merger.unmount().await?;
+    rootfs::unmount(&dest_dir).await?;
     Ok(())
 }
 
 #[test_log::test(tokio::test)]
 #[ignore = "requires pulling Docker images"]
-async fn test_oci_merge_layer_permissions() -> anyhow::Result<()> {
+async fn test_oci_rootfs_merge_layer_permissions() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
@@ -61,10 +62,8 @@ async fn test_oci_merge_layer_permissions() -> anyhow::Result<()> {
     let dest_dir = temp_dir.path().join("merged_perms_test");
     fs::create_dir_all(&dest_dir)?;
 
-    let merger = OverlayFsMerger::new(temp_dir.path(), dest_dir.clone());
-
     // Merge layers
-    merger.merge("library_nginx__alpine").await?;
+    rootfs::merge(temp_dir.path(), &dest_dir, "library_nginx__alpine").await?;
 
     // Verify nginx binary permissions
     let nginx_binary = dest_dir.join("merged/usr/sbin/nginx");
@@ -78,13 +77,14 @@ async fn test_oci_merge_layer_permissions() -> anyhow::Result<()> {
     );
 
     // Cleanup
-    merger.unmount().await?;
+    rootfs::unmount(&dest_dir).await?;
+
     Ok(())
 }
 
 #[test_log::test(tokio::test)]
 #[ignore = "requires pulling Docker images"]
-async fn test_oci_merge_merge_cleanup() -> anyhow::Result<()> {
+async fn test_oci_rootfs_merge_merge_cleanup() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
@@ -96,26 +96,24 @@ async fn test_oci_merge_merge_cleanup() -> anyhow::Result<()> {
     let dest_dir = temp_dir.path().join("merged_cleanup_test");
     fs::create_dir_all(&dest_dir)?;
 
-    let merger = OverlayFsMerger::new(temp_dir.path(), dest_dir.clone());
-
     // Merge layers
-    merger.merge("library_alpine__latest").await?;
+    rootfs::merge(temp_dir.path(), &dest_dir, "library_alpine__latest").await?;
 
     // Verify merged directory is created
-    assert!(dest_dir.join("merged").exists());
+    assert!(dest_dir.join(MERGED_SUBDIR).exists());
 
     // Unmount and cleanup
-    merger.unmount().await?;
+    rootfs::unmount(&dest_dir).await?;
 
     // Verify merged directory is cleaned up
-    assert!(!dest_dir.join("merged").exists());
+    assert!(!dest_dir.join(MERGED_SUBDIR).exists());
 
     Ok(())
 }
 
 #[test_log::test(tokio::test)]
 #[ignore = "requires pulling Docker images"]
-async fn test_oci_merge_concurrent_merges() -> anyhow::Result<()> {
+async fn test_oci_rootfs_merge_concurrent_merges() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let registry = DockerRegistry::with_oci_dir(temp_dir.path().to_path_buf());
 
@@ -133,13 +131,10 @@ async fn test_oci_merge_concurrent_merges() -> anyhow::Result<()> {
     fs::create_dir_all(&dest_dir1)?;
     fs::create_dir_all(&dest_dir2)?;
 
-    let merger1 = OverlayFsMerger::new(temp_dir.path(), dest_dir1.clone());
-    let merger2 = OverlayFsMerger::new(temp_dir.path(), dest_dir2.clone());
-
     // Merge concurrently
     let merge_results = tokio::join!(
-        merger1.merge("library_alpine__latest"),
-        merger2.merge("library_busybox__latest")
+        rootfs::merge(temp_dir.path(), &dest_dir1, "library_alpine__latest"),
+        rootfs::merge(temp_dir.path(), &dest_dir2, "library_busybox__latest")
     );
 
     // Check results
@@ -151,7 +146,7 @@ async fn test_oci_merge_concurrent_merges() -> anyhow::Result<()> {
     assert!(dest_dir2.join("merged/bin").exists());
 
     // Cleanup
-    let cleanup_results = tokio::join!(merger1.unmount(), merger2.unmount());
+    let cleanup_results = tokio::join!(rootfs::unmount(&dest_dir1), rootfs::unmount(&dest_dir2));
     cleanup_results.0?;
     cleanup_results.1?;
 
@@ -160,23 +155,21 @@ async fn test_oci_merge_concurrent_merges() -> anyhow::Result<()> {
 
 #[test_log::test(tokio::test)]
 #[ignore = "requires pulling Docker images"]
-async fn test_oci_merge_error_handling() -> anyhow::Result<()> {
+async fn test_oci_rootfs_merge_error_handling() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
 
     // Try to merge non-existent image
     let dest_dir = temp_dir.path().join("merged_error_test");
     fs::create_dir_all(&dest_dir)?;
 
-    let merger = OverlayFsMerger::new(temp_dir.path(), dest_dir.clone());
-
     // This should fail because no image was pulled
-    let result = merger.merge("nonexistent_image").await;
+    let result = rootfs::merge(temp_dir.path(), &dest_dir, "nonexistent_image").await;
     assert!(result.is_err());
 
     // Verify cleanup happened despite error
     assert!(!dest_dir.join("work").exists());
     assert!(!dest_dir.join("upper").exists());
-    assert!(!dest_dir.join("merged").exists());
+    assert!(!dest_dir.join(MERGED_SUBDIR).exists());
 
     Ok(())
 }

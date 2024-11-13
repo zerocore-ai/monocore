@@ -1,11 +1,12 @@
+use std::path::Path;
+
 #[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
-use crate::oci::overlayfs::OverlayFsMerger;
+use crate::oci::rootfs;
 use crate::{
     oci::distribution::{DockerRegistry, OciRegistryPull},
-    utils::conversion::sanitize_repo_name,
     MonocoreResult,
 };
-use std::path::PathBuf;
+
 #[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use tokio::fs;
 
@@ -20,8 +21,7 @@ use super::OCI_REPO_SUBDIR;
 ///
 /// ## Arguments
 /// * `oci_dir` - Directory where artifacts of the pulled image will be stored
-/// * `repository` - Repository name (e.g., "library/alpine")
-/// * `tag` - Image tag (e.g., "latest")
+/// * `image_ref` - Image reference (e.g., "library/alpine:latest")
 ///
 /// ## Example
 /// ```rust,no_run
@@ -29,34 +29,26 @@ use super::OCI_REPO_SUBDIR;
 ///
 /// #[tokio::main]
 /// async fn main() -> anyhow::Result<()> {
-///     utils::pull_docker_image("/path/to/oci", "library/alpine", "latest").await?;
+///     utils::pull_docker_image("/path/to/oci", "library/alpine:latest").await?;
 ///     Ok(())
 /// }
 /// ```
-pub async fn pull_docker_image(
-    oci_dir: impl Into<PathBuf>,
-    repository: &str,
-    tag: &str,
-) -> MonocoreResult<()> {
-    let oci_dir = oci_dir.into();
-    let repo_tag = format!(
-        "{}__{}",
-        sanitize_repo_name(repository),
-        sanitize_repo_name(tag)
-    );
+pub async fn pull_docker_image(oci_dir: impl AsRef<Path>, image_ref: &str) -> MonocoreResult<()> {
+    let oci_dir = oci_dir.as_ref();
+    let (repository, tag, repo_tag) = super::parse_image_ref(image_ref)?;
 
     // Check if image already exists
     let repo_dir = oci_dir.join(OCI_REPO_SUBDIR).join(&repo_tag);
 
     if repo_dir.exists() {
         tracing::info!(
-            "Image {repository}:{tag} already exists in {}, skipping pull",
+            "Image {image_ref} already exists in {}, skipping pull",
             oci_dir.display()
         );
         return Ok(());
     }
 
-    let registry = DockerRegistry::with_oci_dir(oci_dir);
+    let registry = DockerRegistry::with_oci_dir(oci_dir.into());
     registry.pull_image(repository, Some(tag)).await
 }
 
@@ -67,8 +59,7 @@ pub async fn pull_docker_image(
 /// ## Arguments
 /// * `oci_dir` - Directory containing the OCI artifacts of the pulled image
 /// * `dest_dir` - Directory where the merged rootfs will be created
-/// * `repository` - Repository name (e.g., "library/alpine")
-/// * `tag` - Image tag (e.g., "latest")
+/// * `image_ref` - Image reference (e.g., "library/alpine:latest")
 ///
 /// ## Example
 /// ```rust,no_run
@@ -77,21 +68,20 @@ pub async fn pull_docker_image(
 /// #[tokio::main]
 /// async fn main() -> anyhow::Result<()> {
 ///     utils::merge_image_layers(
-///         "/path/to/artifacts",
+///         "/path/to/oci",
 ///         "/path/to/rootfs",
-///         "library/alpine",
-///         "latest"
+///         "library/alpine:latest"
 ///     ).await?;
 ///     Ok(())
 /// }
 /// ```
 pub async fn merge_image_layers(
-    oci_dir: impl Into<PathBuf>,
-    dest_dir: impl Into<PathBuf>,
-    repository: &str,
-    tag: &str,
+    oci_dir: impl AsRef<Path>,
+    dest_dir: impl AsRef<Path>,
+    image_ref: &str,
 ) -> MonocoreResult<()> {
-    let dest_dir = dest_dir.into();
+    let oci_dir = oci_dir.as_ref();
+    let dest_dir = dest_dir.as_ref();
 
     // Check if destination already exists
     if dest_dir.exists() {
@@ -107,12 +97,7 @@ pub async fn merge_image_layers(
         fs::create_dir_all(parent).await?;
     }
 
-    let repo_tag = format!(
-        "{}__{}",
-        sanitize_repo_name(repository),
-        sanitize_repo_name(tag)
-    );
+    let repo_tag = super::parse_image_ref(image_ref)?.2;
 
-    let merger = OverlayFsMerger::new(oci_dir, dest_dir);
-    merger.merge(&repo_tag).await
+    rootfs::merge(oci_dir, dest_dir, &repo_tag).await
 }

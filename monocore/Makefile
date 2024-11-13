@@ -20,7 +20,7 @@ DARWIN_LIB_PATH := /usr/local/lib
 LINUX_LIB_PATH := /usr/local/lib64
 
 # Phony targets
-.PHONY: all install clean example bench build_monokrun
+.PHONY: all install clean example bench build_monokrun bin _run_bin
 
 # Default target
 all: $(MONOCORE_RELEASE_BIN)
@@ -79,6 +79,24 @@ bench:
 
 _run_bench:
 	cargo bench --bench $(BENCH_NAME)
+
+# Run binaries from bin/
+bin: build_monokrun
+	@if [ -z "$(word 2,$(MAKECMDGOALS))" ]; then \
+		echo "Usage: make bin <binary_name> [-- <args>]"; \
+			exit 1; \
+	fi
+	@$(eval BIN_ARGS := $(filter-out bin $(word 2,$(MAKECMDGOALS)) --, $(MAKECMDGOALS)))
+	@$(MAKE) _run_bin BIN_NAME=$(word 2,$(MAKECMDGOALS)) ARGS="$(BIN_ARGS)"
+
+_run_bin:
+ifeq ($(OS),Darwin)
+	cargo build --bin $(BIN_NAME) --release
+	codesign --entitlements monocore.entitlements --force -s - $(BENCHES_DIR)/$(BIN_NAME)
+	RUST_BACKTRACE=1 DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$RUST_DYLD_LIBRARY_PATH $(BENCHES_DIR)/$(BIN_NAME) $(ARGS) || exit $$?
+else
+	RUST_BACKTRACE=1 LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --bin $(BIN_NAME) --release -- $(ARGS) || exit $$?
+endif
 
 # Catch-all target to allow example names and arguments
 %:

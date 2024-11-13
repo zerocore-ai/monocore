@@ -17,10 +17,13 @@ use tracing::{error, info, warn};
 
 use crate::{
     config::{Monocore, Service, DEFAULT_LOG_MAX_AGE},
+    oci::rootfs,
     runtime::MicroVmState,
-    utils::{MICROVM_LOG_DIR, MICROVM_STATE_DIR},
+    utils::{MERGED_SUBDIR, MONOCORE_LOG_DIR, MONOCORE_STATE_DIR, REFERENCE_SUBDIR},
     MonocoreError, MonocoreResult,
 };
+
+use super::utils::{self, LoadedState};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -33,8 +36,8 @@ pub struct Orchestrator {
     /// The monocore configuration.
     config: Monocore,
 
-    /// The path to the root filesystem.
-    rootfs_path: PathBuf,
+    /// The path to the directory containing service rootfs directories
+    services_rootfs_dir: PathBuf,
 
     /// The path to the supervisor executable.
     supervisor_exe_path: PathBuf,
@@ -90,12 +93,12 @@ pub struct ServiceStatus {
 impl Orchestrator {
     /// Creates a new Orchestrator instance with custom log retention policy
     pub async fn with_log_retention_policy(
-        rootfs_path: impl AsRef<Path>,
+        services_rootfs_dir: impl AsRef<Path>,
         supervisor_exe_path: impl AsRef<Path>,
         log_retention_policy: LogRetentionPolicy,
     ) -> MonocoreResult<Self> {
         // Ensure the state directory exists
-        fs::create_dir_all(&*MICROVM_STATE_DIR).await?;
+        fs::create_dir_all(&*MONOCORE_STATE_DIR).await?;
 
         // Verify supervisor binary exists
         let supervisor_exe_path = supervisor_exe_path.as_ref().to_path_buf();
@@ -107,7 +110,7 @@ impl Orchestrator {
 
         Ok(Self {
             config: Monocore::default(),
-            rootfs_path: rootfs_path.as_ref().to_path_buf(),
+            services_rootfs_dir: services_rootfs_dir.as_ref().to_path_buf(),
             supervisor_exe_path,
             running_services: HashMap::new(),
             log_retention_policy,
@@ -118,11 +121,11 @@ impl Orchestrator {
 
     /// Creates a new Orchestrator instance with default log retention policy
     pub async fn new(
-        rootfs_path: impl AsRef<Path>,
+        services_rootfs_dir: impl AsRef<Path>,
         supervisor_exe_path: impl AsRef<Path>,
     ) -> MonocoreResult<Self> {
         Self::with_log_retention_policy(
-            rootfs_path,
+            services_rootfs_dir,
             supervisor_exe_path,
             LogRetentionPolicy::default(),
         )
@@ -226,12 +229,12 @@ impl Orchestrator {
 
                 // Wait for process to exit gracefully with timeout
                 let mut attempts = 5;
-                while attempts > 0 && Self::is_process_running(pid).await {
+                while attempts > 0 && utils::is_process_running(pid).await {
                     time::sleep(Duration::from_secs(2)).await;
                     attempts -= 1;
                 }
 
-                if Self::is_process_running(pid).await {
+                if utils::is_process_running(pid).await {
                     warn!(
                         "Service {} (PID {}) did not exit within timeout period",
                         service_name, pid
@@ -279,13 +282,13 @@ impl Orchestrator {
         let mut stale_files = Vec::new();
 
         // Ensure directory exists before reading
-        if !fs::try_exists(&*MICROVM_STATE_DIR).await? {
-            fs::create_dir_all(&*MICROVM_STATE_DIR).await?;
+        if !fs::try_exists(&*MONOCORE_STATE_DIR).await? {
+            fs::create_dir_all(&*MONOCORE_STATE_DIR).await?;
             return Ok(statuses);
         }
 
         // Read all state files from the state directory
-        let mut dir = fs::read_dir(&*MICROVM_STATE_DIR).await?;
+        let mut dir = fs::read_dir(&*MONOCORE_STATE_DIR).await?;
         while let Some(entry) = dir.next_entry().await? {
             let path = entry.path();
             if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
@@ -294,7 +297,7 @@ impl Orchestrator {
                         Ok(state) => {
                             // Check if the process is still running
                             if let Some(pid) = state.get_pid() {
-                                if !Self::is_process_running(*pid).await {
+                                if !utils::is_process_running(*pid).await {
                                     stale_files.push(path);
                                     continue;
                                 }
@@ -338,11 +341,62 @@ impl Orchestrator {
             return Ok(());
         }
 
+        // Get service-specific rootfs path
+        let service_rootfs = self.services_rootfs_dir.join(service.get_name());
+
+        // If service rootfs doesn't exist, try to create it from reference
+        if !service_rootfs.exists() {
+            info!(
+                "Service rootfs not found at {}, attempting to create from reference",
+                service_rootfs.display()
+            );
+
+            // Get base image name from service config
+            let base_image = service.get_base().ok_or_else(|| {
+                MonocoreError::ConfigValidation(format!(
+                    "Service {} has no base image specified",
+                    service.get_name()
+                ))
+            })?;
+
+            // Construct path to reference rootfs
+            let reference_rootfs = self
+                .services_rootfs_dir
+                .parent() // Go up from service dir
+                .ok_or_else(|| {
+                    MonocoreError::PathNotFound(
+                        "Invalid services rootfs path - no parent directory found".to_string(),
+                    )
+                })?
+                .join(REFERENCE_SUBDIR)
+                .join(crate::utils::parse_image_ref(base_image)?.2) // Convert repo:tag to repo__tag
+                .join(MERGED_SUBDIR);
+
+            if !reference_rootfs.exists() {
+                return Err(MonocoreError::RootfsNotFound(format!(
+                    "Reference rootfs not found at {}",
+                    reference_rootfs.display()
+                )));
+            }
+
+            // Create parent directories
+            fs::create_dir_all(service_rootfs.parent().unwrap()).await?;
+
+            // Copy reference rootfs to service rootfs
+            info!(
+                "Copying reference rootfs from {} to {}",
+                reference_rootfs.display(),
+                service_rootfs.display()
+            );
+
+            rootfs::copy(&reference_rootfs, &service_rootfs, false).await?;
+        }
+
         // Get group and prepare configuration data
         let group = self.config.get_group_for_service(service)?;
         let group_name = group.get_name().to_string();
 
-        // Serialize configuration before IP assignment to avoid borrow checker issues
+        // Serialize configuration before IP assignment
         let service_json = serde_json::to_string(service)?;
         let group_json = serde_json::to_string(&group)?;
 
@@ -350,14 +404,14 @@ impl Orchestrator {
         let group_ip = self.assign_group_ip(&group_name)?;
         let group_ip_json = serde_json::to_string(&group_ip)?;
 
-        // Start the supervisor process with all necessary configuration
+        // Start the supervisor process with service-specific rootfs
         let child = Command::new(&self.supervisor_exe_path)
             .arg("--run-supervisor")
             .args([
                 &service_json,
                 &group_json,
                 &group_ip_json,
-                self.rootfs_path.to_str().unwrap(),
+                service_rootfs.to_str().unwrap(),
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -457,15 +511,15 @@ impl Orchestrator {
     /// files that exceed the age threshold and logs the cleanup activity.
     pub async fn cleanup_old_logs(&self) -> MonocoreResult<()> {
         // Ensure log directory exists before attempting cleanup
-        if !fs::try_exists(&*MICROVM_LOG_DIR).await? {
-            fs::create_dir_all(&*MICROVM_LOG_DIR).await?;
+        if !fs::try_exists(&*MONOCORE_LOG_DIR).await? {
+            fs::create_dir_all(&*MONOCORE_LOG_DIR).await?;
             return Ok(());
         }
 
         let now = SystemTime::now();
         let mut cleaned_files = 0;
 
-        let mut entries = fs::read_dir(&*MICROVM_LOG_DIR).await?;
+        let mut entries = fs::read_dir(&*MONOCORE_LOG_DIR).await?;
         while let Some(entry) = entries.next_entry().await? {
             if self
                 .should_delete_log(&entry, now, self.log_retention_policy.max_age)
@@ -542,12 +596,12 @@ impl Orchestrator {
     /// # }
     /// ```
     pub async fn load_with_log_retention_policy(
-        rootfs_path: impl AsRef<Path>,
+        services_rootfs_dir: impl AsRef<Path>,
         supervisor_exe_path: impl AsRef<Path>,
         log_retention_policy: LogRetentionPolicy,
     ) -> MonocoreResult<Self> {
         // Ensure the state directory exists
-        fs::create_dir_all(&*MICROVM_STATE_DIR).await?;
+        fs::create_dir_all(&*MONOCORE_STATE_DIR).await?;
 
         // Verify supervisor binary exists
         let supervisor_exe_path = supervisor_exe_path.as_ref().to_path_buf();
@@ -557,95 +611,23 @@ impl Orchestrator {
             ));
         }
 
-        // Read all state files and reconstruct services and groups
-        let mut services = Vec::new();
-        let mut groups = HashSet::new();
-        let mut running_services = HashMap::new();
+        // Load state from files
+        let state = utils::load_state_from_files(&MONOCORE_STATE_DIR).await?;
 
-        let mut dir = fs::read_dir(&*MICROVM_STATE_DIR).await?;
-        while let Some(entry) = dir.next_entry().await? {
-            let path = entry.path();
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
-                match fs::read_to_string(&path).await {
-                    Ok(contents) => match serde_json::from_str::<MicroVmState>(&contents) {
-                        Ok(state) => {
-                            // Only include if process is still running
-                            if let Some(pid) = state.get_pid() {
-                                if Self::is_process_running(*pid).await {
-                                    services.push(state.get_service().clone());
-                                    groups.insert(state.get_group().clone());
-                                    running_services
-                                        .insert(state.get_service().get_name().to_string(), *pid);
-                                } else {
-                                    // Clean up stale state file
-                                    if let Err(e) = fs::remove_file(&path).await {
-                                        warn!(
-                                            "Failed to remove stale state file {:?}: {}",
-                                            path, e
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            warn!("Failed to parse state file {:?}: {}", path, e);
-                            // Clean up invalid state file
-                            if let Err(e) = fs::remove_file(&path).await {
-                                warn!("Failed to remove invalid state file {:?}: {}", path, e);
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        warn!("Failed to read state file {:?}: {}", path, e);
-                    }
-                }
-            }
-        }
-
-        // Convert groups from HashSet to Vec
-        let groups: Vec<_> = groups.into_iter().collect();
-
-        // Create Monocore configuration from collected services and groups
-        let config = Monocore::builder()
-            .services(services)
-            .groups(groups)
-            .build()?;
-
-        // Initialize IP assignment tracking
-        let mut assigned_ips = HashMap::new();
-        let mut used_ips = BTreeSet::new();
-
-        let mut dir = fs::read_dir(&*MICROVM_STATE_DIR).await?;
-        while let Some(entry) = dir.next_entry().await? {
-            let path = entry.path();
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
-                match fs::read_to_string(&path).await {
-                    Ok(contents) => match serde_json::from_str::<MicroVmState>(&contents) {
-                        Ok(state) => {
-                            if let Some(group_ip) = state.get_group_ip() {
-                                assigned_ips
-                                    .insert(state.get_group().get_name().to_string(), *group_ip);
-                                used_ips.insert(group_ip.octets()[3]);
-                            }
-                        }
-                        Err(e) => {
-                            warn!("Failed to parse state file {:?}: {}", path, e);
-                            // Clean up invalid state file
-                            if let Err(e) = fs::remove_file(&path).await {
-                                warn!("Failed to remove invalid state file {:?}: {}", path, e);
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        warn!("Failed to read state file {:?}: {}", path, e);
-                    }
-                }
-            }
-        }
+        // Create config from state
+        let (
+            config,
+            LoadedState {
+                running_services,
+                assigned_ips,
+                used_ips,
+                ..
+            },
+        ) = utils::create_config_from_state(state)?;
 
         Ok(Self {
             config,
-            rootfs_path: rootfs_path.as_ref().to_path_buf(),
+            services_rootfs_dir: services_rootfs_dir.as_ref().to_path_buf(),
             supervisor_exe_path,
             running_services,
             log_retention_policy,
@@ -678,25 +660,15 @@ impl Orchestrator {
     /// # }
     /// ```
     pub async fn load(
-        rootfs_path: impl AsRef<Path>,
+        services_rootfs_dir: impl AsRef<Path>,
         supervisor_exe_path: impl AsRef<Path>,
     ) -> MonocoreResult<Self> {
         Self::load_with_log_retention_policy(
-            rootfs_path,
+            services_rootfs_dir,
             supervisor_exe_path,
             LogRetentionPolicy::default(),
         )
         .await
-    }
-
-    /// Helper function to check if a process is running
-    async fn is_process_running(pid: u32) -> bool {
-        Command::new("kill")
-            .arg("-0") // Only check process existence
-            .arg(pid.to_string())
-            .output()
-            .await
-            .map_or(false, |output| output.status.success())
     }
 
     /// Assigns an IP address to a group from the 127.0.0.x range.
@@ -737,6 +709,11 @@ impl Orchestrator {
     /// Gets a reference to the map of running services and their supervisor PIDs
     pub fn get_running_services(&self) -> &HashMap<String, u32> {
         &self.running_services
+    }
+
+    /// Gets a service from the current configuration by name
+    pub fn get_service(&self, name: &str) -> Option<&Service> {
+        self.config.get_service(name)
     }
 }
 
