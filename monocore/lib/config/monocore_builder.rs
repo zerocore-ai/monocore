@@ -40,6 +40,14 @@ impl MonocoreBuilder {
 
         Ok(monocore)
     }
+
+    /// Builds the Monocore configuration without validating it
+    pub fn build_unchecked(self) -> Monocore {
+        Monocore {
+            services: self.services,
+            groups: self.groups,
+        }
+    }
 }
 
 //--------------------------------------------------------------------------------------------------

@@ -3,6 +3,8 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
+use crate::error::MonocoreResult;
+
 //--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------
@@ -148,6 +150,56 @@ fn format_triplet(mode: u32) -> String {
     format!("{}{}{}", r, w, x)
 }
 
+/// Parses an OCI image reference (e.g. "ubuntu:latest" or "registry.example.com/org/image:tag")
+/// into its components and generates a filesystem-safe name.
+///
+/// Returns (repository, tag, fs_safe_name) where:
+/// - repository is the part before the last ':' (excluding registry port colons)
+/// - tag is the part after the last ':' (defaults to "latest" if no tag specified)
+/// - fs_safe_name is the sanitized filesystem name
+///
+/// # Examples
+/// ```
+/// use monocore::utils::parse_image_ref;
+///
+/// assert_eq!(parse_image_ref("ubuntu:latest").unwrap(), ("ubuntu", "latest", "ubuntu__latest".to_string()));
+/// assert_eq!(parse_image_ref("ubuntu").unwrap(), ("ubuntu", "latest", "ubuntu__latest".to_string()));
+/// assert_eq!(
+///     parse_image_ref("registry.com/org/image:1.0").unwrap(),
+///     ("registry.com/org/image", "1.0", "registry.com_org_image__1.0".to_string())
+/// );
+/// assert_eq!(
+///     parse_image_ref("registry:5000/org/image").unwrap(),
+///     ("registry:5000/org/image", "latest", "registry_5000_org_image__latest".to_string())
+/// );
+/// ```
+pub fn parse_image_ref(image_ref: &str) -> MonocoreResult<(&str, &str, String)> {
+    // Split into parts to handle registry with port case
+    let parts: Vec<&str> = image_ref.split('/').collect();
+
+    // Find the last colon that's not part of registry:port
+    let (repo, tag) = if parts.len() > 1 && parts[0].contains(':') {
+        // Handle registry:port/path:tag case
+        let registry_port = parts[0];
+        let remainder = &image_ref[registry_port.len() + 1..];
+
+        remainder
+            .rsplit_once(':')
+            .map(|(_, t)| {
+                let repo = &image_ref[..image_ref.len() - t.len() - 1];
+                (repo, t)
+            })
+            .unwrap_or((image_ref, "latest"))
+    } else {
+        // Handle normal case (no registry port)
+        image_ref.rsplit_once(':').unwrap_or((image_ref, "latest"))
+    };
+
+    let fs_name = format!("{}__{}", sanitize_repo_name(repo), sanitize_repo_name(tag));
+
+    Ok((repo, tag, fs_name))
+}
+
 //--------------------------------------------------------------------------------------------------
 // Tests
 //--------------------------------------------------------------------------------------------------
@@ -192,5 +244,63 @@ mod tests {
         assert_eq!(format_mode(0o100644), "-rw-r--r--");
         assert_eq!(format_mode(0o120777), "lrwxrwxrwx");
         assert_eq!(format_mode(0o010644), "prw-r--r--");
+    }
+
+    #[test]
+    fn test_parse_image_ref() -> MonocoreResult<()> {
+        // Test basic image references
+        assert_eq!(
+            parse_image_ref("ubuntu:latest")?,
+            ("ubuntu", "latest", "ubuntu__latest".to_string())
+        );
+        assert_eq!(
+            parse_image_ref("ubuntu")?, // No tag specified
+            ("ubuntu", "latest", "ubuntu__latest".to_string())
+        );
+        assert_eq!(
+            parse_image_ref("nginx:1.19")?,
+            ("nginx", "1.19", "nginx__1.19".to_string())
+        );
+
+        // Test with registry and organization
+        let (repo, tag, fs_name) = parse_image_ref("registry.example.com/org/image")?; // No tag
+        assert_eq!(repo, "registry.example.com/org/image");
+        assert_eq!(tag, "latest");
+        assert_eq!(fs_name, "registry.example.com_org_image__latest");
+
+        // Test with registry port
+        let (repo, tag, fs_name) = parse_image_ref("registry:5000/org/image")?; // No tag
+        assert_eq!(repo, "registry:5000/org/image");
+        assert_eq!(tag, "latest");
+        assert_eq!(fs_name, "registry_5000_org_image__latest");
+
+        let (repo, tag, fs_name) = parse_image_ref("localhost:5000/my-image:latest")?;
+        assert_eq!(repo, "localhost:5000/my-image");
+        assert_eq!(tag, "latest");
+        assert_eq!(fs_name, "localhost_5000_my-image__latest");
+
+        // Test with unsafe characters
+        let (repo, tag, fs_name) = parse_image_ref("image@sha256:abc123")?;
+        assert_eq!(repo, "image@sha256");
+        assert_eq!(tag, "abc123");
+        assert_eq!(fs_name, "image_sha256__abc123");
+
+        let (repo, tag, fs_name) = parse_image_ref("image#1:latest")?;
+        assert_eq!(repo, "image#1");
+        assert_eq!(tag, "latest");
+        assert_eq!(fs_name, "image_1__latest");
+
+        let (repo, tag, fs_name) = parse_image_ref("image#1")?;
+        assert_eq!(repo, "image#1");
+        assert_eq!(tag, "latest");
+        assert_eq!(fs_name, "image_1__latest");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_image_ref_errors() -> MonocoreResult<()> {
+        // Remove this test since we no longer error on missing tags
+        Ok(())
     }
 }

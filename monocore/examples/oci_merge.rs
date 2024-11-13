@@ -11,23 +11,18 @@
 //! cargo run --example overlayfs_merge
 //! ```
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use monocore::{
-    oci::overlayfs::OverlayFsMerger,
+    oci::rootfs,
     utils::{self, OCI_LAYER_SUBDIR},
 };
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use std::path::Path;
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use tempfile::tempdir;
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use walkdir::WalkDir;
 
 //--------------------------------------------------------------------------------------------------
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing with debug level
@@ -39,29 +34,23 @@ async fn main() -> anyhow::Result<()> {
 
     // Use specific directories for OCI and rootfs
     let oci_dir = root_path.path().join("oci");
-    let merge_dir = root_path.path().join("rootfs/node");
+    let rootfs_node_dir = root_path.path().join("rootfs/reference/library_node__slim");
 
     // Pull node image
-    utils::pull_docker_image(&oci_dir, "library/node", "slim").await?;
+    utils::pull_docker_image(&oci_dir, "library/node:slim").await?;
 
     // Show the layer structure before merging
     print_layer_structure(&oci_dir)?;
 
     // Create destination directory for merged layers
-    std::fs::create_dir_all(&merge_dir)?;
-
-    // Create OverlayFsMerger instance
-    println!("\nMerging layers...");
-    let merger = OverlayFsMerger::new(oci_dir, merge_dir.clone());
+    std::fs::create_dir_all(&rootfs_node_dir)?;
 
     // Merge the layers
-    merger.merge("library_node__slim").await?;
+    println!("\nMerging layers...");
+    rootfs::merge(oci_dir, &rootfs_node_dir, "library_node__slim").await?;
 
     // Show the merged rootfs structure focusing on interesting directories
-    print_merged_rootfs(&merge_dir)?;
-
-    // // Cleanup
-    // merger.unmount().await?;
+    print_ref_rootfs(&rootfs_node_dir)?;
 
     Ok(())
 }
@@ -70,8 +59,7 @@ async fn main() -> anyhow::Result<()> {
 // Functions: *
 //--------------------------------------------------------------------------------------------------
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
-                                            // Helper function to print the layer structure before merging
+// Helper function to print the layer structure before merging
 fn print_layer_structure(base_path: impl AsRef<Path>) -> anyhow::Result<()> {
     let layers_dir = base_path.as_ref().join(OCI_LAYER_SUBDIR);
 
@@ -94,13 +82,12 @@ fn print_layer_structure(base_path: impl AsRef<Path>) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
-                                            // Helper function to print the merged rootfs directory structure
-fn print_merged_rootfs(merged_dir: impl AsRef<Path>) -> anyhow::Result<()> {
-    let merged_dir = merged_dir.as_ref().join("merged");
+// Helper function to print the merged rootfs directory structure
+fn print_ref_rootfs(rootfs_dir: impl AsRef<Path>) -> anyhow::Result<()> {
+    let rootfs_dir = rootfs_dir.as_ref().join("merged");
     println!("\nMerged Rootfs Structure:");
     println!("------------------------");
-    println!("Root: {}", merged_dir.display());
+    println!("Root: {}", rootfs_dir.display());
 
     // List of interesting directories to examine in the Node.js image
     let interesting_dirs = vec![
@@ -111,7 +98,7 @@ fn print_merged_rootfs(merged_dir: impl AsRef<Path>) -> anyhow::Result<()> {
     ];
 
     for dir in interesting_dirs {
-        let path = merged_dir.join(dir);
+        let path = rootfs_dir.join(dir);
         if path.exists() {
             println!("\nContents of /{}/:", dir);
             for entry in WalkDir::new(&path)
@@ -131,9 +118,4 @@ fn print_merged_rootfs(merged_dir: impl AsRef<Path>) -> anyhow::Result<()> {
     println!("(base OS, Node.js runtime, npm packages) are combined into a single filesystem.");
 
     Ok(())
-}
-
-#[cfg(target_os = "linux")] // TODO: Linux support temporarily on hold
-fn main() {
-    panic!("This example is not yet supported on Linux");
 }

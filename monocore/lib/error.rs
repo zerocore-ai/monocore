@@ -198,6 +198,18 @@ pub enum MonocoreError {
         /// The path to the layer being processed when the error occurred
         layer: String,
     },
+
+    /// An error that occurred when a configuration file was not found
+    #[error("configuration file not found: {0}")]
+    ConfigNotFound(String),
+
+    /// Error when a service's rootfs directory is not found
+    #[error("Service rootfs not found: {0}")]
+    RootfsNotFound(String),
+
+    /// An error that occurred when parsing an image reference
+    #[error("invalid image reference: {0}")]
+    ImageReferenceError(String),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.
@@ -276,3 +288,9 @@ impl Display for AnyError {
 }
 
 impl Error for AnyError {}
+
+impl From<toml::de::Error> for MonocoreError {
+    fn from(err: toml::de::Error) -> Self {
+        MonocoreError::custom(err)
+    }
+}

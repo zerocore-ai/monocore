@@ -33,10 +33,8 @@
 //! By default, both server and client use 127.0.0.1 (localhost) as the IP address.
 //! Use the --ip flag to specify a different IP address for either the server or client.
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use anyhow::Result;
 use clap::Parser;
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use monocore::{
     utils,
     vm::{LogLevel, MicroVm},
@@ -62,7 +60,6 @@ struct Args {
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -70,21 +67,20 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Use specific directories for OCI and rootfs
-    let oci_dir = format!("{}/build/oci", env!("CARGO_MANIFEST_DIR"));
-    let merge_dir = format!("{}/build/rootfs/alpine", env!("CARGO_MANIFEST_DIR"));
+    let build_dir = format!("{}/build", env!("CARGO_MANIFEST_DIR"));
+    let oci_dir = format!("{}/oci", build_dir);
+    let rootfs_alpine_dir = format!("{}/reference/library_alpine__latest", build_dir);
 
     // Pull and merge Alpine image
-    utils::pull_docker_image(&oci_dir, "library/alpine", "latest").await?;
-    utils::merge_image_layers(&oci_dir, &merge_dir, "library/alpine", "latest").await?;
-
-    let root_path = format!("{}/merged", merge_dir);
+    utils::pull_docker_image(&oci_dir, "library/alpine:latest").await?;
+    utils::merge_image_layers(&oci_dir, &rootfs_alpine_dir, "library/alpine:latest").await?;
 
     // Build the MicroVm with different configurations based on server/client mode
     let vm = if args.server {
         tracing::info!("Server mode: Listening on {}:3456 (UDP)...", args.ip);
         MicroVm::builder()
             .log_level(LogLevel::Info)
-            .root_path(root_path)
+            .root_path(format!("{}/merged", rootfs_alpine_dir))
             .port_map(["3456:3456".parse()?])
             .exec_path("/bin/busybox")
             .args([
@@ -108,7 +104,7 @@ async fn main() -> Result<()> {
         tracing::info!("Client mode: Connecting to {}:3456 (UDP)...", args.ip);
         MicroVm::builder()
             .log_level(LogLevel::Info)
-            .root_path(root_path)
+            .root_path(format!("{}/merged", rootfs_alpine_dir))
             .exec_path("/bin/busybox")
             .args([
                 "nc",        // netcat
@@ -128,9 +124,4 @@ async fn main() -> Result<()> {
     vm.start()?;
 
     Ok(())
-}
-
-#[cfg(target_os = "linux")] // TODO: Linux support temporarily on hold
-fn main() {
-    panic!("This example is not yet supported on Linux");
 }

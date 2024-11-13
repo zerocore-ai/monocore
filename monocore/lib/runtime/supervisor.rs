@@ -23,7 +23,7 @@ use tracing::{error, info, warn};
 use crate::{
     config::{Group, Service},
     runtime::MicroVmStatus,
-    utils::{MICROVM_LOG_DIR, MICROVM_STATE_DIR},
+    utils::{MONOCORE_LOG_DIR, MONOCORE_STATE_DIR},
     MonocoreError, MonocoreResult,
 };
 
@@ -71,12 +71,12 @@ impl Supervisor {
 
         // Create paths with service name for better identification
         let runtime_state_path =
-            MICROVM_STATE_DIR.join(format!("{}__{}.json", service_name, process::id()));
-        let stdout_log_path = MICROVM_LOG_DIR.join(format!("{}.stdout.log", service_name));
-        let stderr_log_path = MICROVM_LOG_DIR.join(format!("{}.stderr.log", service_name));
+            MONOCORE_STATE_DIR.join(format!("{}__{}.json", service_name, process::id()));
+        let stdout_log_path = MONOCORE_LOG_DIR.join(format!("{}.stdout.log", service_name));
+        let stderr_log_path = MONOCORE_LOG_DIR.join(format!("{}.stderr.log", service_name));
 
         // Create directories with proper permissions
-        for dir in [&*MICROVM_STATE_DIR, &*MICROVM_LOG_DIR] {
+        for dir in [&*MONOCORE_STATE_DIR, &*MONOCORE_LOG_DIR] {
             fs::create_dir_all(dir).await?;
             #[cfg(unix)]
             {

@@ -29,10 +29,8 @@
 //! make example microvm_curl -- --local-only localhost:8080
 //! ```
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use anyhow::{Context, Result};
 use clap::Parser;
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 use monocore::{utils, vm::MicroVm};
 
 //--------------------------------------------------------------------------------------------------
@@ -55,7 +53,6 @@ struct Args {
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
-#[cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -66,16 +63,17 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Use specific directories for OCI and rootfs
-    let oci_dir = format!("{}/build/oci", env!("CARGO_MANIFEST_DIR"));
-    let merge_dir = format!("{}/build/rootfs/fedora", env!("CARGO_MANIFEST_DIR"));
+    let build_dir = format!("{}/build", env!("CARGO_MANIFEST_DIR"));
+    let oci_dir = format!("{}/oci", build_dir);
+    let rootfs_fedora_dir = format!("{}/reference/library_fedora__latest", build_dir);
 
     // Pull and merge Fedora image
-    utils::pull_docker_image(&oci_dir, "library/fedora", "latest").await?;
-    utils::merge_image_layers(&oci_dir, &merge_dir, "library/fedora", "latest").await?;
+    utils::pull_docker_image(&oci_dir, "library/fedora:latest").await?;
+    utils::merge_image_layers(&oci_dir, &rootfs_fedora_dir, "library/fedora:latest").await?;
 
     // Build the MicroVm
     let vm = MicroVm::builder()
-        .root_path(format!("{}/merged", merge_dir))
+        .root_path(format!("{}/merged", rootfs_fedora_dir))
         .num_vcpus(1)
         .exec_path("/bin/curl")
         .args([args.target.as_str()])
@@ -89,9 +87,4 @@ async fn main() -> Result<()> {
     vm.start()?;
 
     Ok(())
-}
-
-#[cfg(target_os = "linux")] // TODO: Linux support temporarily on hold
-fn main() {
-    panic!("This example is not yet supported on Linux");
 }
