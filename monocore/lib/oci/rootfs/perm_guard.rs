@@ -21,10 +21,10 @@ use crate::{utils, MonocoreResult};
 ///
 /// # Example
 /// ```no_run
-/// use monocore::oci::rootfs::PermissionGuard;
+/// use monocore::{oci::rootfs::PermissionGuard, MonocoreResult};
 ///
 /// #[tokio::main]
-/// async fn main() -> std::io::Result<()> {
+/// async fn main() -> MonocoreResult<()> {
 ///     let mut guard = PermissionGuard::new();
 ///
 ///     // Temporarily make a path writable
