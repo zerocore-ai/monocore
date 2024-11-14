@@ -20,13 +20,13 @@ DARWIN_LIB_PATH := /usr/local/lib
 LINUX_LIB_PATH := /usr/local/lib64
 
 # Phony targets
-.PHONY: all install clean example bench build_monokrun bin _run_bin
+.PHONY: all install clean example bench monokrun bin _run_bin monocore deps
 
 # Default target
-all: $(MONOCORE_RELEASE_BIN)
+all: monocore
 
 # Build monokrun in release mode
-build_monokrun: $(MONOKRUN_RELEASE_BIN)
+monokrun: $(MONOKRUN_RELEASE_BIN)
 
 $(MONOKRUN_RELEASE_BIN):
 	cargo build --release --bin monokrun
@@ -35,16 +35,22 @@ ifeq ($(OS),Darwin)
 endif
 
 # Build the release binary
-$(MONOCORE_RELEASE_BIN):
-	cargo build --release -p monocore
+$(MONOCORE_RELEASE_BIN): deps
+	@mkdir -p $(BUILD_DIR)
 ifeq ($(OS),Darwin)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,$(DARWIN_LIB_PATH)" \
+		cargo build --release --bin monocore
 	codesign --entitlements monocore.entitlements --force -s - $@
+else
+	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" \
+		cargo build --release --bin monocore
 endif
 
-# Install the binary
-install: $(MONOCORE_RELEASE_BIN)
+# Install the binaries
+install: $(MONOCORE_RELEASE_BIN) $(MONOKRUN_RELEASE_BIN)
 	install -d $(DESTDIR)$(PREFIX)/bin
-	install -m 755 $< $(DESTDIR)$(PREFIX)/bin
+	install -m 755 $(MONOCORE_RELEASE_BIN) $(DESTDIR)$(PREFIX)/bin/monocore
+	install -m 755 $(MONOKRUN_RELEASE_BIN) $(DESTDIR)$(PREFIX)/bin/monokrun
 
 # Clean build artifacts
 clean:
@@ -52,7 +58,7 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 # Run examples
-example: build_monokrun
+example: monokrun
 	@if [ -z "$(word 2,$(MAKECMDGOALS))" ]; then \
 		echo "Usage: make example <example_name> [-- <args>]"; \
 			exit 1; \
@@ -81,7 +87,7 @@ _run_bench:
 	cargo bench --bench $(BENCH_NAME)
 
 # Run binaries from bin/
-bin: build_monokrun
+bin: monokrun
 	@if [ -z "$(word 2,$(MAKECMDGOALS))" ]; then \
 		echo "Usage: make bin <binary_name> [-- <args>]"; \
 			exit 1; \
@@ -97,6 +103,16 @@ ifeq ($(OS),Darwin)
 else
 	RUST_BACKTRACE=1 LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --bin $(BIN_NAME) --release -- $(ARGS) || exit $$?
 endif
+
+# Build dependencies (libkrunfw and libkrun)
+deps:
+	@if [ ! -f "$(DARWIN_LIB_PATH)/libkrun.dylib" ] && [ ! -f "$(LINUX_LIB_PATH)/libkrun.so" ]; then \
+		./build_libkrun.sh; \
+	fi
+
+# Build the CLI (includes both monocore and monokrun)
+monocore: $(MONOCORE_RELEASE_BIN) $(MONOKRUN_RELEASE_BIN)
+	@mkdir -p $(BUILD_DIR)
 
 # Catch-all target to allow example names and arguments
 %:
