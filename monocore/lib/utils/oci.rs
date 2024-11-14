@@ -49,7 +49,7 @@ pub async fn pull_docker_image(oci_dir: impl AsRef<Path>, image_ref: &str) -> Mo
     }
 
     let registry = DockerRegistry::with_oci_dir(oci_dir.into());
-    registry.pull_image(repository, Some(tag)).await
+    registry.pull_image(&repository, Some(&tag)).await
 }
 
 /// Merges OCI image layers into a single rootfs directory.

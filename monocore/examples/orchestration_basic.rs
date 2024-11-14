@@ -44,7 +44,6 @@ async fn main() -> anyhow::Result<()> {
     let oci_dir = format!("{}/oci", build_dir);
     let rootfs_dir = format!("{}/rootfs", build_dir);
     let rootfs_alpine_dir = format!("{}/reference/library_alpine__latest", rootfs_dir);
-    let rootfs_service_dir = format!("{}/service", rootfs_dir);
 
     // Pull and merge Alpine image
     utils::pull_docker_image(&oci_dir, "library/alpine:latest").await?;
@@ -57,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create orchestrator with log retention policy
     let mut orchestrator = Orchestrator::with_log_retention_policy(
-        rootfs_service_dir,
+        build_dir,
         supervisor_path,
         LogRetentionPolicy::with_max_age_weeks(1),
     )

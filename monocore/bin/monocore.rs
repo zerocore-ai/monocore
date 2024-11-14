@@ -5,7 +5,7 @@ use monocore::{
     cli::{MonocoreArgs, MonocoreSubcommand},
     config::Monocore,
     orchestration::Orchestrator,
-    utils::{self, REFERENCE_SUBDIR, ROOTFS_SUBDIR, SERVICE_SUBDIR},
+    utils::{self, OCI_SUBDIR, ROOTFS_SUBDIR},
     MonocoreError, MonocoreResult,
 };
 use tokio::fs;
@@ -34,8 +34,7 @@ async fn main() -> MonocoreResult<()> {
         Some(MonocoreSubcommand::Up {
             file,
             group,
-            oci_dir,
-            rootfs_dir,
+            home_dir,
         }) => {
             if !file.exists() {
                 return Err(MonocoreError::ConfigNotFound(file.display().to_string()));
@@ -59,44 +58,21 @@ async fn main() -> MonocoreResult<()> {
                     .build()?;
             }
 
-            // Ensure directories exist
-            fs::create_dir_all(&oci_dir).await?;
-            fs::create_dir_all(&rootfs_dir).await?;
-
-            // Pull and merge images for all services
-            for service in config.get_services() {
-                if let Some(base) = service.get_base() {
-                    info!("Pulling image {}", base);
-                    utils::pull_docker_image(&oci_dir, base).await?;
-
-                    let rootfs_image_dir = rootfs_dir
-                        .join(REFERENCE_SUBDIR)
-                        .join(utils::parse_image_ref(base)?.2);
-
-                    if !rootfs_image_dir.exists() {
-                        info!("Merging layers for {}", base);
-                        utils::merge_image_layers(&oci_dir, &rootfs_image_dir, base).await?;
-                    }
-                }
-            }
-
             // Get current executable path for supervisor
             let current_exe = env::current_exe()?;
             let supervisor_path = current_exe.parent().unwrap().join(SUPERVISOR_EXE);
 
             // Try to load existing orchestrator state first
-            let services_rootfs_dir = rootfs_dir.join(SERVICE_SUBDIR);
-            let mut orchestrator =
-                match Orchestrator::load(&services_rootfs_dir, &supervisor_path).await {
-                    Ok(orchestrator) => {
-                        info!("Loaded existing orchestrator state");
-                        orchestrator
-                    }
-                    Err(e) => {
-                        info!("Creating new orchestrator: {}", e);
-                        Orchestrator::new(&rootfs_dir, &supervisor_path).await?
-                    }
-                };
+            let mut orchestrator = match Orchestrator::load(&home_dir, &supervisor_path).await {
+                Ok(orchestrator) => {
+                    info!("Loaded existing orchestrator state");
+                    orchestrator
+                }
+                Err(e) => {
+                    info!("Creating new orchestrator: {}", e);
+                    Orchestrator::new(&home_dir, &supervisor_path).await?
+                }
+            };
 
             // Start services
             orchestrator.up(config).await?;
@@ -105,11 +81,11 @@ async fn main() -> MonocoreResult<()> {
         Some(MonocoreSubcommand::Down {
             file: _,
             group,
-            rootfs_dir,
+            home_dir,
         }) => {
             let current_exe = env::current_exe()?;
             let supervisor_path = current_exe.parent().unwrap().join(SUPERVISOR_EXE);
-            let mut orchestrator = Orchestrator::load(&rootfs_dir, &supervisor_path).await?;
+            let mut orchestrator = Orchestrator::load(&home_dir, &supervisor_path).await?;
 
             if let Some(group_name) = group {
                 // Get all services in the group
@@ -189,10 +165,44 @@ async fn main() -> MonocoreResult<()> {
             println!();
         }
 
-        Some(MonocoreSubcommand::Pull { image, oci_dir }) => {
+        Some(MonocoreSubcommand::Pull { image, home_dir }) => {
+            let oci_dir = home_dir.join(OCI_SUBDIR);
             fs::create_dir_all(&oci_dir).await?;
             utils::pull_docker_image(&oci_dir, &image).await?;
             info!("Successfully pulled {}", image);
+        }
+
+        Some(MonocoreSubcommand::Remove {
+            services,
+            group,
+            home_dir,
+        }) => {
+            let current_exe = env::current_exe()?;
+            let supervisor_path = current_exe.parent().unwrap().join(SUPERVISOR_EXE);
+            let mut orchestrator = Orchestrator::load(&home_dir, &supervisor_path).await?;
+
+            match (services.is_empty(), group) {
+                (false, None) => {
+                    // Remove specific services
+                    orchestrator.remove_services(&services).await?;
+                    info!("Successfully removed services: {}", services.join(", "));
+                }
+                (true, Some(group_name)) => {
+                    // Remove all services in group
+                    orchestrator.remove_group(&group_name).await?;
+                    info!("Successfully removed services from group: {}", group_name);
+                }
+                (false, Some(_)) => {
+                    return Err(MonocoreError::InvalidArgument(
+                        "Cannot specify both services and group".to_string(),
+                    ));
+                }
+                (true, None) => {
+                    return Err(MonocoreError::InvalidArgument(
+                        "Must specify either services or group".to_string(),
+                    ));
+                }
+            }
         }
 
         None => {

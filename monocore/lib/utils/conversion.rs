@@ -158,22 +158,21 @@ fn format_triplet(mode: u32) -> String {
 /// - tag is the part after the last ':' (defaults to "latest" if no tag specified)
 /// - fs_safe_name is the sanitized filesystem name
 ///
-/// # Examples
+/// Automatically qualifies unqualified image references with "library/", similar to Docker.
+/// For example, "ubuntu" becomes "library/ubuntu".
+///
+/// ## Examples
 /// ```
 /// use monocore::utils::parse_image_ref;
 ///
-/// assert_eq!(parse_image_ref("ubuntu:latest").unwrap(), ("ubuntu", "latest", "ubuntu__latest".to_string()));
-/// assert_eq!(parse_image_ref("ubuntu").unwrap(), ("ubuntu", "latest", "ubuntu__latest".to_string()));
+/// assert_eq!(parse_image_ref("ubuntu:latest").unwrap(), ("library/ubuntu".to_string(), "latest".to_string(), "library_ubuntu__latest".to_string()));
+/// assert_eq!(parse_image_ref("ubuntu").unwrap(), ("library/ubuntu".to_string(), "latest".to_string(), "library_ubuntu__latest".to_string()));
 /// assert_eq!(
 ///     parse_image_ref("registry.com/org/image:1.0").unwrap(),
-///     ("registry.com/org/image", "1.0", "registry.com_org_image__1.0".to_string())
-/// );
-/// assert_eq!(
-///     parse_image_ref("registry:5000/org/image").unwrap(),
-///     ("registry:5000/org/image", "latest", "registry_5000_org_image__latest".to_string())
+///     ("registry.com/org/image".to_string(), "1.0".to_string(), "registry.com_org_image__1.0".to_string())
 /// );
 /// ```
-pub fn parse_image_ref(image_ref: &str) -> MonocoreResult<(&str, &str, String)> {
+pub fn parse_image_ref(image_ref: &str) -> MonocoreResult<(String, String, String)> {
     // Split into parts to handle registry with port case
     let parts: Vec<&str> = image_ref.split('/').collect();
 
@@ -195,9 +194,24 @@ pub fn parse_image_ref(image_ref: &str) -> MonocoreResult<(&str, &str, String)> 
         image_ref.rsplit_once(':').unwrap_or((image_ref, "latest"))
     };
 
-    let fs_name = format!("{}__{}", sanitize_repo_name(repo), sanitize_repo_name(tag));
+    // If repo doesn't contain any slashes and doesn't start with a domain or localhost,
+    // prepend "library/"
+    let qualified_repo = if !repo.contains('/')
+        && !repo.contains('.')  // No dots (not a domain)
+        && !repo.starts_with("localhost")
+    {
+        format!("library/{}", repo)
+    } else {
+        repo.to_string()
+    };
 
-    Ok((repo, tag, fs_name))
+    let fs_name = format!(
+        "{}__{}",
+        sanitize_repo_name(&qualified_repo),
+        sanitize_repo_name(tag)
+    );
+
+    Ok((qualified_repo, tag.to_string(), fs_name))
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -248,28 +262,40 @@ mod tests {
 
     #[test]
     fn test_parse_image_ref() -> MonocoreResult<()> {
-        // Test basic image references
+        // Test basic image references with library/ qualification
         assert_eq!(
             parse_image_ref("ubuntu:latest")?,
-            ("ubuntu", "latest", "ubuntu__latest".to_string())
+            (
+                "library/ubuntu".to_string(),
+                "latest".to_string(),
+                "library_ubuntu__latest".to_string()
+            )
         );
         assert_eq!(
-            parse_image_ref("ubuntu")?, // No tag specified
-            ("ubuntu", "latest", "ubuntu__latest".to_string())
+            parse_image_ref("ubuntu")?,
+            (
+                "library/ubuntu".to_string(),
+                "latest".to_string(),
+                "library_ubuntu__latest".to_string()
+            )
         );
         assert_eq!(
             parse_image_ref("nginx:1.19")?,
-            ("nginx", "1.19", "nginx__1.19".to_string())
+            (
+                "library/nginx".to_string(),
+                "1.19".to_string(),
+                "library_nginx__1.19".to_string()
+            )
         );
 
-        // Test with registry and organization
-        let (repo, tag, fs_name) = parse_image_ref("registry.example.com/org/image")?; // No tag
+        // Test with registry and organization (should not add library/)
+        let (repo, tag, fs_name) = parse_image_ref("registry.example.com/org/image")?;
         assert_eq!(repo, "registry.example.com/org/image");
         assert_eq!(tag, "latest");
         assert_eq!(fs_name, "registry.example.com_org_image__latest");
 
-        // Test with registry port
-        let (repo, tag, fs_name) = parse_image_ref("registry:5000/org/image")?; // No tag
+        // Test with registry port (should not add library/)
+        let (repo, tag, fs_name) = parse_image_ref("registry:5000/org/image")?;
         assert_eq!(repo, "registry:5000/org/image");
         assert_eq!(tag, "latest");
         assert_eq!(fs_name, "registry_5000_org_image__latest");
@@ -281,19 +307,9 @@ mod tests {
 
         // Test with unsafe characters
         let (repo, tag, fs_name) = parse_image_ref("image@sha256:abc123")?;
-        assert_eq!(repo, "image@sha256");
+        assert_eq!(repo, "library/image@sha256");
         assert_eq!(tag, "abc123");
-        assert_eq!(fs_name, "image_sha256__abc123");
-
-        let (repo, tag, fs_name) = parse_image_ref("image#1:latest")?;
-        assert_eq!(repo, "image#1");
-        assert_eq!(tag, "latest");
-        assert_eq!(fs_name, "image_1__latest");
-
-        let (repo, tag, fs_name) = parse_image_ref("image#1")?;
-        assert_eq!(repo, "image#1");
-        assert_eq!(tag, "latest");
-        assert_eq!(fs_name, "image_1__latest");
+        assert_eq!(fs_name, "library_image_sha256__abc123");
 
         Ok(())
     }

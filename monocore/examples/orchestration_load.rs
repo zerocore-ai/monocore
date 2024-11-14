@@ -48,13 +48,12 @@ async fn main() -> anyhow::Result<()> {
     utils::pull_docker_image(&oci_dir, "library/alpine:latest").await?;
     utils::merge_image_layers(&oci_dir, &rootfs_alpine_dir, "library/alpine:latest").await?;
 
-    let services_rootfs_dir = format!("{}/rootfs/service", build_dir);
     let supervisor_path = "../target/release/monokrun";
 
     // Phase 1: Start initial services with first Orchestrator
     info!("Phase 1: Starting initial services with first Orchestrator");
     {
-        let mut orchestrator = Orchestrator::new(&services_rootfs_dir, supervisor_path).await?;
+        let mut orchestrator = Orchestrator::new(&build_dir, supervisor_path).await?;
         let initial_config = create_services_config()?;
 
         orchestrator.up(initial_config).await?;
@@ -71,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
     // Phase 2: Load running services into new Orchestrator
     info!("\nPhase 2: Loading existing services into new Orchestrator");
     let mut loaded_orchestrator = Orchestrator::load_with_log_retention_policy(
-        services_rootfs_dir,
+        &build_dir,
         supervisor_path,
         LogRetentionPolicy::with_max_age_days(7),
     )

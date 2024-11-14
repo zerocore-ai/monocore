@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use tracing::Level;
 
-use crate::utils::{MONOCORE_OCI_DIR, MONOCORE_ROOTFS_DIR};
+use crate::utils::DEFAULT_MONOCORE_HOME;
 
 use super::styles;
 
@@ -38,13 +38,9 @@ pub enum MonocoreSubcommand {
         #[arg(short, long)]
         group: Option<String>,
 
-        /// Directory for OCI images
-        #[arg(long, default_value = MONOCORE_OCI_DIR.as_os_str())]
-        oci_dir: PathBuf,
-
-        /// Directory for merged root filesystems
-        #[arg(long, default_value = MONOCORE_ROOTFS_DIR.as_os_str())]
-        rootfs_dir: PathBuf,
+        /// Home directory for monocore state (default: ~/.monocore)
+        #[arg(long, default_value = DEFAULT_MONOCORE_HOME.as_os_str())]
+        home_dir: PathBuf,
     },
 
     /// Stop running services. If group specified, only stops services in that group
@@ -57,25 +53,41 @@ pub enum MonocoreSubcommand {
         #[arg(short, long)]
         group: Option<String>,
 
-        /// Directory containing service root filesystems
-        #[arg(long, default_value = MONOCORE_ROOTFS_DIR.as_os_str())]
-        rootfs_dir: PathBuf,
+        /// Home directory for monocore state (default: ~/.monocore)
+        #[arg(long, default_value = DEFAULT_MONOCORE_HOME.as_os_str())]
+        home_dir: PathBuf,
     },
 
     /// Pull container image from registry
     #[command(arg_required_else_help = true)]
     Pull {
-        /// Image reference (e.g. 'ubuntu:22.04')
+        /// Image reference (e.g. 'alpine:latest')
         #[arg(required = true)]
         image: String,
 
-        /// Directory for OCI images
-        #[arg(long, default_value = MONOCORE_OCI_DIR.as_os_str())]
-        oci_dir: PathBuf,
+        /// Home directory for monocore state (default: ~/.monocore)
+        #[arg(long, default_value = DEFAULT_MONOCORE_HOME.as_os_str())]
+        home_dir: PathBuf,
     },
 
     /// Show status of running services (CPU, memory, network, etc)
     Status {},
+
+    /// Remove service files (rootfs and config)
+    #[command(alias = "rm", arg_required_else_help = true)]
+    Remove {
+        /// Names of services to remove
+        #[arg(required_unless_present = "group")]
+        services: Vec<String>,
+
+        /// Remove all services in this group
+        #[arg(short, long)]
+        group: Option<String>,
+
+        /// Home directory for monocore state (default: ~/.monocore)
+        #[arg(long, default_value = DEFAULT_MONOCORE_HOME.as_os_str())]
+        home_dir: PathBuf,
+    },
 }
 
 //-------------------------------------------------------------------------------------------------

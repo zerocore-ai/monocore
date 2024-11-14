@@ -210,6 +210,14 @@ pub enum MonocoreError {
     /// An error that occurred when parsing an image reference
     #[error("invalid image reference: {0}")]
     ImageReferenceError(String),
+
+    /// An error that occurred when trying to remove running services
+    #[error("Cannot remove running services: {0}")]
+    ServiceStillRunning(String),
+
+    /// An error that occurred when invalid command line arguments were provided
+    #[error("{0}")]
+    InvalidArgument(String),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.
