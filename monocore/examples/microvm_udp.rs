@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
     // Use specific directories for OCI and rootfs
     let build_dir = format!("{}/build", env!("CARGO_MANIFEST_DIR"));
     let oci_dir = format!("{}/oci", build_dir);
-    let rootfs_alpine_dir = format!("{}/reference/library_alpine__latest", build_dir);
+    let rootfs_alpine_dir = format!("{}/rootfs/reference/library_alpine__latest", build_dir);
 
     // Pull and merge Alpine image
     utils::pull_docker_image(&oci_dir, "library/alpine:latest").await?;

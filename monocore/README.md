@@ -83,6 +83,11 @@ graph TD
     rootfs_ref --> rootfs_ref_repo["[repo-name]__[tag]/"]
     rootfs_ref_repo --> rootfs_ref_repo_merged[merged/]
 
+    monocore_root --> service[service/]
+    service --> service_info["[service-name]/"]
+    service_info --> service_json[service.json]
+    service_info --> group_json[group.json]
+
     monocore_root --> run[run/]
     run --> run_service["[service-name]__[pid].json"]
 
@@ -146,19 +151,84 @@ async fn main() -> anyhow::Result<()> {
 
 - Rust toolchain (1.75+)
 - libkrun (see [monocore/README.md](http://github.com/appcypher/monocore#setup))
-- Linux OS for full functionality (OverlayFS support)
-  - macOS users should use Docker Desktop or a Linux VM for development
+- Linux OS / macOS
 
-### Examples
+### Running Examples
 
-The `examples/` directory showcases key features:
+The `examples/` directory contains several examples demonstrating key features. Use `make example <name>` to run them:
 
-- `microvm_shell.rs`: Basic microVM usage
-- `oci_pull.rs`: Image pulling and caching
-- `orchestration_basic.rs`: Service orchestration
-- `orchestration_load.rs`: Load testing
+```bash
+# Basic MicroVM Examples
+make example microvm_shell     # Interactive shell in MicroVM
+make example microvm_nop       # Simple no-op MicroVM
 
-Check the top of each file for usage instructions.
+# Networking Examples
+make example microvm_curl [-- --local-only] [-- <target>]  # HTTP requests from MicroVM
+make example microvm_tcp -- --server                       # TCP server (port 3456)
+make example microvm_tcp                                   # TCP client
+make example microvm_udp -- --server                       # UDP server
+make example microvm_udp                                   # UDP client
+
+# OCI Image Examples
+make example oci_pull          # Pull images from Docker Hub
+make example oci_merge         # Merge image layers with OverlayFS
+
+# Orchestration Examples
+make example orchestration_basic   # Basic service management
+make example orchestration_load    # Service state persistence
+```
+
+### Using the CLI
+
+The monocore CLI provides commands for managing services and container images. Use `make bin monocore` to run CLI commands:
+
+```bash
+# View available commands
+make bin monocore -- --help
+
+# Service Management
+make bin monocore -- up -f monocore.toml              # Start services
+make bin monocore -- up -f monocore.toml -g mygroup   # Start specific group
+make bin monocore -- down                             # Stop all services
+make bin monocore -- down -g mygroup                  # Stop specific group
+make bin monocore -- status                           # Show service status
+
+# Image Management
+make bin monocore -- pull alpine:latest               # Pull image
+make bin monocore -- remove service1 service2         # Remove services
+make bin monocore -- remove -g mygroup                # Remove group
+
+# Debug Options
+make bin monocore -- --verbose <command>              # Enable verbose logging
+```
+
+### Example Details
+
+The examples demonstrate different aspects of monocore's functionality:
+
+- **MicroVM Examples**
+  - `microvm_shell.rs`: Interactive shell with 2 vCPUs, 1024MB RAM
+  - `microvm_curl.rs`: Network requests with configurable restrictions
+  - `microvm_tcp.rs`: TCP networking between microVMs
+  - `microvm_udp.rs`: UDP communication between microVMs
+  - `microvm_nop.rs`: Minimal no-operation example
+
+- **OCI Examples**
+  - `oci_pull.rs`: Docker Hub image pulling and caching
+  - `oci_merge.rs`: Layer merging with OverlayFS demonstration
+
+- **Orchestration Examples**
+  - `orchestration_basic.rs`: Service lifecycle management
+  - `orchestration_load.rs`: Service state persistence and recovery
+
+Each example contains detailed usage instructions in its source file comments.
+
+### Development Tips
+
+- Use `RUST_BACKTRACE=1` for detailed error traces
+- On macOS, examples are automatically signed with entitlements
+- The build directory (`~/.monocore`) contains logs and service state
+- Check service logs in `~/.monocore/log/` for debugging
 
 ## License
 

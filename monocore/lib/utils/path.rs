@@ -55,6 +55,9 @@ lazy_static::lazy_static! {
     /// The path to the monocore rootfs directory
     pub static ref MONOCORE_ROOTFS_DIR: PathBuf = monocore_home_path().join(ROOTFS_SUBDIR);
 
+    /// The path to the monocore service directory
+    pub static ref MONOCORE_SERVICE_DIR: PathBuf = monocore_home_path().join(SERVICE_SUBDIR);
+
     /// The path to the monocore state directory (e.g. for storing service state files)
     pub static ref MONOCORE_STATE_DIR: PathBuf = monocore_home_path().join(STATE_SUBDIR);
 
