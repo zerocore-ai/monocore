@@ -33,7 +33,10 @@ impl Orchestrator {
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut orchestrator = Orchestrator::new("/path/to/rootfs", "/path/to/supervisor").await?;
     ///
-    /// orchestrator.remove_services(&["service1", "service2"]).await?;
+    /// orchestrator.remove_services(&[
+    ///     "service1".to_string(),
+    ///     "service2".to_string()
+    /// ]).await?;
     /// # Ok(())
     /// # }
     /// ```
