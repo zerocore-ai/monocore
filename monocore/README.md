@@ -20,45 +20,114 @@
 > [!WARNING]
 > This project is in early development and is not yet ready for production use.
 
-##
+## Table of Contents
 
-## Outline
-
+- [Overview](#overview)
+- [Getting Started](#getting-started)
+  - [Installation](#installation)
+  - [Basic Usage](#basic-usage)
 - [Features](#features)
-- [Directory Structure](#directory-structure)
-- [Quick Start](#quick-start)
+- [Architecture](#architecture)
 - [Development](#development)
 - [License](#license)
 
+## Overview
+
+Monocore provides:
+- 🔒 Secure isolation through microVMs
+- 🏃 Efficient container-like experience
+- 📦 OCI-compatible image management
+- 🎯 Simple service orchestration
+
+## Getting Started
+
+### Installation
+
+**Prerequisites:**
+- Rust toolchain (1.75+)
+- Linux OS / macOS
+- libkrun (installed automatically)
+
+**Build and Install:**
+```bash
+# Clone the repository
+git clone https://github.com/appcypher/monocore.git
+cd monocore
+
+# Build and install (installs to /usr/local/bin)
+make monocore && sudo make install
+```
+
+### Basic Usage
+
+1. Create a configuration file:
+```toml
+# monocore.toml
+[[service]]
+name = "counter"
+base = "alpine:latest"
+ram = 512
+group = "main"
+command = "/usr/bin/count"
+
+[[service]]
+name = "date-service"
+base = "alpine:latest"
+ram = 256
+group = "main"
+command = "/bin/date"
+```
+
+2. Manage your services:
+```bash
+# Pull required images
+monocore pull alpine:latest
+
+# Start services
+monocore up -f monocore.toml
+
+# View status
+monocore status
+
+# Stop services
+monocore down
+
+# Remove services
+monocore remove -g main
+```
+
+For more CLI options:
+```bash
+monocore --help
+```
+
 ## Features
 
-### 🔒 Secure by Design
-
+### Secure Isolation
 - Isolated microVM environments for each service
 - Resource constraints and limits enforcement
 - Network isolation between service groups
 
-### 🏃 Efficient Runtime
-
+### Efficient Runtime
 - Fast microVM provisioning and startup
 - Minimal resource overhead
 - Optimized layer caching and sharing
 
-### 📦 OCI Integration
-
+### OCI Integration
 - Pull images from any OCI-compliant registry
 - Smart layer management and deduplication
 - Local image caching for faster startups
 
-### 🎯 Service Orchestration
-
+### Service Orchestration
 - Dependency-aware service scheduling
 - Health monitoring and automatic recovery
 - Log rotation with configurable retention
 
-## Directory Structure
+## Architecture
 
-The library maintains its state in `~/.monocore`:
+### Directory Structure
+
+Monocore maintains its state in `~/.monocore`:
 
 ```mermaid
 graph TD
@@ -96,10 +165,9 @@ graph TD
     log --> log_stdout["[service-name].stdout.log"]
 ```
 
-## Quick Start
+### API Examples
 
-### Basic MicroVM
-
+**Basic MicroVM:**
 ```rust
 use monocore::vm::MicroVm;
 
@@ -117,8 +185,7 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-### Service Orchestration
-
+**Service Orchestration:**
 ```rust
 use monocore::{
     config::{Group, Monocore, Service},
@@ -147,15 +214,7 @@ async fn main() -> anyhow::Result<()> {
 
 ## Development
 
-### Prerequisites
-
-- Rust toolchain (1.75+)
-- libkrun (see [monocore/README.md](http://github.com/appcypher/monocore#setup))
-- Linux OS / macOS
-
 ### Running Examples
-
-The `examples/` directory contains several examples demonstrating key features. Use `make example <name>` to run them:
 
 ```bash
 # Basic MicroVM Examples
@@ -177,51 +236,6 @@ make example oci_merge         # Merge image layers with OverlayFS
 make example orchestration_basic   # Basic service management
 make example orchestration_load    # Service state persistence
 ```
-
-### Using the CLI
-
-The monocore CLI provides commands for managing services and container images. Use `make bin monocore` to run CLI commands:
-
-```bash
-# View available commands
-make bin monocore -- --help
-
-# Service Management
-make bin monocore -- up -f monocore.toml              # Start services
-make bin monocore -- up -f monocore.toml -g mygroup   # Start specific group
-make bin monocore -- down                             # Stop all services
-make bin monocore -- down -g mygroup                  # Stop specific group
-make bin monocore -- status                           # Show service status
-
-# Image Management
-make bin monocore -- pull alpine:latest               # Pull image
-make bin monocore -- remove service1 service2         # Remove services
-make bin monocore -- remove -g mygroup                # Remove group
-
-# Debug Options
-make bin monocore -- --verbose <command>              # Enable verbose logging
-```
-
-### Example Details
-
-The examples demonstrate different aspects of monocore's functionality:
-
-- **MicroVM Examples**
-  - `microvm_shell.rs`: Interactive shell with 2 vCPUs, 1024MB RAM
-  - `microvm_curl.rs`: Network requests with configurable restrictions
-  - `microvm_tcp.rs`: TCP networking between microVMs
-  - `microvm_udp.rs`: UDP communication between microVMs
-  - `microvm_nop.rs`: Minimal no-operation example
-
-- **OCI Examples**
-  - `oci_pull.rs`: Docker Hub image pulling and caching
-  - `oci_merge.rs`: Layer merging with OverlayFS demonstration
-
-- **Orchestration Examples**
-  - `orchestration_basic.rs`: Service lifecycle management
-  - `orchestration_load.rs`: Service state persistence and recovery
-
-Each example contains detailed usage instructions in its source file comments.
 
 ### Development Tips
 
