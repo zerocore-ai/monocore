@@ -247,7 +247,7 @@ async fn main() -> anyhow::Result<()> {
         .groups(vec![Group::builder().name("agents").build()])
         .build()?;
 
-    let mut orchestrator = Orchestrator::new("/path/to/rootfs", "/path/to/supervisor").await?;
+    let mut orchestrator = Orchestrator::new("/path/to/home_dir", "/path/to/supervisor").await?;
     orchestrator.up(config).await?;
 
     Ok(())

@@ -6,96 +6,173 @@
   <h1 align="center">monocore</h1>
 
   <p>
-    <!-- <a href="https://crates.io/crates/monocore">
-      <img src="https://img.shields.io/crates/v/monocore?label=crates" alt="Crate">
-    </a> -->
     <a href="https://github.com/appcypher/monocore/actions?query=">
       <img src="https://github.com/appcypher/monocore/actions/workflows/tests_and_checks.yml/badge.svg" alt="Build Status">
     </a>
     <a href="https://github.com/appcypher/monocore/blob/main/LICENSE">
       <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License">
     </a>
-    <!-- <a href="https://docs.rs/monocore">
-      <img src="https://img.shields.io/static/v1?label=Docs&message=docs.rs&color=blue" alt="Docs">
-    </a> -->
   </p>
 </div>
-
-**`monocore`** is your gateway to spin up AI-driven sandboxed environments in no time.
-
-Tired of clunky cloud setups? `monocore` is an open-source, self-hostable platform that lets you orchestrate microVMs for your AI agents—right from your local dev machine. With just a single command, you're up and running.
-
-Forget the headaches of replication. `monocore` is distributed by design, so your VMs are seamlessly taken care of, letting you focus on building and experimenting without limits.
-
-Want the power of fly.io but with the freedom of self-hosting? That's where `monocore` comes in. No lock-ins, no unnecessary overhead—just lightweight VMs, ready when you are.
 
 > [!WARNING]
 > This project is in early development and is not yet ready for production use.
 
-##
+Building AI agents that can write and execute code? You'll need a secure sandbox.
 
-## Outline
+**monocore** provides instant, secure VMs for your AI agents to:
+- Generate charts and visualizations
+- Run data analysis scripts
+- Test generated code
+- Execute system commands
+- Access development tools
 
-- [Development](#development)
-- [Contributing](#contributing)
-- [License](#license)
+All while keeping your system safe through VM-level isolation.
 
-## Development
+```sh
+# Start the sandbox orchestrator
+monocore serve
 
-Follow these steps to set up monocore for development:
+# Your AI agent can now safely:
+curl -X POST http://localhost:3000/up -d @sandbox.toml  # Launch secure VMs
+curl http://localhost:3000/status                       # Monitor execution
+curl -X POST http://localhost:3000/down                 # Clean up when done
+```
 
-### Prerequisites
+## Why monocore?
 
-- [Git][git_home]
-- [Rust toolchain][rustup_home]
-- On macOS: [Homebrew][brew_home]
+When developing AI agents that execute code, you need a fast development cycle:
+- Docker containers? Limited isolation for untrusted code
+- Traditional VMs? Minutes to start up, heavy resource usage
+- Direct execution? Risky for your development machine
+- Cloud sandboxes? Great for production, but slow for rapid iteration
 
-### Setup
+monocore gives you:
+- 🔒 True VM-level isolation
+- ⚡ Millisecond startup times
+- 🎯 Simple REST API
+- 📦 Works with standard container images
+- 🔧 Full resource control
+- 💻 Perfect for local development
 
-1. **Clone the repository**
+Develop and test locally with instant feedback, then deploy to production with confidence.
+
+## Getting Started
+
+1. **Install monocore**
 
    ```sh
    git clone https://github.com/appcypher/monocore
    cd monocore
-   ```
-
-2. **Build libkrun**
-
-   monocore uses a modified version of [libkrun][libkrun-repo] for its microVMs.
-
-   ```sh
-   ./build_libkrun.sh
-   ```
-
-   > **Note for macOS users:** Install `krunvm` before building libkrun:
-   >
-   > ```sh
-   > brew tap slp/tap
-   > brew install krunvm
-   > ```
-
-3. **Build and install monocore**
-
-   ```sh
-   cd monocore
-   make
+   make build
    sudo make install
    ```
 
-## Contributing
-
-1. **Read the [CONTRIBUTING.md](./CONTRIBUTING.md) file**
-
-   This file contains information about the coding style, commit message conventions,
-   and other guidelines that you should follow when contributing to monocore.
-
-2. **Install pre-commit hooks**
+2. **Start the sandbox server**
 
    ```sh
-   pre-commit install
+   # Start the server on port 3000
+   monocore serve --port 3000
    ```
 
-   You will need to have `pre-commit` installed to use these hooks.
+   Your AI agent now has a secure execution environment for:
+   - Running untrusted code
+   - Generating visualizations
+   - Testing programs
+   - Executing system commands
+
+3. **Define your sandboxes**
+
+   ```toml
+   # monocore.toml
+
+   # Python sandbox for data visualization
+   [[service]]
+   name = "python-sandbox"
+   base = "python:3.11-slim"
+   ram = 512
+   cpus = 1
+   group = "sandboxes"
+   command = "python"
+   args = ["-c", "import matplotlib.pyplot as plt; plt.plot([1, 2, 3]); plt.savefig('chart.png')"]
+   env = [
+     { key = "PYTHONUNBUFFERED", value = "1" }
+   ]
+
+   # Node.js sandbox for code execution
+   [[service]]
+   name = "node-sandbox"
+   base = "node:18-slim"
+   ram = 256
+   cpus = 1
+   group = "sandboxes"
+   command = "node"
+   args = ["-e", "console.log('Hello from secure sandbox!')"]
+
+   # Define security group
+   [[group]]
+   name = "sandboxes"
+   local_only = true  # Restrict network access
+   ```
+
+4. **Manage your sandboxes**
+
+   Using the CLI:
+   ```sh
+   # Pull sandbox images
+   monocore pull python:3.11-slim
+   monocore pull node:18-slim
+
+   # Start sandboxes
+   monocore up -f monocore.toml
+
+   # Monitor sandbox execution
+   monocore status
+   ```
+
+   Or via the REST API:
+   ```sh
+   # Launch a sandbox
+   curl -X POST http://localhost:3000/up \
+     -H "Content-Type: application/json" \
+     -d @monocore.toml
+
+   # Check execution status
+   curl http://localhost:3000/status | jq '.services[] | {name, status, metrics}'
+   ```
+
+## Features in Action
+
+- **Secure Code Execution**: Run untrusted code in isolated environments
+- **Resource Limits**: Control CPU, memory, and execution time
+- **Network Control**: Restrict or allow network access per sandbox
+- **Environment Control**: Pass data and configuration safely
+- **Status Monitoring**: Track execution state and resource usage
+- **Simple Integration**: RESTful API for easy automation
+
+## Development
+
+For detailed setup instructions and prerequisites, see [monocore/README.md](monocore/README.md).
+
+Quick setup:
+
+```sh
+# Prerequisites
+- Git
+- Rust toolchain
+- On macOS: Homebrew
+
+# Build
+make build
+sudo make install
+```
+
+## Documentation
+
+- [Detailed Features](monocore/README.md#features)
+- [Architecture](monocore/README.md#architecture)
+- [API Examples](monocore/README.md#api-examples)
+- [Development Guide](monocore/README.md#development)
 
 ## License
 
