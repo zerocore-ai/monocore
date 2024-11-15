@@ -5,6 +5,7 @@ use monocore::{
     cli::{MonocoreArgs, MonocoreSubcommand},
     config::Monocore,
     orchestration::Orchestrator,
+    server::{self, ServerState},
     utils::{self, OCI_SUBDIR, ROOTFS_SUBDIR},
     MonocoreError, MonocoreResult,
 };
@@ -203,6 +204,22 @@ async fn main() -> MonocoreResult<()> {
                     ));
                 }
             }
+        }
+
+        Some(MonocoreSubcommand::Serve { port, home_dir }) => {
+            let current_exe = env::current_exe()?;
+            let supervisor_path = current_exe.parent().unwrap().join(SUPERVISOR_EXE);
+
+            let state = ServerState::new(home_dir, supervisor_path).await?;
+            let app = server::create_router(state);
+
+            let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+            info!("Starting server on {}", addr);
+
+            let listener = tokio::net::TcpListener::bind(addr).await?;
+            axum::serve(listener, app)
+                .await
+                .map_err(MonocoreError::custom)?;
         }
 
         None => {

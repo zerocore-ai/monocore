@@ -96,9 +96,51 @@ monocore down
 monocore remove -g main
 ```
 
+3. Run in server mode:
+```bash
+# Start the REST API server (default port: 3000)
+monocore serve --port 3000
+
+# Or use the default port
+monocore serve
+```
+
 For more CLI options:
 ```bash
 monocore --help
+```
+
+### REST API
+
+When running in server mode, monocore provides a REST API for managing services:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/up`    | POST   | Start services defined in config |
+| `/down`  | POST   | Stop running services |
+| `/status`| GET    | Get status of all services |
+| `/remove`| POST   | Remove service files |
+
+Example API usage:
+
+```bash
+# Start services
+curl -X POST http://localhost:3000/up \
+  -H "Content-Type: application/json" \
+  -d @monocore.toml
+
+# Get service status
+curl http://localhost:3000/status
+
+# Stop services in a group
+curl -X POST http://localhost:3000/down \
+  -H "Content-Type: application/json" \
+  -d '{"group": "main"}'
+
+# Remove services
+curl -X POST http://localhost:3000/remove \
+  -H "Content-Type: application/json" \
+  -d '{"services": ["counter", "date-service"]}'
 ```
 
 ## Features
