@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use tracing::Level;
 
-use crate::utils::DEFAULT_MONOCORE_HOME;
+use crate::{config::DEFAULT_SERVER_PORT, utils::DEFAULT_MONOCORE_HOME};
 
 use super::styles;
 
@@ -83,6 +83,17 @@ pub enum MonocoreSubcommand {
         /// Remove all services in this group
         #[arg(short, long)]
         group: Option<String>,
+
+        /// Home directory for monocore state (default: ~/.monocore)
+        #[arg(long, default_value = DEFAULT_MONOCORE_HOME.as_os_str())]
+        home_dir: PathBuf,
+    },
+
+    /// Start monocore in server mode
+    Serve {
+        /// Port to listen on
+        #[arg(short, long, default_value_t = DEFAULT_SERVER_PORT)]
+        port: u16,
 
         /// Home directory for monocore state (default: ~/.monocore)
         #[arg(long, default_value = DEFAULT_MONOCORE_HOME.as_os_str())]

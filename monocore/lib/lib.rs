@@ -14,6 +14,7 @@ pub mod config;
 pub mod oci;
 pub mod orchestration;
 pub mod runtime;
+pub mod server;
 pub mod utils;
 pub mod vm;
 
