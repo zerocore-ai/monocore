@@ -1,12 +1,13 @@
-//! `monobase` is a distributed, decentralized, secure multi-model database.
-
-#![warn(missing_docs)]
-#![allow(clippy::module_inception)]
-
-mod compiler;
+mod ast;
+mod lexer;
+mod parser;
+mod span;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use compiler::*;
+pub use ast::*;
+pub use lexer::*;
+pub use parser::*;
+pub use span::*;

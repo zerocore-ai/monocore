@@ -14,4 +14,4 @@ pub const DEFAULT_RAM_MIB: u32 = 1024;
 pub const DEFAULT_LOG_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 /// Default port for the HTTP server
-pub const DEFAULT_SERVER_PORT: u16 = 3000;
+pub const DEFAULT_SERVER_PORT: u16 = 3456;

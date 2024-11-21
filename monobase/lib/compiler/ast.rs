@@ -1,12 +1,6 @@
-//! `monobase` is a distributed, decentralized, secure multi-model database.
-
-#![warn(missing_docs)]
-#![allow(clippy::module_inception)]
-
-mod compiler;
-
 //--------------------------------------------------------------------------------------------------
-// Exports
+// Types
 //--------------------------------------------------------------------------------------------------
 
-pub use compiler::*;
+/// Represents the Abstract Syntax Tree (AST) of a monoql program.
+pub struct Ast {}
