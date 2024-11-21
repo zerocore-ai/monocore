@@ -1,5 +1,5 @@
 use super::token::{Token, TokenKind};
-use crate::Span;
+use crate::compiler::Span;
 
 //--------------------------------------------------------------------------------------------------
 // Types
