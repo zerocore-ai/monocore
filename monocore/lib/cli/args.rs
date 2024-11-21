@@ -92,7 +92,7 @@ pub enum MonocoreSubcommand {
     /// Start monocore in server mode
     Serve {
         /// Port to listen on
-        #[arg(short, long, default_value_t = DEFAULT_SERVER_PORT)]
+        #[arg(short, long, default_value_t = std::env::var("PORT").unwrap_or(DEFAULT_SERVER_PORT.to_string()).parse().unwrap())]
         port: u16,
 
         /// Home directory for monocore state (default: ~/.monocore)

@@ -1,0 +1,856 @@
+(*
+ * This is a parser grammar for the monoql language.
+ *
+ * The precedence of the operators and notations is mostly based on the following table:
+ * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_Precedence#table
+ *
+ * Symbols grouped in << and >> are permutable.
+ *
+ * Keywords are case-insensitive.
+ *)
+
+(* META *)
+
+terminator =
+    | terminator
+
+(* KEYWORDS *)
+
+kw_create =
+    | plain_identifier["create"]
+
+kw_relate =
+    | plain_identifier["relate"]
+
+kw_delete =
+    | plain_identifier["delete"]
+
+kw_update =
+    | plain_identifier["update"]
+
+kw_select =
+    | plain_identifier["select"]
+
+kw_fold =
+    | plain_identifier["fold"]
+
+kw_omit =
+    | plain_identifier["omit"]
+
+kw_from =
+    | plain_identifier["from"]
+
+kw_break =
+    | plain_identifier["break"]
+
+kw_continue =
+    | plain_identifier["continue"]
+
+kw_set =
+    | plain_identifier["set"]
+
+kw_begin =
+    | plain_identifier["begin"]
+
+kw_transaction =
+    | plain_identifier["transaction"]
+
+kw_commit =
+    | plain_identifier["commit"]
+
+kw_cancel =
+    | plain_identifier["cancel"]
+
+kw_define =
+    | plain_identifier["define"]
+
+kw_redefine =
+    | plain_identifier["redefine"]
+
+kw_remove =
+    | plain_identifier["remove"]
+
+kw_describe =
+    | plain_identifier["describe"]
+
+kw_namespace =
+    | plain_identifier["namespace"]
+
+kw_ns =
+    | plain_identifier["ns"]
+
+kw_database =
+    | plain_identifier["database"]
+
+kw_db =
+    | plain_identifier["db"]
+
+kw_table =
+    | plain_identifier["table"]
+
+kw_fields =
+    | plain_identifier["fields"]
+
+kw_index =
+    | plain_identifier["index"]
+
+kw_indices =
+    | plain_identifier["indices"]
+
+kw_indexes =
+    | plain_identifier["indexes"]
+
+kw_type =
+    | plain_identifier["type"]
+
+kw_enum =
+    | plain_identifier["enum"]
+
+kw_edge =
+    | plain_identifier["edge"]
+
+kw_module =
+    | plain_identifier["module"]
+
+kw_param =
+    | plain_identifier["param"]
+
+kw_mod =
+    | plain_identifier["mod"]
+
+kw_value =
+    | plain_identifier["value"]
+
+kw_values =
+    | plain_identifier["values"]
+
+kw_variant =
+    | plain_identifier["variant"]
+
+kw_variants =
+    | plain_identifier["variants"]
+
+kw_assert =
+    | plain_identifier["assert"]
+
+kw_readonly =
+    | plain_identifier["readonly"]
+
+kw_unique =
+    | plain_identifier["unique"]
+
+kw_use =
+    | plain_identifier["use"]
+
+kw_if =
+    | plain_identifier["if"]
+
+kw_else =
+    | plain_identifier["else"]
+
+kw_for =
+    | plain_identifier["for"]
+
+kw_while =
+    | plain_identifier["while"]
+
+kw_then =
+    | plain_identifier["then"]
+
+kw_do =
+    | plain_identifier["do"]
+
+kw_end =
+    | plain_identifier["end"]
+
+kw_not =
+    | plain_identifier["not"]
+
+kw_exists =
+    | plain_identifier["exists"]
+
+kw_exist =
+    | plain_identifier["exist"]
+
+kw_with =
+    | plain_identifier["with"]
+
+kw_on =
+    | plain_identifier["on"]
+
+kw_let =
+    | plain_identifier["let"]
+
+kw_where =
+    | plain_identifier["where"]
+
+kw_group =
+    | plain_identifier["group"]
+
+kw_limit =
+    | plain_identifier["limit"]
+
+kw_start =
+    | plain_identifier["start"]
+
+kw_order =
+    | plain_identifier["order"]
+
+kw_by =
+    | plain_identifier["by"]
+
+kw_at =
+    | plain_identifier["at"]
+
+kw_to =
+    | plain_identifier["to"]
+
+kw_no =
+    | plain_identifier["no"]
+
+kw_asc =
+    | plain_identifier["asc"]
+
+kw_desc =
+    | plain_identifier["desc"]
+
+kw_as =
+    | plain_identifier["as"]
+
+(* OPERATORS *)
+
+op_mul =
+    | op_mul_lexer
+    | op_star
+
+op_and =
+    | op_and_lexer
+    | plain_identifier["and"]
+
+op_or =
+    | op_or_lexer
+    | plain_identifier["or"]
+
+op_is =
+    | op_is_lexer
+    | plain_identifier["is"]
+
+op_is_not =
+    | op_is_not_lexer
+    | plain_identifier["is"] plain_identifier["not"]
+
+op_not =
+    | op_not_lexer
+    | plain_identifier["not"]
+
+op_in =
+    | plain_identifier["in"]
+
+op_not_in =
+    | plain_identifier["not"] plain_identifier["in"]
+
+op_contains =
+    | op_contains_lexer
+    | plain_identifier["contains"]
+
+op_not_contains =
+    | op_not_contains_lexer
+    | plain_identifier["not"] plain_identifier["contains"]
+
+op_contains_none =
+    | op_contains_none_lexer
+    | plain_identifier["contains"] plain_identifier["none"]
+
+op_contains_all =
+    | op_contains_all_lexer
+    | plain_identifier["contains"] plain_identifier["all"]
+
+op_contains_any =
+    | op_contains_any_lexer
+    | plain_identifier["contains"] plain_identifier["any"]
+
+op_match =
+    | op_match_lexer
+    | plain_identifier["match"]
+
+op_not_match =
+    | op_not_match_lexer
+    | plain_identifier["not"] plain_identifier["match"]
+
+(* IDENTIFIERS *)
+
+identifier =
+    | plain_identifier
+    | escaped_identifier
+
+(* LITERALS *)
+
+boolean_lit =
+    | plain_identifier["true"]
+    | plain_identifier["false"]
+
+none_lit =
+    | plain_identifier["none"]
+
+integer_lit =
+    | dec_integer_lit
+    | hex_integer_lit
+    | bin_integer_lit
+    | oct_integer_lit
+
+raw_lit =
+    | dec_integer_lit
+    | hex_integer_lit
+    | bin_integer_lit
+    | oct_integer_lit
+    | float_lit
+    | string_lit
+    | regex_lit
+    | byte_string_lit
+    | boolean_lit
+    | none_lit
+
+list_lit =
+    | "[" "]"
+    | "[" op ("," op)* ","? "]"
+
+object_lit =
+    | "{" "}"
+    | "{" identifier ":" op ("," identifier ":" op)* ","? "}"
+
+tuple_lit =
+    | "(" ")"
+    | "(" op "," ")"
+    | "(" op ("," op)+ ","? ")"
+
+lit =
+    | raw_lit
+    | list_lit
+    | object_lit
+    | tuple_lit
+
+(* OPERATIONS *)
+
+parens_op =
+    | "(" exp ")"
+
+id_op =
+    | identifier ":" (lit | identifier | variable | op_star)
+
+identifier_scope_op =
+    | identifier (op_scope identifier)+
+    | identifier
+
+atom_op =
+    | variable
+    | lit
+    | id_op
+    | identifier_scope_op
+    | parens_op
+
+index_op =
+    | atom_op "[" exp "]"
+    | atom_op
+
+function_arg =
+    | (identifier op_is_lexer)? op
+
+function_call_op =
+    | index_op "(" (function_arg ("," function_arg)* ","?)? ")"
+    | index_op
+
+not_op =
+    | (op_not | op_match_lexer) function_call_op
+    | function_call_op
+
+sign_op =
+    | (op_plus | op_minus) not_op
+    | not_op
+
+op_access =
+    | op_dot
+    | op_safe_nav
+
+access_op = (* Left Associative *)
+    | sign_op (op_access identifier)* op_dot op_star
+    | sign_op (op_access identifier)+
+    | sign_op
+
+pow_op = (* Right Associative *)
+    | (access_op op_pow)+ access_op
+    | access_op
+
+op_multiplicative =
+    | op_mul
+    | op_div
+    | op_mod
+
+mul_op = (* Left Associative *)
+    | pow_op (op_multiplicative pow_op)+
+    | pow_op
+
+op_additive =
+    | op_plus
+    | op_minus
+
+add_op = (* Left Associative *)
+    | mul_op (op_additive mul_op)+
+    | mul_op
+
+op_shift =
+    | op_shl
+    | op_shr
+
+shift_op = (* Left Associative *)
+    | add_op (op_shift add_op)+
+    | add_op
+
+op_match_sim =
+    | op_match
+    | op_not_match
+    | op_similarity
+
+match_sim_op = (* Left Associative *)
+    | shift_op (op_match_sim shift_op)+
+    | shift_op
+
+op_relational =
+    | op_lt
+    | op_gt
+    | op_lte
+    | op_gte
+    | op_in
+    | op_not_in
+    | op_not_contains
+    | op_contains_none
+    | op_contains_all
+    | op_contains_any
+    | op_contains
+
+rel_op = (* Left Associative *)
+    | match_sim_op (op_relational match_sim_op)+
+    | match_sim_op
+
+op_eq_is =
+    | op_eq
+    | op_is_not
+    | op_is
+
+eq_op = (* Left Associative *)
+    | rel_op (op_eq_is rel_op)+
+    | rel_op
+
+bit_and_op = (* Left Associative *)
+    | eq_op (op_bit_and eq_op)+
+    | eq_op
+
+bit_xor_op = (* Left Associative *)
+    | bit_and_op (op_bit_xor bit_and_op)+
+    | bit_and_op
+
+bit_or_op = (* Left Associative *)
+    | bit_xor_op (op_bit_or bit_xor_op)+
+    | bit_xor_op
+
+and_op = (* Left Associative *)
+    | bit_or_op (op_and bit_or_op)+
+    | bit_or_op
+
+op_or_null_coalesce =
+    | op_or
+    | op_null_coalesce
+
+or_null_coalesce_op = (* Left Associative *)
+    | and_op (op_or and_op)+
+    | and_op
+
+op_ranges =
+    | op_range_incl
+    | op_range
+
+range_op =
+    | or_null_coalesce_op op_ranges or_null_coalesce_op
+    | or_null_coalesce_op
+
+partial_as =
+    | kw_as identifier
+
+single_relate_id =
+    | id_op partial_as?
+    | identifier partial_as?
+    | range_op partial_as?
+    | op_star
+
+multi_relate_id =
+    | "[" single_relate_id ("," single_relate_id)* ","? "]"
+
+relate_id =
+    | multi_relate_id
+    | single_relate_id
+
+relate_edge_id =
+    | identifier "[" op "]" partial_as?
+    | identifier partial_as?
+
+relate_edge_not_op =
+    | op_not relate_edge_id
+    | relate_edge_id
+
+relate_edge_and_op = (* Left Associative *)
+    | relate_edge_not_op (op_and relate_edge_not_op)+
+    | relate_edge_not_op
+
+relate_edge_or_op = (* Left Associative *)
+    | relate_edge_and_op (op_or relate_edge_and_op)+
+    | relate_edge_and_op
+
+op_arrow =
+    | op_arrow_left
+    | op_arrow_right
+    | op_multi_arrow_right
+    | op_multi_arrow_left
+
+relate_op = (* Left Associative *)
+    | relate_id (op_arrow relate_edge_or_op op_arrow relate_id)+
+
+op =
+    | relate_op
+    | range_op partial_as?
+
+(* EXPRESSIONS *)
+
+partial_set_object =
+    | kw_set object_lit
+
+partial_set_assign =
+    | kw_set identifier op_is_lexer op ("," identifier op_is_lexer op)*
+
+create_exp =
+    | kw_create (id_op | identifier) (partial_set_object | partial_set_assign)
+    | kw_create identifier kw_set "(" (identifier ("," identifier)* ","?)? ")" kw_values tuple_lit ("," tuple_lit)*
+
+relate_exp =
+    | kw_relate relate_op (partial_set_object | partial_set_assign)?
+
+partial_target =
+    | relate_op
+    | id_op
+    | identifier
+
+partial_where_guard =
+    | kw_where (op | op_star)
+
+delete_exp =
+    | kw_delete partial_target partial_where_guard?
+
+partial_op_update_assign =
+    | op_is_lexer
+    | op_assign_plus
+    | op_assign_minus
+    | op_assign_mul
+    | op_assign_div
+    | op_assign_mod
+    | op_assign_pow
+    | op_assign_bit_and
+    | op_assign_bit_or
+    | op_assign_bit_xor
+    | op_assign_bit_not
+    | op_assign_shl
+    | op_assign_shr
+
+partial_set_update_assign =
+    | kw_set identifier partial_op_update_assign op ("," identifier partial_op_update_assign op)*
+
+update_exp =
+    | kw_update partial_target << partial_where_guard? (partial_set_object | partial_set_update_assign) >>
+
+partial_select_field_fold =
+    | kw_fold range_op partial_as?
+
+partial_select_field =
+    | partial_select_field_fold
+    | op
+    | op_star
+
+partial_select_omit =
+    | kw_omit op ("," op)*
+
+partial_select_fields =
+    | partial_select_field ("," partial_select_field)* (","? partial_select_omit)?
+
+partial_select_from =
+    | kw_from op ("," op)*
+    | kw_from op_star
+
+partial_select_with_indices =
+    | kw_with (kw_index | kw_indices | kw_indexes) identifier ("," identifier)*
+    | kw_with kw_no kw_index
+
+partial_select_group_by =
+    | kw_group kw_by? range_op ("," range_op)*
+
+partial_select_order_by =
+    | kw_order kw_by? range_op ("," range_op)* (kw_asc | kw_desc)?
+
+partial_select_start_at =
+    | kw_start kw_at? range_op
+
+partial_select_limit_to =
+    | kw_limit kw_to? range_op
+
+select_exp =
+    | kw_select partial_select_fields partial_select_from << partial_where_guard? partial_select_with_indices? partial_select_group_by? partial_select_order_by? partial_select_start_at? partial_select_limit_to? >>
+
+partial_if_exists =
+    | kw_if (kw_exists | kw_exist)
+
+partial_on_namespace =
+    | kw_on (kw_namespace | kw_ns) identifier
+
+partial_on_database =
+    | kw_on (kw_database | kw_db) identifier
+
+partial_on_table =
+    | kw_on kw_table identifier
+
+remove_namespace_exp =
+    | kw_remove (kw_namespace | kw_ns) << partial_if_exists? identifier >>
+
+remove_database_exp =
+    | kw_remove (kw_database | kw_db) partial_if_exists identifier partial_on_namespace?
+    | kw_remove (kw_database | kw_db) identifier << partial_if_exists? partial_on_namespace? >>
+
+remove_table_exp =
+    | kw_remove kw_table partial_if_exists identifier partial_on_database?
+    | kw_remove kw_table identifier << partial_if_exists? partial_on_database? >>
+
+remove_edge_exp =
+    | kw_remove kw_edge partial_if_exists identifier partial_on_database?
+    | kw_remove kw_edge identifier << partial_if_exists? partial_on_database? >>
+
+remove_type_exp =
+    | kw_remove kw_type partial_if_exists identifier partial_on_database?
+    | kw_remove kw_type identifier << partial_if_exists? partial_on_database? >>
+
+remove_enum_exp =
+    | kw_remove kw_enum partial_if_exists identifier partial_on_database?
+    | kw_remove kw_enum identifier << partial_if_exists? partial_on_database? >>
+
+remove_index_exp =
+    | kw_remove kw_index partial_if_exists identifier << partial_on_table partial_on_database? >>
+    | kw_remove kw_index identifier << partial_if_exists? partial_on_table partial_on_database? >>
+
+remove_module_exp =
+    | kw_remove kw_module partial_if_exists identifier partial_on_database?
+    | kw_remove kw_module identifier << partial_if_exists? partial_on_database? >>
+
+remove_param_exp =
+    | kw_remove kw_param partial_if_exists variable partial_on_database?
+    | kw_remove kw_param variable << partial_if_exists? partial_on_database? >>
+
+remove_exp =
+    | remove_namespace_exp
+    | remove_database_exp
+    | remove_table_exp
+    | remove_edge_exp
+    | remove_type_exp
+    | remove_enum_exp
+    | remove_index_exp
+    | remove_module_exp
+    | remove_param_exp
+
+describe_namespace_exp =
+    | kw_describe (kw_namespace | kw_ns) << partial_if_exists? identifier >>
+
+describe_database_exp =
+    | kw_describe (kw_database | kw_db) partial_if_exists identifier partial_on_namespace?
+    | kw_describe (kw_database | kw_db) identifier << partial_if_exists? partial_on_namespace? >>
+
+describe_table_exp =
+    | kw_describe kw_table partial_if_exists identifier partial_on_database?
+    | kw_describe kw_table identifier << partial_if_exists? partial_on_database? >>
+
+describe_edge_exp =
+    | kw_describe kw_edge partial_if_exists identifier partial_on_database?
+    | kw_describe kw_edge identifier << partial_if_exists? partial_on_database? >>
+
+describe_type_exp =
+    | kw_describe kw_type partial_if_exists identifier partial_on_database?
+    | kw_describe kw_type identifier << partial_if_exists? partial_on_database? >>
+
+describe_enum_exp =
+    | kw_describe kw_enum partial_if_exists identifier partial_on_database?
+    | kw_describe kw_enum identifier << partial_if_exists? partial_on_database? >>
+
+describe_index_exp =
+    | kw_describe kw_index partial_if_exists identifier partial_on_table? partial_on_database?
+    | kw_describe kw_index identifier << partial_if_exists? partial_on_table? partial_on_database? >>
+
+describe_module_exp =
+    | kw_describe kw_module partial_if_exists identifier partial_on_database?
+    | kw_describe kw_module identifier << partial_if_exists? partial_on_database? >>
+
+describe_param_exp =
+    | kw_describe kw_param partial_if_exists variable partial_on_database?
+    | kw_describe kw_param variable << partial_if_exists? partial_on_database? >>
+
+describe_exp =
+    | describe_namespace_exp
+    | describe_database_exp
+    | describe_table_exp
+    | describe_edge_exp
+    | describe_type_exp
+    | describe_enum_exp
+    | describe_index_exp
+    | describe_module_exp
+    | describe_param_exp
+
+begin_exp =
+    | kw_begin kw_transaction?
+
+commit_exp =
+    | kw_commit kw_transaction?
+
+cancel_exp =
+    | kw_cancel kw_transaction?
+
+for_exp =
+    | kw_for variable op_in range_op kw_do program kw_end
+
+while_exp =
+    | kw_while range_op kw_do program kw_end
+
+partial_else_if_part =
+    | kw_else kw_if range_op kw_then program
+
+if_else_exp =
+    | kw_if range_op kw_then program partial_else_if_part* (kw_else program)? kw_end
+
+partial_type_sig =
+    | "[" partial_type_sig integer_lit "]" "?"*
+    | "[" partial_type_sig "]" "?"*
+    | "(" partial_type_sig ("," partial_type_sig)* ","? ")" "?"*
+    | identifier_scope_op "[" partial_type_sig ("," partial_type_sig)* ","? "]" "?"*
+    | identifier_scope_op "?"*
+
+let_exp =
+    | kw_let variable (kw_type partial_type_sig)? op_is_lexer exp
+
+set_exp =
+    | kw_set variable partial_op_update_assign exp
+
+exp =
+    | relate_exp
+    | create_exp
+    | delete_exp
+    | update_exp
+    | select_exp
+    | remove_exp
+    | describe_exp
+    | begin_exp
+    | commit_exp
+    | cancel_exp
+    | for_exp
+    | while_exp
+    | if_else_exp
+    | let_exp
+    | set_exp
+    | op
+
+(* STATEMENTS *)
+
+partial_if_not_exists =
+    | kw_if kw_not (kw_exists | kw_exist`)
+
+define_namespace_stmt =
+    | kw_define (kw_namespace | kw_ns) << partial_if_not_exists? identifier >>
+
+define_database_stmt =
+    | kw_define (kw_database | kw_db) partial_if_not_exists identifier partial_on_namespace?
+    | kw_define (kw_database | kw_db) identifier << partial_if_not_exists? partial_on_namespace? >>
+
+partial_field_type =
+    | kw_type partial_type_sig
+
+partial_field_value =
+    | kw_value range_op
+
+partial_table_field_assert =
+    | kw_assert range_op
+
+partial_table_field =
+    | identifier << partial_field_type partial_field_value? partial_table_field_assert* kw_readonly? kw_unique? >>
+
+partial_table_fields =
+    | kw_fields partial_table_field ("," partial_table_field)*
+
+define_table_stmt =
+    | kw_define kw_table partial_if_not_exists identifier << partial_on_database? partial_table_fields? >>
+    | kw_define kw_table identifier << partial_if_not_exists? partial_on_database? partial_table_fields? >>
+
+define_edge_stmt =
+    | kw_define kw_edge partial_if_not_exists identifier << partial_on_database? partial_table_fields? >>
+    | kw_define kw_edge identifier << partial_if_not_exists? partial_on_database? partial_table_fields? >>
+
+partial_type_field =
+    | identifier partial_field_type
+
+partial_type_fields =
+    | kw_fields partial_type_field ("," partial_type_field)*
+
+define_type_stmt =
+    | kw_define kw_type partial_if_not_exists identifier << partial_on_database? partial_type_fields? >>
+    | kw_define kw_type identifier << partial_if_not_exists? partial_on_database? partial_type_fields? >>
+
+partial_enum_variants =
+    | kw_variants identifier ("," identifier)*
+
+define_enum_stmt =
+    | kw_define kw_enum partial_if_not_exists identifier << partial_on_database? partial_enum_variants? >>
+    | kw_define kw_enum identifier << partial_if_not_exists? partial_on_database? partial_enum_variants? >>
+
+partial_index_fields =
+    | kw_fields identifier ("," identifier)*
+
+partial_index_with =
+    | kw_with function_call_op
+
+define_index_stmt =
+    | kw_define kw_index partial_if_not_exists identifier << partial_on_database? partial_on_table partial_index_fields partial_index_with? >>
+    | kw_define kw_index identifier << partial_if_not_exists? partial_on_database? partial_on_table partial_index_fields partial_index_with? >>
+
+partial_module_block =
+    | kw_with module_block kw_end
+
+define_module_stmt =
+    | kw_define (kw_module | kw_mod) partial_if_not_exists identifier << partial_module_block partial_on_database? >>
+    | kw_define (kw_module | kw_mod) identifier << partial_if_not_exists? partial_module_block partial_on_database? >>
+
+define_param_stmt =
+    | kw_define kw_param partial_if_not_exists identifier << partial_on_database? partial_field_type? partial_field_value >>
+    | kw_define kw_param identifier << partial_if_not_exists? partial_on_database? partial_field_type? partial_field_value >>
+
+define_stmt =
+    | define_namespace_stmt
+    | define_database_stmt
+    | define_table_stmt
+    | define_edge_stmt
+    | define_type_stmt
+    | define_enum_stmt
+    | define_index_stmt
+    | define_module_stmt
+    | define_param_stmt
+
+use_stmt =
+    | kw_use (kw_database | kw_db) identifier
+
+stmt =
+    | define_stmt
+    | use_stmt
+    | kw_break
+    | kw_continue
+
+(* PROGRAM *)
+
+program =
+    | terminator* (stmt | exp) (terminator+ (stmt | exp))* terminator*

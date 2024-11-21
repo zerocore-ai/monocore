@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://github.com/appcypher/monocore" target="_blank">
-    <img src="https://raw.githubusercontent.com/appcypher/monocore/main/assets/monocore_logo.png" alt="monocore logo" width="100"></img>
+    <img src="https://raw.githubusercontent.com/appcypher/monocore/main/assets/monocore-thick-line-purple-gradient.svg" alt="monocore logo" width="100"></img>
   </a>
 
   <h1>monocore</h1>
@@ -98,8 +98,8 @@ monocore remove -g main
 
 3. Run in server mode:
 ```bash
-# Start the REST API server (default port: 3000)
-monocore serve --port 3000
+# Start the REST API server (default port: 3456)
+monocore serve --port 3456
 
 # Or use the default port
 monocore serve
@@ -125,20 +125,20 @@ Example API usage:
 
 ```bash
 # Start services
-curl -X POST http://localhost:3000/up \
+curl -X POST http://localhost:3456/up \
   -H "Content-Type: application/json" \
   -d @monocore.toml
 
 # Get service status
-curl http://localhost:3000/status
+curl http://localhost:3456/status
 
 # Stop services in a group
-curl -X POST http://localhost:3000/down \
+curl -X POST http://localhost:3456/down \
   -H "Content-Type: application/json" \
   -d '{"group": "main"}'
 
 # Remove services
-curl -X POST http://localhost:3000/remove \
+curl -X POST http://localhost:3456/remove \
   -H "Content-Type: application/json" \
   -d '{"services": ["counter", "date-service"]}'
 ```

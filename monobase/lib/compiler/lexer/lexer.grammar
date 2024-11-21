@@ -1,0 +1,317 @@
+
+(*
+ * Lexer grammar for the monoql language.
+ *
+ * Keywords and certain letter-based operators are supported as identifiers and handled by the parser.
+ *)
+
+(* COMMENTS *)
+
+comment = (* ignored *)
+    | /--[^\r\n]*/
+
+(* SPACES *)
+
+spaces = (* ignored *)
+    | /\s*\\\r?\n\s*/
+    | /[ \t]+/
+
+(* TERMINATORS *)
+
+terminator =
+    | ";"
+
+(* IDENTIFIER *)
+
+plain_identifier =
+    | /[a-zA-Z_][a-zA-Z0-9_]*/
+
+escaped_identifier =
+    | /`[a-zA-Z_][a-zA-Z0-9_]*`/
+
+variable =
+    | /$[a-zA-Z_][a-zA-Z0-9_]*/
+
+(* LITERALS *)
+
+digit =
+    | /[0-9]/
+
+bin_digit =
+    | "0"
+    | "1"
+
+oct_digit =
+    | /[0-7]/
+
+hex_digit =
+    | /[0-9a-fA-F]/
+    | /[a-f]/
+    | /[A-F]/
+
+digit_part =
+    | digit ("_"? digit)*
+
+exponent =
+    | ("e" | "E") ("+" | "-")? digit_part
+
+fraction =
+    | "." digit_part
+
+point_float =
+    | digit_part? fraction
+    | digit_part "."
+
+exponent_float =
+    | (digit_part | point_float) exponent
+
+dec_integer_lit =
+    | digit ("_"? digit)*
+
+bin_integer_lit =
+    | "0b" bin_digit+ ("_"? bin_digit)*
+
+oct_integer_lit =
+    | "0o" oct_digit+ ("_"? oct_digit)*
+
+hex_integer_lit =
+    | "0x" hex_digit+ ("_"? hex_digit)*
+
+float_lit =
+    | point_float
+    | exponent_float
+
+string_char =
+    | <any source character except "\\" or newline or the quote>
+
+string_escape_seq_char =
+    | "t"
+    | "n"
+    | "r"
+    | "'"
+    | "\""
+
+string_escape_seq =
+    | "\\" string_escape_seq_char
+    | "\\" "x" hex_digit hex_digit
+    | "\\" "u" hex_digit hex_digit hex_digit hex_digit
+    | "\\" "U" hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit
+
+string_item =
+    | string_char
+    | string_escape_seq
+
+string_lit =
+    | "'" string_item* "'"
+    | '"' string_item* '"'
+
+regex_char =
+    | <any source character except newline or "/">
+
+regex_escape_seq =
+    | "\\/"
+    | "\\" /./
+
+regex_item =
+    | regex_char
+    | regex_escape_seq
+
+regex_lit =
+    | "//" regex_item* "//" ("g" | "i" | "m" | "s" | "u" | "x")*
+
+byte_string_lit =
+    | "b'" string_item* "'"
+    | 'b"' string_item* '"'
+
+(* BLOCKS *)
+
+module_block =
+    | <preceded and intiated by (kw_define spaces kw_module spaces identifier kw_with)> /[.]*?/ (?="end" | "END")
+
+(* OPERATORS *)
+
+op_paren_open =
+    | "("
+
+op_paren_close =
+    | ")"
+
+op_bracket_open =
+    | "["
+
+op_bracket_close =
+    | "]"
+
+op_brace_open =
+    | "{"
+
+op_brace_close =
+    | "}"
+
+op_comma =
+    | ","
+
+op_scope =
+    | "::"
+
+op_colon =
+    | ":"
+
+op_assign_plus =
+    | "+="
+
+op_assign_minus =
+    | "-="
+
+op_assign_mul =
+    | "*="
+    | "×="
+
+op_assign_div =
+    | "/="
+    | "÷="
+
+op_assign_mod =
+    | "%="
+
+op_assign_pow =
+    | "**="
+
+op_assign_shl =
+    | "<<="
+
+op_assign_shr =
+    | ">>="
+
+op_assign_bit_and =
+    | "&="
+
+op_assign_bit_or =
+    | "|="
+
+op_assign_bit_xor =
+    | "^="
+
+op_assign_bit_not =
+    | "~="
+
+op_multi_arrow_right =
+    | "->>"
+
+op_multi_arrow_left =
+    | "<<-"
+
+op_arrow_right =
+    | "->"
+
+op_arrow_left =
+    | "<-"
+
+op_pow =
+    | "**"
+
+op_plus =
+    | "+"
+
+op_minus =
+    | "-"
+
+op_mul_lexer =
+    | "×"
+
+op_div =
+    | "/"
+    | "÷"
+
+op_mod =
+    | "%"
+
+op_match_lexer =
+    | "~"
+
+op_not_match_lexer =
+    | "!~"
+
+op_similarity =
+    | "<>"
+
+op_and_lexer =
+    | "&&"
+
+op_or_lexer =
+    | "||"
+
+op_eq =
+    | "=="
+
+op_is_lexer =
+    | "="
+
+op_is_not_lexer =
+    | "!="
+
+op_not_lexer =
+    | "!"
+
+op_lte =
+    | "<="
+
+op_gte =
+    | ">="
+
+op_lt =
+    | "<"
+
+op_gt =
+    | ">"
+
+op_contains_lexer =
+    | "∋"
+
+op_not_contains_lexer =
+    | "∌"
+
+op_contains_none_lexer =
+    | "⊅"
+
+op_contains_all_lexer =
+    | "⊇"
+
+op_contains_any_lexer =
+    | "⊃"
+
+op_safe_nav =
+    | "?."
+
+op_null_coalesce =
+    | "?:"
+
+op_shl =
+    | "<<"
+
+op_shr =
+    | ">>"
+
+op_bit_and =
+    | "&"
+
+op_bit_or =
+    | "|"
+
+op_bit_xor =
+    | "^"
+
+op_star =
+    | "*"
+
+op_dot =
+    | "."
+
+op_range_incl =
+    | "..="
+
+op_range =
+    | ".."
+
+op_optional =
+    | "?"

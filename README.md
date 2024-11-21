@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://github.com/appcypher/monocore" target="_blank">
-    <img src="https://raw.githubusercontent.com/appcypher/monocore/main/assets/monocore_logo.png" alt="monocore logo" width="100"></img>
+    <img src="https://raw.githubusercontent.com/appcypher/monocore/main/assets/monocore-thick-line-purple-gradient.svg" alt="monocore logo" width="100"></img>
   </a>
 
   <h1 align="center">monocore</h1>
@@ -34,9 +34,9 @@ All while keeping your system safe through VM-level isolation.
 monocore serve
 
 # Your AI agent can now safely:
-curl -X POST http://localhost:3000/up -d @sandbox.toml  # Launch secure VMs
-curl http://localhost:3000/status                       # Monitor execution
-curl -X POST http://localhost:3000/down                 # Clean up when done
+curl -X POST http://localhost:3456/up -d @sandbox.toml  # Launch secure VMs
+curl http://localhost:3456/status                       # Monitor execution
+curl -X POST http://localhost:3456/down                 # Clean up when done
 ```
 
 ## Why monocore?
@@ -71,15 +71,11 @@ Develop and test locally with instant feedback, then deploy to production with c
 2. **Start the sandbox server**
 
    ```sh
-   # Start the server on port 3000
-   monocore serve --port 3000
+   # Start the server on port 3456
+   monocore serve --port 3456
    ```
 
-   Your AI agent now has a secure execution environment for:
-   - Running untrusted code
-   - Generating visualizations
-   - Testing programs
-   - Executing system commands
+   Your AI agent now has a secure execution environment for its code execution needs!
 
 3. **Define your sandboxes**
 
@@ -133,12 +129,12 @@ Develop and test locally with instant feedback, then deploy to production with c
    Or via the REST API:
    ```sh
    # Launch a sandbox
-   curl -X POST http://localhost:3000/up \
+   curl -X POST http://localhost:3456/up \
      -H "Content-Type: application/json" \
      -d @monocore.toml
 
    # Check execution status
-   curl http://localhost:3000/status | jq '.services[] | {name, status, metrics}'
+   curl http://localhost:3456/status | jq '.services[] | {name, status, metrics}'
    ```
 
 ## Features in Action
