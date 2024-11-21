@@ -1600,7 +1600,7 @@ dependencies = [
  "tar",
  "tempfile",
  "test-log",
- "thiserror 2.0.1",
+ "thiserror 2.0.3",
  "tokio",
  "toml 0.8.19",
  "tracing",
@@ -1627,7 +1627,7 @@ dependencies = [
  "monoutils-store",
  "serde",
  "serde_json",
- "thiserror 2.0.1",
+ "thiserror 2.0.3",
  "tokio",
  "typed-path",
 ]
@@ -1658,7 +1658,7 @@ dependencies = [
  "lru",
  "serde",
  "serde_ipld_dagcbor",
- "thiserror 2.0.1",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-util",
 ]
@@ -2789,11 +2789,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.1"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07c1e40dd48a282ae8edc36c732cbc219144b87fb6a4c7316d611c6b1f06ec0c"
+checksum = "c006c85c7651b3cf2ada4584faa36773bd07bac24acfb39f3c431b36d7e667aa"
 dependencies = [
- "thiserror-impl 2.0.1",
+ "thiserror-impl 2.0.3",
 ]
 
 [[package]]
@@ -2809,9 +2809,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.1"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "874aa7e446f1da8d9c3a5c95b1c5eb41d800045252121dc7f8e0ba370cee55f5"
+checksum = "f077553d607adc1caf65430528a576c757a71ed73944b66ebb58ef2bbd243568"
 dependencies = [
  "proc-macro2",
  "quote",
