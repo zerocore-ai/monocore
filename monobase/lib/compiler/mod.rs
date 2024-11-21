@@ -6,17 +6,6 @@
 //! - A lexer that tokenizes source code
 //! - A parser that builds an AST from tokens
 //! - Token definitions and span tracking
-//!
-//! # Example
-//!
-//! ```
-//! use monobase::compiler::Lexer;
-//!
-//! let mut lexer = Lexer::new("select * from users");
-//! while let Some(token) = lexer.next_token() {
-//!     println!("{:?}", token);
-//! }
-//! ```
 
 mod ast;
 mod lexer;
