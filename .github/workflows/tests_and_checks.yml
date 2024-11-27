@@ -219,7 +219,7 @@ jobs:
 
       - name: Run Tests
         run: |
-          sudo bash -c 'export LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${LIBRARY_PATH} && \
-          export LD_LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${LD_LIBRARY_PATH} && \
-          cargo test && \
-          cargo test -- --ignored'
+          sudo -E bash -c 'export LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release && \
+          export LD_LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release && \
+          /home/runner/.cargo/bin/cargo test && \
+          /home/runner/.cargo/bin/cargo test -- --ignored'
