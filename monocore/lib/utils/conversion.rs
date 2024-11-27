@@ -81,14 +81,14 @@ pub fn to_null_terminated_c_array(strings: &[CString]) -> Vec<*const c_char> {
 ///
 /// ## Examples:
 /// ```
-/// use monocore::utils::sanitize_repo_name;
+/// use monocore::utils::sanitize_name_for_path;
 ///
-/// assert_eq!(sanitize_repo_name("library/alpine"), "library_alpine");
-/// assert_eq!(sanitize_repo_name("user/repo/name"), "user_repo_name");
-/// assert_eq!(sanitize_repo_name("my:weird@repo"), "my_weird_repo");
-/// assert_eq!(sanitize_repo_name(".hidden/repo."), ".hidden_repo.");
+/// assert_eq!(sanitize_name_for_path("library/alpine"), "library_alpine");
+/// assert_eq!(sanitize_name_for_path("user/repo/name"), "user_repo_name");
+/// assert_eq!(sanitize_name_for_path("my:weird@repo"), "my_weird_repo");
+/// assert_eq!(sanitize_name_for_path(".hidden/repo."), ".hidden_repo.");
 /// ```
-pub fn sanitize_repo_name(repo_name: &str) -> String {
+pub fn sanitize_name_for_path(repo_name: &str) -> String {
     // First replace forward slashes with double underscore
     let with_safe_slashes = repo_name.replace('/', "__");
 
@@ -207,8 +207,8 @@ pub fn parse_image_ref(image_ref: &str) -> MonocoreResult<(String, String, Strin
 
     let fs_name = format!(
         "{}__{}",
-        sanitize_repo_name(&qualified_repo),
-        sanitize_repo_name(tag)
+        sanitize_name_for_path(&qualified_repo),
+        sanitize_name_for_path(tag)
     );
 
     Ok((qualified_repo, tag.to_string(), fs_name))
@@ -223,29 +223,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sanitize_repo_name() {
+    fn test_sanitize_name_for_path() {
         // Test basic repository names
-        assert_eq!(sanitize_repo_name("library/alpine"), "library_alpine");
-        assert_eq!(sanitize_repo_name("user/repo/name"), "user_repo_name");
+        assert_eq!(sanitize_name_for_path("library/alpine"), "library_alpine");
+        assert_eq!(sanitize_name_for_path("user/repo/name"), "user_repo_name");
 
         // Test special characters
-        assert_eq!(sanitize_repo_name("my:weird@repo"), "my_weird_repo");
-        assert_eq!(sanitize_repo_name("repo#with$chars"), "repo_with_chars");
-        assert_eq!(sanitize_repo_name(".hidden/repo."), ".hidden_repo.");
+        assert_eq!(sanitize_name_for_path("my:weird@repo"), "my_weird_repo");
+        assert_eq!(sanitize_name_for_path("repo#with$chars"), "repo_with_chars");
+        assert_eq!(sanitize_name_for_path(".hidden/repo."), ".hidden_repo.");
 
         // Test leading/trailing whitespace
-        assert_eq!(sanitize_repo_name(" spaces /repo "), "spaces_repo");
+        assert_eq!(sanitize_name_for_path(" spaces /repo "), "spaces_repo");
 
         // Test multiple consecutive separators
         assert_eq!(
-            sanitize_repo_name("multiple___underscores"),
+            sanitize_name_for_path("multiple___underscores"),
             "multiple_underscores"
         );
-        assert_eq!(sanitize_repo_name("weird////slashes"), "weird_slashes");
+        assert_eq!(sanitize_name_for_path("weird////slashes"), "weird_slashes");
 
         // Test mixed cases
         assert_eq!(
-            sanitize_repo_name("my.weird/repo@with/special:chars"),
+            sanitize_name_for_path("my.weird/repo@with/special:chars"),
             "my.weird_repo_with_special_chars"
         );
     }

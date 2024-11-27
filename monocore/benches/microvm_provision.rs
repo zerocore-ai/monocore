@@ -23,9 +23,9 @@ fn benchmark_microvm_provision(c: &mut Criterion) {
     c.bench_function("microvm_nop", |b| {
         b.iter(|| {
             let output = Command::new("../target/release/examples/microvm_nop")
-                .output()
+                .status()
                 .expect("Failed to execute microvm_nop");
-            assert!(output.status.success());
+            assert!(output.success());
         })
     });
 }

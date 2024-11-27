@@ -125,10 +125,10 @@ async fn print_service_status(orchestrator: &Orchestrator) -> anyhow::Result<()>
             .unwrap_or(0);
 
         // Format CPU as percentage
-        let cpu_pct = (*status.get_state().get_metrics().get_cpu_usage() * 100.0).ceil();
+        let cpu_pct = (status.get_state().get_metrics().get_cpu_usage() * 100.0).ceil();
         // Format memory in MiB (1 MiB = 1024 * 1024 bytes)
         let mem_mib =
-            (*status.get_state().get_metrics().get_memory_usage() as f64) / (1024.0 * 1024.0);
+            (status.get_state().get_metrics().get_memory_usage() as f64) / (1024.0 * 1024.0);
 
         println!(
             "{:<15} {:<10} {:<8} {:<8} {:<10} {:<10} {:<15} {:<15} {:<10} {:<10}",

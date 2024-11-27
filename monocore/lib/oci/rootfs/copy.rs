@@ -4,6 +4,9 @@ use tokio::fs;
 
 use crate::{oci::rootfs::PermissionGuard, MonocoreError, MonocoreResult};
 
+#[cfg(target_os = "linux")]
+use std::process::Command;
+
 //--------------------------------------------------------------------------------------------------
 // Constants
 //--------------------------------------------------------------------------------------------------
@@ -24,6 +27,10 @@ const WHITEOUT_OPAQUE: &str = ".wh..wh..opq";
 /// File permissions are preserved using a PermissionGuard to handle restricted permissions
 /// during the copy operation.
 ///
+/// # Platform-specific behavior
+/// - On Linux: Uses `rsync` for efficient copying if available, falling back to manual copy if rsync is not found
+/// - On other platforms: Uses manual copy implementation
+///
 /// # Arguments
 /// * `source_dir` - Source directory to copy from
 /// * `dest_dir` - Destination directory to copy to
@@ -35,7 +42,118 @@ const WHITEOUT_OPAQUE: &str = ".wh..wh..opq";
 /// * Failed to create destination directory
 /// * Failed to copy files
 /// * Failed to set permissions
+/// * On Linux: Failed to execute rsync command (when using rsync)
 pub async fn copy(
+    source_dir: impl AsRef<Path>,
+    dest_dir: impl AsRef<Path>,
+    process_whiteouts: bool,
+) -> MonocoreResult<()> {
+    #[cfg(target_os = "linux")]
+    {
+        // Use rsync on Linux
+        copy_with_rsync(source_dir.as_ref(), dest_dir.as_ref(), process_whiteouts).await
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        // Use existing copy logic for non-Linux platforms
+        copy_internal(source_dir, dest_dir, process_whiteouts).await
+    }
+}
+
+#[cfg(target_os = "linux")]
+async fn copy_with_rsync(
+    source_dir: &Path,
+    dest_dir: &Path,
+    process_whiteouts: bool,
+) -> MonocoreResult<()> {
+    // Create destination directory
+    fs::create_dir_all(dest_dir).await?;
+
+    // Check if rsync is available
+    if Command::new("rsync").arg("--version").output().is_err() {
+        tracing::warn!("rsync not found, falling back to manual copy");
+        return copy_internal(source_dir, dest_dir, process_whiteouts).await;
+    }
+
+    // Process whiteouts first if needed
+    if process_whiteouts {
+        process_whiteout_files(source_dir, dest_dir).await?;
+    }
+
+    // Ensure source path ends with "/" to copy contents
+    let source_path = source_dir.display().to_string() + "/";
+
+    // Build rsync command with appropriate options
+    let status = Command::new("rsync")
+        .arg("-a") // Archive mode (preserves permissions, timestamps, etc)
+        .arg("-X") // Preserve extended attributes
+        .arg("-A") // Preserve ACLs
+        .arg("--numeric-ids") // Don't map uid/gid values by user/group name
+        .arg(&source_path)
+        .arg(dest_dir)
+        .status()
+        .map_err(|e| MonocoreError::LayerHandling {
+            source: e,
+            layer: source_dir.display().to_string(),
+        })?;
+
+    if !status.success() {
+        return Err(MonocoreError::LayerHandling {
+            source: std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("rsync failed with status: {}", status),
+            ),
+            layer: source_dir.display().to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+async fn process_whiteout_files(source_dir: &Path, dest_dir: &Path) -> MonocoreResult<()> {
+    let mut stack = vec![source_dir.to_path_buf()];
+
+    while let Some(current_path) = stack.pop() {
+        let mut entries = fs::read_dir(&current_path).await?;
+        let target_dir = dest_dir.join(current_path.strip_prefix(source_dir).unwrap());
+
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+
+            if file_name_str.starts_with(WHITEOUT_PREFIX) {
+                if file_name_str == WHITEOUT_OPAQUE {
+                    // Handle opaque whiteout
+                    if target_dir.exists() {
+                        fs::remove_dir_all(&target_dir).await?;
+                    }
+                    fs::create_dir_all(&target_dir).await?;
+                } else {
+                    // Handle regular whiteout
+                    let original_name = file_name_str.trim_start_matches(WHITEOUT_PREFIX);
+                    let target_path = target_dir.join(original_name);
+
+                    if target_path.exists() {
+                        if target_path.is_dir() {
+                            fs::remove_dir_all(&target_path).await?;
+                        } else {
+                            fs::remove_file(&target_path).await?;
+                        }
+                    }
+                }
+            } else if path.is_dir() {
+                stack.push(path);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn copy_internal(
     source_dir: impl AsRef<Path>,
     dest_dir: impl AsRef<Path>,
     process_whiteouts: bool,

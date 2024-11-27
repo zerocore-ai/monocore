@@ -141,9 +141,9 @@ async fn main() -> MonocoreResult<()> {
                     .unwrap_or(0);
 
                 // Format CPU as percentage - dereference the f64
-                let cpu_pct = (*status.get_state().get_metrics().get_cpu_usage() * 100.0).ceil();
+                let cpu_pct = status.get_state().get_metrics().get_cpu_usage();
                 // Format memory in MiB - dereference the u64 before casting
-                let mem_mib = (*status.get_state().get_metrics().get_memory_usage() as f64)
+                let mem_mib = (status.get_state().get_metrics().get_memory_usage() as f64)
                     / (1024.0 * 1024.0);
 
                 println!(
@@ -159,7 +159,7 @@ async fn main() -> MonocoreResult<()> {
                         .get_state()
                         .get_group_ip()
                         .map_or_else(|| std::net::Ipv4Addr::LOCALHOST, |ip| ip),
-                    format!("{}%", cpu_pct as u64),
+                    format!("{:.2}%", cpu_pct),
                     format!("{}MiB", mem_mib.ceil() as u64)
                 );
             }

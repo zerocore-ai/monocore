@@ -117,16 +117,17 @@ impl Orchestrator {
                 .home_dir
                 .join(ROOTFS_SUBDIR)
                 .join(REFERENCE_SUBDIR)
-                .join(&repo_tag)
-                .join(MERGED_SUBDIR);
+                .join(&repo_tag);
+
+            let merged_rootfs = reference_rootfs.join(MERGED_SUBDIR);
 
             // First try using existing reference rootfs
-            if reference_rootfs.exists() {
+            if merged_rootfs.exists() {
                 tracing::info!(
                     "Using existing reference rootfs from {}",
-                    reference_rootfs.display()
+                    merged_rootfs.display()
                 );
-                rootfs::copy(&reference_rootfs, &service_rootfs, false).await?;
+                rootfs::copy(&merged_rootfs, &service_rootfs, false).await?;
             } else {
                 // Check if image layers exist and try merging
                 let repo_dir = self
@@ -142,18 +143,18 @@ impl Orchestrator {
                     );
 
                     // Create parent directories
-                    fs::create_dir_all(reference_rootfs.parent().unwrap()).await?;
+                    fs::create_dir_all(&reference_rootfs).await?;
 
                     // Merge layers into reference rootfs
                     rootfs::merge(
                         &self.home_dir.join(OCI_SUBDIR),
-                        &reference_rootfs.parent().unwrap(),
+                        &reference_rootfs,
                         &repo_tag,
                     )
                     .await?;
 
                     // Copy merged rootfs to service rootfs
-                    rootfs::copy(&reference_rootfs, &service_rootfs, false).await?;
+                    rootfs::copy(&merged_rootfs, &service_rootfs, false).await?;
                 } else {
                     // Need to pull the image first
                     tracing::info!(
@@ -165,18 +166,21 @@ impl Orchestrator {
                         .await?;
 
                     // Create reference rootfs from pulled image
-                    fs::create_dir_all(reference_rootfs.parent().unwrap()).await?;
+                    fs::create_dir_all(&reference_rootfs).await?;
                     rootfs::merge(
                         &self.home_dir.join(OCI_SUBDIR),
-                        &reference_rootfs.parent().unwrap(),
+                        &reference_rootfs,
                         &repo_tag,
                     )
                     .await?;
 
                     // Copy to service rootfs
-                    rootfs::copy(&reference_rootfs, &service_rootfs, false).await?;
+                    rootfs::copy(&merged_rootfs, &service_rootfs, false).await?;
                 }
             }
+
+            // Unmount reference rootfs
+            rootfs::unmount(&reference_rootfs).await?;
         }
 
         // Assign IP address to the group

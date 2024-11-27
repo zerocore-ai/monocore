@@ -308,20 +308,60 @@ impl Supervisor {
         let metrics_runtime_state_path = self.runtime_state_path.clone();
         let pid = child.id().unwrap();
         let metrics_handle = tokio::spawn(async move {
-            let mut sys = System::new_all();
-            let mut interval = interval(Duration::from_secs(2)); // Update every 2 seconds
+            let mut sys = System::new();
+
+            // Initial refresh to start CPU measurement
+            sys.refresh_all();
+            let mut interval = interval(Duration::from_secs(2));
 
             loop {
+                interval.tick().await;
                 sys.refresh_all();
 
                 if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) {
-                    let cpu_usage = process.cpu_usage();
+                    // Get CPU usage using ps command because sysinfo is not accurate
+                    let output = match Command::new("ps")
+                        .args(["-p", &pid.to_string(), "-o", "%cpu="])
+                        .output()
+                        .await
+                    {
+                        Ok(output) => output,
+                        Err(e) => {
+                            error!("Failed to execute ps command: {}", e);
+                            continue;
+                        }
+                    };
+
+                    let cpu_usage = match String::from_utf8_lossy(&output.stdout)
+                        .trim()
+                        .parse::<f32>()
+                    {
+                        Ok(usage) => usage,
+                        Err(e) => {
+                            error!("Failed to parse CPU usage: {}", e);
+                            continue;
+                        }
+                    };
+
                     let memory_usage = process.memory();
+                    let disk_usage = process.disk_usage();
 
                     // Update metrics in state
                     let mut state = metrics_state.lock().await;
                     state.get_metrics_mut().set_cpu_usage(cpu_usage);
                     state.get_metrics_mut().set_memory_usage(memory_usage);
+                    state
+                        .get_metrics_mut()
+                        .set_disk_read_bytes(disk_usage.read_bytes);
+                    state
+                        .get_metrics_mut()
+                        .set_disk_write_bytes(disk_usage.written_bytes);
+                    state
+                        .get_metrics_mut()
+                        .set_total_disk_read_bytes(disk_usage.total_read_bytes);
+                    state
+                        .get_metrics_mut()
+                        .set_total_disk_write_bytes(disk_usage.total_written_bytes);
 
                     // Save updated state
                     if let Err(e) = state.save(&metrics_runtime_state_path).await {
@@ -331,8 +371,6 @@ impl Supervisor {
                     // Process no longer exists
                     break;
                 }
-
-                interval.tick().await;
             }
         });
 

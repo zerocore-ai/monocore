@@ -15,5 +15,13 @@ private
 # Build dirs
 build/
 monocore/build/
-diff
+
+# Helper files
+diff.txt
+commit-msg.md
+commit-msg.txt
+pr.md
 pr.txt
+
+# monocore.toml
+monocore.toml

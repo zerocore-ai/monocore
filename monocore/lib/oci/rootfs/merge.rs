@@ -1,55 +1,42 @@
-#[cfg(all(unix, not(target_os = "linux")))]
-use std::path::PathBuf;
-use std::{os::unix::fs::PermissionsExt, path::Path};
+use std::path::{Path, PathBuf};
 
-#[cfg(all(unix, not(target_os = "linux")))]
 use futures::future::join_all;
 use oci_spec::image::ImageManifest;
 use tokio::fs;
 
-#[cfg(all(unix, not(target_os = "linux")))]
-use crate::MonocoreError;
 use crate::{
-    utils::{self, MERGED_SUBDIR, OCI_MANIFEST_FILENAME, OCI_REPO_SUBDIR},
-    MonocoreResult,
+    utils::{self, MERGED_SUBDIR, OCI_LAYER_SUBDIR, OCI_MANIFEST_FILENAME, OCI_REPO_SUBDIR},
+    MonocoreError, MonocoreResult,
 };
-
-use super::PermissionGuard;
 
 //--------------------------------------------------------------------------------------------------
 // Constants
 //--------------------------------------------------------------------------------------------------
 
-#[cfg(all(unix, not(target_os = "linux")))]
 const EXTRACTED_LAYER_EXTENSION: &str = "extracted";
 
 //--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------
 
-/// Merges OCI image layers into a single directory tree.
+/// Merges OCI image layers into a single rootfs directory.
 ///
-/// This function:
-/// 1. Reads the OCI manifest to determine layer order
-/// 2. Extracts each layer (if not already extracted)
-/// 3. Merges layers in order, handling whiteouts and permissions
-///
-/// On non-Linux systems, this uses a copy-based approach that:
-/// - Processes whiteouts to remove files/directories
-/// - Preserves file permissions and special files (FIFOs, symlinks)
-/// - Handles restricted permissions during merging
+/// Uses copy-based merging by default on all platforms. On Linux with the overlayfs feature
+/// enabled, can optionally use overlayfs for more efficient merging.
 ///
 /// # Arguments
 /// * `oci_dir` - Base directory containing OCI image data
-/// * `dest_dir` - Directory where merged layers will be placed
+/// * `dest_dir` - Destination directory for the merged layers
 /// * `repo_tag` - Repository tag identifying the image to merge
 ///
-/// # Errors
-/// Returns error if:
-/// * Failed to read/parse manifest
-/// * Failed to extract layers
-/// * Failed to merge layers
-/// * Permission errors during merge
+/// # Directory structure
+/// Creates the following structure under dest_dir:
+/// ```text
+/// dest_dir/
+/// ├── merged/  - Final merged filesystem
+/// ├── upper/   - Overlayfs upper dir (Linux with overlayfs only)
+/// └── work/    - Overlayfs work dir (Linux with overlayfs only)
+/// ```
 pub async fn merge(
     oci_dir: impl AsRef<Path>,
     dest_dir: impl AsRef<Path>,
@@ -60,7 +47,7 @@ pub async fn merge(
 
     let result = merge_internal(oci_dir, dest_dir, repo_tag).await;
     if result.is_err() {
-        match unmount(dest_dir).await {
+        match super::unmount(dest_dir).await {
             Ok(_) => tracing::info!("Cleanup successful after merge error"),
             Err(e) => tracing::error!("Failed to cleanup after merge error: {:?}", e),
         }
@@ -68,83 +55,8 @@ pub async fn merge(
     result
 }
 
-/// Unmounts and cleans up a merged directory tree.
-///
-/// This function:
-/// 1. Makes all paths temporarily accessible
-/// 2. Recursively removes the merged directory tree
-/// 3. Handles cleanup of special files and restricted permissions
-///
-/// # Arguments
-/// * `dest_dir` - Directory containing the merged layers to clean up
-///
-/// # Errors
-/// Returns error if:
-/// * Failed to fix permissions for cleanup
-/// * Failed to remove directory tree
-pub async fn unmount(dest_dir: impl AsRef<Path>) -> MonocoreResult<()> {
-    let merged_dir = dest_dir.as_ref().join(MERGED_SUBDIR);
-    if merged_dir.exists() {
-        let mut perm_guard = PermissionGuard::new();
-
-        // Recursively check and fix permissions where needed
-        let mut stack = vec![merged_dir.clone()];
-        while let Some(current_path) = stack.pop() {
-            // Check current permissions
-            if let Ok(metadata) = fs::metadata(&current_path).await {
-                let mode = metadata.permissions().mode();
-                let is_readable = mode & 0o444 != 0; // Check read permission
-                let is_writable = mode & 0o222 != 0; // Check write permission
-                let is_executable = mode & 0o111 != 0; // Check execute permission for directories
-
-                // Only modify permissions if necessary
-                if !is_readable || !is_writable || (!is_executable && metadata.is_dir()) {
-                    tracing::debug!(
-                            "Fixing permissions for {}: {} ({:#o}) - readable: {}, writable: {}, executable: {}",
-                            current_path.display(),
-                            utils::format_mode(mode),
-                            mode,
-                            is_readable,
-                            is_writable,
-                            is_executable
-                        );
-                    perm_guard.make_readable_writable(&current_path).await?;
-                }
-            } else {
-                tracing::warn!("Could not read metadata for {}", current_path.display());
-                // Still try to make it accessible as a fallback
-                perm_guard.make_readable_writable(&current_path).await?;
-            }
-
-            // Process directory contents
-            if let Ok(mut entries) = fs::read_dir(&current_path).await {
-                while let Ok(Some(entry)) = entries.next_entry().await {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        stack.push(path);
-                    }
-                }
-            } else {
-                tracing::warn!(
-                    "Could not read directory contents of {}",
-                    current_path.display()
-                );
-            }
-        }
-
-        // Now remove the directory tree
-        match fs::remove_dir_all(&merged_dir).await {
-            Ok(_) => tracing::debug!("Successfully removed {}", merged_dir.display()),
-            Err(e) => {
-                tracing::error!("Failed to remove {}: {}", merged_dir.display(), e);
-                return Err(e.into());
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Internal implementation of the merge operation
+// Linux-specific merge implementation
+#[cfg(target_os = "linux")]
 async fn merge_internal(oci_dir: &Path, dest_dir: &Path, repo_tag: &str) -> MonocoreResult<()> {
     // Read manifest to get layer order
     let manifest_path = oci_dir
@@ -155,30 +67,136 @@ async fn merge_internal(oci_dir: &Path, dest_dir: &Path, repo_tag: &str) -> Mono
     let manifest_contents = fs::read_to_string(&manifest_path).await?;
     let manifest: ImageManifest = serde_json::from_str(&manifest_contents)?;
 
-    // Create destination directory if it doesn't exist
-    fs::create_dir_all(dest_dir).await?;
-
-    #[cfg(target_os = "linux")]
+    // Try overlayfs first if feature is enabled
+    #[cfg(feature = "overlayfs")]
     {
-        merge_overlayfs(&manifest, oci_dir, dest_dir).await
+        match merge_overlayfs(&manifest, oci_dir, dest_dir).await {
+            Ok(()) => {
+                tracing::info!("Overlayfs merge successful");
+                return Ok(());
+            }
+            Err(e) => {
+                tracing::warn!("Overlayfs merge failed, falling back to copy merge: {}", e);
+            }
+        }
     }
 
-    #[cfg(not(target_os = "linux"))]
-    {
-        merge_copy(&manifest, oci_dir, dest_dir).await
-    }
+    // Fall back to copy merge
+    merge_copy(&manifest, oci_dir, dest_dir).await
 }
 
-#[cfg(target_os = "linux")]
+// Non-Linux merge implementation (copy-only)
+#[cfg(not(target_os = "linux"))]
+async fn merge_internal(oci_dir: &Path, dest_dir: &Path, repo_tag: &str) -> MonocoreResult<()> {
+    let manifest_path = oci_dir
+        .join(OCI_REPO_SUBDIR)
+        .join(repo_tag)
+        .join(OCI_MANIFEST_FILENAME);
+
+    let manifest_contents = fs::read_to_string(&manifest_path).await?;
+    let manifest: ImageManifest = serde_json::from_str(&manifest_contents)?;
+
+    merge_copy(&manifest, oci_dir, dest_dir).await
+}
+
+// Linux-specific overlayfs implementation
+#[cfg(all(target_os = "linux", feature = "overlayfs"))]
 async fn merge_overlayfs(
-    _manifest: &ImageManifest,
-    _oci_dir: &Path,
-    _dest_dir: &Path,
+    manifest: &ImageManifest,
+    oci_dir: &Path,
+    dest_dir: &Path,
 ) -> MonocoreResult<()> {
-    todo!("Merging currently not supported on Linux")
+    use crate::utils::OCI_LAYER_SUBDIR;
+
+    let merged_dir = dest_dir.join(MERGED_SUBDIR);
+    fs::create_dir_all(&merged_dir).await?;
+
+    // Create unique work and upper directories using a timestamp
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+
+    let work_dir = dest_dir.join(format!("work_{}", timestamp));
+    let upper_dir = dest_dir.join(format!("upper_{}", timestamp));
+    fs::create_dir_all(&work_dir).await?;
+    fs::create_dir_all(&upper_dir).await?;
+
+    // Create futures for layer extraction
+    let extraction_futures: Vec<_> = manifest
+        .layers()
+        .iter()
+        .rev() // Reverse order for overlayfs
+        .map(|layer| {
+            let tar_path = oci_dir
+                .join(OCI_LAYER_SUBDIR)
+                .join(utils::sanitize_name_for_path(&layer.digest().to_string()));
+
+            let layer_path = tar_path.with_extension(EXTRACTED_LAYER_EXTENSION);
+
+            async move {
+                if !layer_path.exists() {
+                    extract_layer(&tar_path, &layer_path).await?;
+                }
+                Ok::<String, MonocoreError>(layer_path.to_string_lossy().into_owned())
+            }
+        })
+        .collect();
+
+    // Wait for all extractions to complete
+    let lower_dirs = join_all(extraction_futures)
+        .await
+        .into_iter()
+        .collect::<MonocoreResult<Vec<_>>>()?;
+
+    // Build mount options with index=off
+    let mount_opts = format!(
+        "index=off,lowerdir={},upperdir={},workdir={}",
+        lower_dirs.join(":"),
+        upper_dir.display(),
+        work_dir.display()
+    );
+
+    // Try to mount overlayfs
+    let status = Command::new("mount")
+        .arg("-t")
+        .arg("overlay")
+        .arg("overlay")
+        .arg("-o")
+        .arg(&mount_opts)
+        .arg(&merged_dir)
+        .status()?;
+
+    if !status.success() {
+        // Check if overlayfs module is available
+        let modules = fs::read_to_string("/proc/filesystems")
+            .await
+            .unwrap_or_default();
+        if !modules.contains("overlay") {
+            tracing::error!("Overlayfs not available in kernel");
+            return Err(MonocoreError::LayerHandling {
+                source: std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "overlayfs not supported by kernel",
+                ),
+                layer: "overlayfs".to_string(),
+            });
+        }
+
+        tracing::error!("Failed to mount overlayfs with options: {}", mount_opts);
+        return Err(MonocoreError::LayerHandling {
+            source: std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to mount overlayfs: {}", status),
+            ),
+            layer: "overlayfs".to_string(),
+        });
+    }
+
+    Ok(())
 }
 
-#[cfg(all(unix, not(target_os = "linux")))]
+// Copy-based merge implementation (available on all platforms)
 async fn merge_copy(
     manifest: &ImageManifest,
     oci_dir: &Path,
@@ -191,9 +209,12 @@ async fn merge_copy(
     let extraction_futures: Vec<_> = manifest
         .layers()
         .iter()
-        .enumerate() // Add index to each layer
+        .enumerate()
         .map(|(index, layer)| {
-            let layer_path = oci_dir.join("layer").join(layer.digest().to_string());
+            let layer_path = oci_dir
+                .join(OCI_LAYER_SUBDIR)
+                .join(utils::sanitize_name_for_path(layer.digest().as_ref()));
+
             let extracted_path = layer_path.with_extension(EXTRACTED_LAYER_EXTENSION);
 
             async move {
@@ -215,19 +236,33 @@ async fn merge_copy(
     // Sort by index to maintain layer order
     extracted_paths.sort_by_key(|(idx, _)| *idx);
 
-    // Apply layers in order, discarding the indices
+    // Apply layers in order
     for (_, path) in extracted_paths {
         tracing::info!("Applying layer {}", path.display());
         super::copy(&path, &merged_dir, true).await?;
     }
 
-    tracing::debug!("Merged layers into {}", merged_dir.display());
-
     Ok(())
 }
 
-/// Extracts a tar.gz layer to the specified path
-#[cfg(all(unix, not(target_os = "linux")))]
+/// Extracts a tar.gz layer to the specified path.
+/// Handles decompression and unpacking of OCI layer archives.
+///
+/// # Arguments
+/// * `layer_path` - Path to the compressed layer archive
+/// * `extract_path` - Directory to extract the layer into
+///
+/// # Notes
+/// - Runs extraction in a blocking task to avoid blocking the async runtime
+/// - Creates the extract directory if it doesn't exist
+/// - Preserves file permissions and attributes during extraction
+///
+/// # Errors
+/// Returns error if:
+/// - Failed to open layer archive
+/// - Failed to decompress gzip data
+/// - Failed to extract tar contents
+/// - Failed to create extract directory
 async fn extract_layer(layer_path: &Path, extract_path: &Path) -> MonocoreResult<()> {
     fs::create_dir_all(extract_path).await?;
 
@@ -265,11 +300,14 @@ async fn extract_layer(layer_path: &Path, extract_path: &Path) -> MonocoreResult
 // Tests
 //--------------------------------------------------------------------------------------------------
 
-#[cfg(all(test, unix, not(target_os = "linux")))]
+#[cfg(not(feature = "overlayfs"))]
+#[cfg(test)]
 mod tests {
-    use std::os::unix::fs::FileTypeExt;
+    use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 
     use tempfile::tempdir;
+
+    use crate::oci::rootfs;
 
     use super::*;
 
@@ -320,7 +358,7 @@ mod tests {
         );
 
         // Cleanup
-        unmount(dest_dir).await?;
+        rootfs::remove(dest_dir).await?;
 
         Ok(())
     }
@@ -426,13 +464,13 @@ mod tests {
         verify_perms(&fifo, 0o644)?; // standard fifo perms
 
         // Cleanup
-        unmount(dest_dir).await?;
+        rootfs::remove(dest_dir).await?;
 
         Ok(())
     }
 
     mod helper {
-        use std::str::FromStr;
+        use std::{os::unix::fs::PermissionsExt, str::FromStr};
 
         use flate2::{write::GzEncoder, Compression};
         use nix::{sys::stat::Mode, unistd};
@@ -449,18 +487,18 @@ mod tests {
         /// ```text
         /// oci/
         /// ├── layer/
-        /// │   ├── sha256:1111... (Layer 1 - Base)
+        /// │   ├── sha256_1111... (Layer 1 - Base)
         /// │   │   ├── file1.txt         ("original content")
         /// │   │   ├── file2.txt         ("keep this file")
         /// │   │   └── dir1/
         /// │   │       ├── inside1.txt   ("inside1")
         /// │   │       └── inside2.txt   ("inside2")
         /// │   │
-        /// │   ├── sha256:2222... (Layer 2 - Regular Whiteout)
+        /// │   ├── sha256_2222... (Layer 2 - Regular Whiteout)
         /// │   │   ├── .wh.file1.txt    (removes file1.txt)
         /// │   │   └── file3.txt        ("new file")
         /// │   │
-        /// │   └── sha256:3333... (Layer 3 - Opaque Whiteout)
+        /// │   └── sha256_3333... (Layer 3 - Opaque Whiteout)
         /// │       └── dir1/
         /// │           ├── .wh..wh..opq  (hides all contents of dir1)
         /// │           └── new_file.txt  ("new content")
@@ -493,11 +531,11 @@ mod tests {
 
             // Create layer directories and their content
             let layer_digests = vec![
-                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                "sha256_1111111111111111111111111111111111111111111111111111111111111111"
                     .to_string(),
-                "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+                "sha256_2222222222222222222222222222222222222222222222222222222222222222"
                     .to_string(),
-                "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+                "sha256_3333333333333333333333333333333333333333333333333333333333333333"
                     .to_string(),
             ];
 
@@ -574,7 +612,7 @@ mod tests {
                         .iter()
                         .map(|digest_str| {
                             let digest =
-                                Sha256Digest::from_str(digest_str.trim_start_matches("sha256:"))
+                                Sha256Digest::from_str(digest_str.trim_start_matches("sha256_"))
                                     .expect("Invalid digest");
 
                             DescriptorBuilder::default()
@@ -605,8 +643,8 @@ mod tests {
         ///
         /// Layer Structure:
         /// ```text
-        /// Layer 1 (Base Layer - sha256:4444...)
-        /// ├── no_read_file.txt     (0o200, w-------)  "no read permission content"
+        /// Layer 1 (Base Layer - sha256_4444...)
+        /// ├���─ no_read_file.txt     (0o200, w-------)  "no read permission content"
         /// ├── target.txt           (0o644, rw-r--r--) "target file content"
         /// ├── test.fifo            (0o644, rw-r--r--) [named pipe]
         /// ├── no_read_dir/         (0o311, --x--x--x)
@@ -614,14 +652,14 @@ mod tests {
         /// ├── no_write_dir/        (0o555, r-xr-xr-x)
         /// │   └── protected.txt    (0o444, r--r--r--) "write protected content"
         /// ├── no_perm_dir/         (0o000, ---------)
-        /// │   └── hidden.txt       (0o644, rw-r--r--) "hidden content"
+        /// │   └���─ hidden.txt       (0o644, rw-r--r--) "hidden content"
         /// ├── blocked_dir/         (0o000, ---------)
         /// │   └── inner_dir/       (0o777, rwxrwxrwx)
         /// │       └── nested.txt   (0o666, rw-rw-rw-) "nested file content"
         /// ├── subdir/              (0o755, rwxr-xr-x)
         /// │   └── target.txt       (0o644, rw-r--r--) "target in subdirectory"
         ///
-        /// Layer 2 (Symlinks Layer - sha256:5555...)
+        /// Layer 2 (Symlinks Layer - sha256_5555...)
         /// ├── link_to_file.txt     -> target.txt
         /// └── relative_link.txt    -> subdir/target.txt
         /// ```
@@ -664,9 +702,9 @@ mod tests {
             }
 
             let layer_digests = vec![
-                "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+                "sha256_4444444444444444444444444444444444444444444444444444444444444444"
                     .to_string(),
-                "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+                "sha256_5555555555555555555555555555555555555555555555555555555555555555"
                     .to_string(),
             ];
 
@@ -785,7 +823,7 @@ mod tests {
                         .iter()
                         .map(|digest_str| {
                             let digest =
-                                Sha256Digest::from_str(digest_str.trim_start_matches("sha256:"))
+                                Sha256Digest::from_str(digest_str.trim_start_matches("sha256_"))
                                     .expect("Invalid digest");
 
                             DescriptorBuilder::default()

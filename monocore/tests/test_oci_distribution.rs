@@ -1,7 +1,7 @@
 use monocore::{
     oci::distribution::{AuthProvider, DockerRegistry, OciRegistryPull},
     utils::{
-        OCI_CONFIG_FILENAME, OCI_INDEX_FILENAME, OCI_LAYER_SUBDIR, OCI_MANIFEST_FILENAME,
+        self, OCI_CONFIG_FILENAME, OCI_INDEX_FILENAME, OCI_LAYER_SUBDIR, OCI_MANIFEST_FILENAME,
         OCI_REPO_SUBDIR,
     },
 };
@@ -145,7 +145,8 @@ async fn test_oci_distribution_docker_pull_alpine_image() -> anyhow::Result<()> 
     // Check each layer exists
     let layers_dir = temp_dir.path().join(OCI_LAYER_SUBDIR);
     for layer in manifest.layers() {
-        let layer_path = layers_dir.join(layer.digest().to_string());
+        let layer_path =
+            layers_dir.join(utils::sanitize_name_for_path(&layer.digest().to_string()));
         assert!(layer_path.exists(), "Layer {} not found", layer.digest());
 
         // Verify layer size

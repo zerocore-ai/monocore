@@ -1,5 +1,65 @@
 #!/bin/sh
 
+# build_libkrun.sh
+# ---------------
+# This script automates the building and installation of libkrun and libkrunfw libraries,
+# which are essential components for running micro virtual machines.
+#
+# Usage:
+#   ./build_libkrun.sh [options]
+#
+# Options:
+#   --no-cleanup    Skip cleanup of build directories and VMs after completion
+#   --force-build   Force rebuild even if libraries are already installed
+#
+# Requirements:
+#   - sudo privileges
+#   - git
+#   - make
+#   - Rust/Cargo (for libkrun)
+#   - Python (for libkrunfw)
+#   - On macOS: krunvm must be installed (brew install krunvm)
+#
+# The script performs the following tasks:
+#   1. Checks for sudo privileges and maintains sudo session
+#   2. Creates build directory if needed
+#   3. Clones libkrunfw from Github
+#   4. Clones libkrun from GitHub
+#   5. Builds and installs both libraries
+#   6. Creates non-versioned variants of libraries (needed for CI)
+#   7. Handles cleanup unless --no-cleanup is specified
+#
+# Library Installation Paths:
+#   Linux:
+#     - /usr/local/lib64/libkrun.so
+#     - /usr/local/lib64/libkrunfw.so
+#   macOS:
+#     - /usr/local/lib/libkrun.dylib
+#     - /usr/local/lib/libkrunfw.dylib
+#
+# Error Handling:
+#   - The script checks for errors after each critical operation
+#   - Exits with status code 1 on any failure
+#   - Performs cleanup on exit unless --no-cleanup is specified
+#
+# Platform Support:
+#   - Linux: Full support
+#   - macOS: Requires krunvm, handles platform-specific paths and library extensions
+#   - Other platforms are not supported
+#
+# Examples:
+#   # Standard build and install
+#   ./build_libkrun.sh
+#
+#   # Build without cleaning up build directory
+#   ./build_libkrun.sh --no-cleanup
+#
+#   # Force rebuild even if libraries exist
+#   ./build_libkrun.sh --force-build
+#
+#   # Combine options
+#   ./build_libkrun.sh --no-cleanup --force-build
+
 # Color variables
 RED="\033[1;31m"
 GREEN="\033[1;32m"

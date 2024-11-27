@@ -77,21 +77,39 @@ pub enum MicroVmStatus {
     },
 }
 
-/// The metrics of the micro VM sub process.
-#[derive(
-    Debug, Clone, Default, Getters, Setters, MutGetters, PartialEq, Serialize, Deserialize,
-)]
-#[getset(
-    get = "pub with_prefix",
-    set = "pub with_prefix",
-    get_mut = "pub with_prefix"
-)]
+/// Metrics collected from a running micro VM process.
+///
+/// This struct contains various performance metrics that are collected in real-time
+/// from the running micro VM process, including:
+/// - CPU usage as a percentage (0-100)
+/// - Memory usage in bytes
+/// - Disk I/O statistics including read/write bytes
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MicroVmMetrics {
-    /// The CPU usage of the micro VM process in percentage.
+    /// CPU usage as a percentage (0-100).
+    /// This represents the percentage of CPU time used by the micro VM process
+    /// across all cores.
     cpu_usage: f32,
 
-    /// The memory usage of the micro VM process in bytes.
+    /// Memory usage in bytes.
+    /// This represents the current resident set size (RSS) of the micro VM process.
     memory_usage: u64,
+
+    /// Number of bytes read from disk since last measurement.
+    /// This is the delta of read operations between measurements.
+    disk_read_bytes: u64,
+
+    /// Number of bytes written to disk since last measurement.
+    /// This is the delta of write operations between measurements.
+    disk_write_bytes: u64,
+
+    /// Total number of bytes read from disk since process start.
+    /// This is the cumulative amount of data read by the process.
+    total_disk_read_bytes: u64,
+
+    /// Total number of bytes written to disk since process start.
+    /// This is the cumulative amount of data written by the process.
+    total_disk_write_bytes: u64,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -114,7 +132,7 @@ impl MicroVmState {
             group,
             rootfs_path: rootfs_path.as_ref().to_path_buf(),
             status: MicroVmStatus::Unstarted,
-            metrics: MicroVmMetrics::default(),
+            metrics: MicroVmMetrics::new(),
             group_ip,
         }
     }
@@ -131,6 +149,108 @@ impl MicroVmState {
         let data = tokio::fs::read_to_string(path).await?;
         let state = serde_json::from_str(&data)?;
         Ok(state)
+    }
+}
+
+impl MicroVmMetrics {
+    /// Creates a new `MicroVmMetrics` instance with all metrics initialized to zero.
+    pub fn new() -> Self {
+        Self {
+            cpu_usage: 0.0,
+            memory_usage: 0,
+            disk_read_bytes: 0,
+            disk_write_bytes: 0,
+            total_disk_read_bytes: 0,
+            total_disk_write_bytes: 0,
+        }
+    }
+
+    /// Sets the current CPU usage percentage.
+    ///
+    /// # Arguments
+    /// * `usage` - CPU usage as a percentage between 0.0 and 100.0
+    pub fn set_cpu_usage(&mut self, usage: f32) {
+        self.cpu_usage = usage;
+    }
+
+    /// Sets the current memory usage in bytes.
+    ///
+    /// # Arguments
+    /// * `usage` - Memory usage in bytes
+    pub fn set_memory_usage(&mut self, usage: u64) {
+        self.memory_usage = usage;
+    }
+
+    /// Sets the number of bytes read from disk since last measurement.
+    ///
+    /// # Arguments
+    /// * `bytes` - Number of bytes read
+    pub fn set_disk_read_bytes(&mut self, bytes: u64) {
+        self.disk_read_bytes = bytes;
+    }
+
+    /// Sets the number of bytes written to disk since last measurement.
+    ///
+    /// # Arguments
+    /// * `bytes` - Number of bytes written
+    pub fn set_disk_write_bytes(&mut self, bytes: u64) {
+        self.disk_write_bytes = bytes;
+    }
+
+    /// Sets the total number of bytes read from disk since process start.
+    ///
+    /// # Arguments
+    /// * `bytes` - Total number of bytes read
+    pub fn set_total_disk_read_bytes(&mut self, bytes: u64) {
+        self.total_disk_read_bytes = bytes;
+    }
+
+    /// Sets the total number of bytes written to disk since process start.
+    ///
+    /// # Arguments
+    /// * `bytes` - Total number of bytes written
+    pub fn set_total_disk_write_bytes(&mut self, bytes: u64) {
+        self.total_disk_write_bytes = bytes;
+    }
+
+    /// Gets the current CPU usage percentage.
+    pub fn get_cpu_usage(&self) -> f32 {
+        self.cpu_usage
+    }
+
+    /// Gets the current memory usage in bytes.
+    pub fn get_memory_usage(&self) -> u64 {
+        self.memory_usage
+    }
+
+    /// Gets the number of bytes read from disk since last measurement.
+    pub fn get_disk_read_bytes(&self) -> u64 {
+        self.disk_read_bytes
+    }
+
+    /// Gets the number of bytes written to disk since last measurement.
+    pub fn get_disk_write_bytes(&self) -> u64 {
+        self.disk_write_bytes
+    }
+
+    /// Gets the total number of bytes read from disk since process start.
+    pub fn get_total_disk_read_bytes(&self) -> u64 {
+        self.total_disk_read_bytes
+    }
+
+    /// Gets the total number of bytes written to disk since process start.
+    pub fn get_total_disk_write_bytes(&self) -> u64 {
+        self.total_disk_write_bytes
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Trait Implementations
+//--------------------------------------------------------------------------------------------------
+
+impl Default for MicroVmMetrics {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

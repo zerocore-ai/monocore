@@ -112,6 +112,6 @@ pub async fn main() -> MonocoreResult<()> {
 
     // If we get here, no valid subcommand was provided
     Err(MonocoreError::InvalidSupervisorArgs(
-        "Usage: monocore --run-supervisor <service_json> <group_json> <group_ip> <rootfs_path>\n       monocore --run-microvm <service_json> <env_json> <local_only> <group_ip> <rootfs_path>".into(),
+        "Usage: monokrun --run-supervisor <service_json> <group_json> <group_ip> <rootfs_path>\n       monokrun --run-microvm <service_json> <env_json> <local_only> <group_ip> <rootfs_path>".into(),
     ))
 }

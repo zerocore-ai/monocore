@@ -17,6 +17,12 @@ BUILD_DIR := build
 DARWIN_LIB_PATH := /usr/local/lib
 LINUX_LIB_PATH := /usr/local/lib64
 
+# Feature flags
+FEATURES ?=
+ifdef OVERLAYFS
+	FEATURES += --features overlayfs
+endif
+
 # Phony targets
 .PHONY: all build install clean deps
 
@@ -28,20 +34,29 @@ build: deps $(MONOCORE_RELEASE_BIN) $(MONOKRUN_RELEASE_BIN)
 
 $(MONOCORE_RELEASE_BIN): deps
 	@mkdir -p $(BUILD_DIR)
+	cd monocore
 ifeq ($(OS),Darwin)
-	cd monocore && RUSTFLAGS="-C link-args=-Wl,-rpath,$(DARWIN_LIB_PATH)" \
-		cargo build --release --bin monocore
+	cargo build --release --bin monocore $(FEATURES)
 	codesign --entitlements monocore/monocore.entitlements --force -s - $@
 else
-	cd monocore && RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" \
-		cargo build --release --bin monocore
+	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" cargo build --release --bin monocore $(FEATURES)
+ifdef OVERLAYFS
+	sudo setcap cap_sys_admin+ep $@
+endif
 endif
 
 $(MONOKRUN_RELEASE_BIN): deps
-	cd monocore && cargo build --release --bin monokrun
+	cd monocore
 ifeq ($(OS),Darwin)
+	cargo build --release --bin monokrun $(FEATURES)
 	codesign --entitlements monocore/monocore.entitlements --force -s - $@
+else
+	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" cargo build --release --bin monokrun $(FEATURES)
+ifdef OVERLAYFS
+	sudo setcap cap_sys_admin+ep $@
 endif
+endif
+
 
 # Install the binaries
 install: build
@@ -51,9 +66,8 @@ install: build
 
 # Clean build artifacts
 clean:
-	cd monocore && cargo clean
 	rm -rf $(BUILD_DIR)
-	rm -rf target
+	cd monocore && cargo clean && rm -rf build
 
 # Build dependencies (libkrunfw and libkrun)
 deps:
@@ -69,3 +83,6 @@ help:
 	@echo "  clean    - Remove build artifacts"
 	@echo "  deps     - Build and install dependencies"
 	@echo "  help     - Show this help message"
+	@echo ""
+	@echo "Environment variables:"
+	@echo "  OVERLAYFS=1  - Enable overlayfs feature flag"

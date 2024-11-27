@@ -1,5 +1,3 @@
-#![cfg(all(unix, not(target_os = "linux")))] // TODO: Linux support temporarily on hold
-
 use std::{fs, os::unix::fs::PermissionsExt};
 use tempfile::tempdir;
 
@@ -46,7 +44,8 @@ async fn test_oci_rootfs_merge_basic_merge() -> anyhow::Result<()> {
     }
 
     // Cleanup
-    rootfs::unmount(&dest_dir).await?;
+    rootfs::remove(&dest_dir).await?;
+
     Ok(())
 }
 
@@ -77,7 +76,7 @@ async fn test_oci_rootfs_merge_layer_permissions() -> anyhow::Result<()> {
     );
 
     // Cleanup
-    rootfs::unmount(&dest_dir).await?;
+    rootfs::remove(&dest_dir).await?;
 
     Ok(())
 }
@@ -103,7 +102,7 @@ async fn test_oci_rootfs_merge_merge_cleanup() -> anyhow::Result<()> {
     assert!(dest_dir.join(MERGED_SUBDIR).exists());
 
     // Unmount and cleanup
-    rootfs::unmount(&dest_dir).await?;
+    rootfs::remove(&dest_dir).await?;
 
     // Verify merged directory is cleaned up
     assert!(!dest_dir.join(MERGED_SUBDIR).exists());
@@ -146,7 +145,7 @@ async fn test_oci_rootfs_merge_concurrent_merges() -> anyhow::Result<()> {
     assert!(dest_dir2.join("merged/bin").exists());
 
     // Cleanup
-    let cleanup_results = tokio::join!(rootfs::unmount(&dest_dir1), rootfs::unmount(&dest_dir2));
+    let cleanup_results = tokio::join!(rootfs::remove(&dest_dir1), rootfs::unmount(&dest_dir2));
     cleanup_results.0?;
     cleanup_results.1?;
 
