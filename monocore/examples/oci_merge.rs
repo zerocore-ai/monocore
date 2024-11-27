@@ -52,6 +52,9 @@ async fn main() -> anyhow::Result<()> {
     // Show the merged rootfs structure focusing on interesting directories
     print_ref_rootfs(&rootfs_node_dir)?;
 
+    // Clean up merged rootfs
+    rootfs::remove(&rootfs_node_dir).await?;
+
     Ok(())
 }
 

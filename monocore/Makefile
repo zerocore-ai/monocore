@@ -28,22 +28,27 @@ all: monocore
 # Build monokrun in release mode
 monokrun: $(MONOKRUN_RELEASE_BIN)
 
-$(MONOKRUN_RELEASE_BIN):
-	cargo build --release --bin monokrun
-ifeq ($(OS),Darwin)
-	codesign --entitlements monocore.entitlements --force -s - $@
-endif
-
-# Build the release binary
 $(MONOCORE_RELEASE_BIN): deps
 	@mkdir -p $(BUILD_DIR)
 ifeq ($(OS),Darwin)
-	RUSTFLAGS="-C link-args=-Wl,-rpath,$(DARWIN_LIB_PATH)" \
-		cargo build --release --bin monocore
-	codesign --entitlements monocore.entitlements --force -s - $@
+	cargo build --release --bin monocore $(FEATURES)
+	codesign --entitlements monocore/monocore.entitlements --force -s - $@
 else
-	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" \
-		cargo build --release --bin monocore
+	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" cargo build --release --bin monocore $(FEATURES)
+ifdef OVERLAYFS
+	sudo setcap cap_sys_admin+ep $@
+endif
+endif
+
+$(MONOKRUN_RELEASE_BIN): deps
+ifeq ($(OS),Darwin)
+	cargo build --release --bin monokrun $(FEATURES)
+	codesign --entitlements monocore/monocore.entitlements --force -s - $@
+else
+	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" cargo build --release --bin monokrun $(FEATURES)
+ifdef OVERLAYFS
+	sudo setcap cap_sys_admin+ep $@
+endif
 endif
 
 # Install the binaries
@@ -70,9 +75,9 @@ _run_example:
 ifeq ($(OS),Darwin)
 	cargo build --example $(EXAMPLE_NAME) --release
 	codesign --entitlements monocore.entitlements --force -s - $(EXAMPLES_DIR)/$(EXAMPLE_NAME)
-	RUST_BACKTRACE=1 DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$RUST_DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME) $(ARGS) || exit $$?
+	DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$RUST_DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME) $(ARGS) || exit $$?
 else
-	RUST_BACKTRACE=1 LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
+	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
 endif
 
 # Run benchmarks
@@ -99,9 +104,9 @@ _run_bin:
 ifeq ($(OS),Darwin)
 	cargo build --bin $(BIN_NAME) --release
 	codesign --entitlements monocore.entitlements --force -s - $(BENCHES_DIR)/$(BIN_NAME)
-	RUST_BACKTRACE=1 DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$RUST_DYLD_LIBRARY_PATH $(BENCHES_DIR)/$(BIN_NAME) $(ARGS) || exit $$?
+	DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$RUST_DYLD_LIBRARY_PATH $(BENCHES_DIR)/$(BIN_NAME) $(ARGS) || exit $$?
 else
-	RUST_BACKTRACE=1 LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --bin $(BIN_NAME) --release -- $(ARGS) || exit $$?
+	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --bin $(BIN_NAME) --release -- $(ARGS) || exit $$?
 endif
 
 # Build dependencies (libkrunfw and libkrun)

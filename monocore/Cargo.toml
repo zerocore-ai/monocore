@@ -57,7 +57,7 @@ typed-builder.workspace = true
 typed-path.workspace = true
 uuid.workspace = true
 xattr.workspace = true
-sysinfo = "0.32.0"
+sysinfo = "0.32"
 nix = { version = "0.29", features = ["mount", "user", "fs"] }
 tar = "0.4"
 flate2 = "1.0"
@@ -67,3 +67,7 @@ scopeguard = "1.2"
 [dev-dependencies]
 test-log.workspace = true
 criterion.workspace = true
+
+[features]
+default = []
+overlayfs = []

@@ -179,8 +179,8 @@ async fn handle_status(state: ServerState) -> MonocoreResult<StatusResponse> {
                 status: format!("{:?}", s.get_state().get_status()),
                 pid: *s.get_pid(),
                 metrics: ServiceMetrics {
-                    cpu_usage: *s.get_state().get_metrics().get_cpu_usage() as f64,
-                    memory_usage: *s.get_state().get_metrics().get_memory_usage(),
+                    cpu_usage: s.get_state().get_metrics().get_cpu_usage() as f64,
+                    memory_usage: s.get_state().get_metrics().get_memory_usage(),
                 },
             })
             .collect(),

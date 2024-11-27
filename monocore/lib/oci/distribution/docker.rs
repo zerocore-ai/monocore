@@ -260,8 +260,8 @@ impl OciRegistryPull for DockerRegistry {
         let tag = tag.unwrap_or("latest");
         let repo_tag = format!(
             "{}__{}",
-            utils::sanitize_repo_name(repository),
-            utils::sanitize_repo_name(tag)
+            utils::sanitize_name_for_path(repository),
+            utils::sanitize_name_for_path(tag)
         );
 
         // Create the repository tag directory
@@ -321,7 +321,7 @@ impl OciRegistryPull for DockerRegistry {
                 let layer_path = self
                     .oci_dir
                     .join(OCI_LAYER_SUBDIR)
-                    .join(layer_desc.digest().to_string());
+                    .join(utils::sanitize_name_for_path(layer_desc.digest().as_ref()));
 
                 self.download_image_blob(
                     repository,
