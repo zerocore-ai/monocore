@@ -163,6 +163,17 @@ make build
 sudo make install
 ```
 
+> **Note for Linux users**
+> You may need to install additional dependencies:
+> ```sh
+> # Ubuntu/Debian:
+> sudo apt-get update
+> sudo apt-get install build-essential pkg-config libssl-dev flex bison bc libelf-dev python3-pyelftools patchelf
+>
+> # Fedora:
+> sudo dnf install build-essential pkg-config libssl-dev flex bison bc libelf-dev python3-pyelftools patchelf
+> ```
+
 ## Documentation
 
 - [Detailed Features](monocore/README.md#features)
