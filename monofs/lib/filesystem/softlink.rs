@@ -329,7 +329,6 @@ where
         self.follow_recursive(max_depth).await
     }
 
-    #[allow(clippy::needless_lifetimes)]
     #[async_recursion]
     async fn follow_recursive(&self, remaining_depth: u32) -> FsResult<FollowResult<S>>
     where
