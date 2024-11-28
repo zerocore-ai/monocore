@@ -4,7 +4,7 @@ use tokio::fs;
 
 use crate::{
     utils::{self, MERGED_SUBDIR},
-    MonocoreError, MonocoreResult,
+    MonocoreResult,
 };
 
 #[cfg(target_os = "linux")]
