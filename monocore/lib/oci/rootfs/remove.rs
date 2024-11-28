@@ -126,6 +126,8 @@ pub async fn remove(dest_dir: impl AsRef<Path>) -> MonocoreResult<()> {
 
 #[cfg(target_os = "linux")]
 async fn remove_with_rm(dest_dir: &Path) -> MonocoreResult<()> {
+    use crate::MonocoreError;
+
     let merged_dir = dest_dir.join(MERGED_SUBDIR);
     if merged_dir.exists() {
         // Try using rm command first
