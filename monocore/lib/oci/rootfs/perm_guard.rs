@@ -137,7 +137,7 @@ impl PermissionGuard {
     pub async fn make_readable_writable(&mut self, path: impl AsRef<Path>) -> MonocoreResult<()> {
         let path = path.as_ref();
         if !self.original_modes.contains_key(path) {
-            if let Ok(metadata) = fs::metadata(path).await {
+            if let Ok(metadata) = fs::symlink_metadata(path).await {
                 if metadata.file_type().is_symlink() {
                     tracing::debug!(
                         "Skipping permission modification for symlink: {}",
