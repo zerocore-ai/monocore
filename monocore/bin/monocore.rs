@@ -37,6 +37,7 @@ async fn main() -> MonocoreResult<()> {
             group,
             home_dir,
         }) => {
+            tracing::info!("Home dir: {}", home_dir.display());
             if !file.exists() {
                 return Err(MonocoreError::ConfigNotFound(file.display().to_string()));
             }

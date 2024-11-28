@@ -61,8 +61,8 @@ endif
 # Install the binaries
 install: build
 	install -d $(DESTDIR)$(PREFIX)/bin
-	install -m 755 $(MONOCORE_RELEASE_BIN) $(DESTDIR)$(PREFIX)/bin/monocore
-	install -m 755 $(MONOKRUN_RELEASE_BIN) $(DESTDIR)$(PREFIX)/bin/monokrun
+	sudo install -m 755 $(MONOCORE_RELEASE_BIN) $(DESTDIR)$(PREFIX)/bin/monocore
+	sudo install -m 755 $(MONOKRUN_RELEASE_BIN) $(DESTDIR)$(PREFIX)/bin/monokrun
 
 # Clean build artifacts
 clean:

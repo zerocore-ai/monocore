@@ -63,6 +63,7 @@ tar = "0.4"
 flate2 = "1.0"
 walkdir = "2.4"
 scopeguard = "1.2"
+tokio-stream = { version = "0.1.16", features = ["fs"] }
 
 [dev-dependencies]
 test-log.workspace = true
