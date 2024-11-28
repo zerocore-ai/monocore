@@ -94,80 +94,80 @@ jobs:
             build/libkrun/target/release/libkrun*.so*
           key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-cache-changes.outputs.libkrun_hash }}
 
-  run-checks:
-    needs: [check-libkrun-cache-changes, build-libkrun]
-    if: always()
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        rust-toolchain:
-          # - stable # Now Stable Clippy is also having concussion! - 28 Nov 2024
-          # - nightly # Nightly Clippy having concussion again!
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+  # run-checks:
+  #   needs: [check-libkrun-cache-changes, build-libkrun]
+  #   if: always()
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       rust-toolchain:
+  #         # - stable # Now Stable Clippy is also having concussion! - 28 Nov 2024
+  #         # - nightly # Nightly Clippy having concussion again!
+  #   steps:
+  #     - name: Checkout Repository
+  #       uses: actions/checkout@v4
 
-      - name: Cache Project
-        uses: Swatinem/rust-cache@v2
+  #     - name: Cache Project
+  #       uses: Swatinem/rust-cache@v2
 
-      - name: Restore libkrun cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            build/libkrunfw/libkrunfw*.so*
-            build/libkrun/target/release/libkrun*.so*
-          key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-cache-changes.outputs.libkrun_hash }}
+  #     - name: Restore libkrun cache
+  #       uses: actions/cache/restore@v4
+  #       with:
+  #         path: |
+  #           build/libkrunfw/libkrunfw*.so*
+  #           build/libkrun/target/release/libkrun*.so*
+  #         key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-cache-changes.outputs.libkrun_hash }}
 
-      - name: Install Rust Toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          override: true
-          components: rustfmt, clippy
-          toolchain: ${{ matrix.rust-toolchain }}
+  #     - name: Install Rust Toolchain
+  #       uses: actions-rs/toolchain@v1
+  #       with:
+  #         override: true
+  #         components: rustfmt, clippy
+  #         toolchain: ${{ matrix.rust-toolchain }}
 
-      - name: Check Format
-        uses: actions-rs/cargo@v1
-        with:
-          args: --all -- --check
-          command: fmt
-          toolchain: ${{ matrix.rust-toolchain }}
+  #     - name: Check Format
+  #       uses: actions-rs/cargo@v1
+  #       with:
+  #         args: --all -- --check
+  #         command: fmt
+  #         toolchain: ${{ matrix.rust-toolchain }}
 
-      - name: Run Linter
-        uses: actions-rs/cargo@v1
-        with:
-          args: --all -- -D warnings
-          command: clippy
-          toolchain: ${{ matrix.rust-toolchain }}
+  #     - name: Run Linter
+  #       uses: actions-rs/cargo@v1
+  #       with:
+  #         args: --all -- -D warnings
+  #         command: clippy
+  #         toolchain: ${{ matrix.rust-toolchain }}
 
-      - name: Check Advisories
-        if: ${{ matrix.rust-toolchain == 'stable' }}
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check advisories
-        continue-on-error: true
+  #     - name: Check Advisories
+  #       if: ${{ matrix.rust-toolchain == 'stable' }}
+  #       uses: EmbarkStudios/cargo-deny-action@v2
+  #       with:
+  #         command: check advisories
+  #       continue-on-error: true
 
-      - name: Check Bans, Licenses, and Sources
-        if: ${{ matrix.rust-toolchain == 'stable' }}
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check bans licenses sources
+  #     - name: Check Bans, Licenses, and Sources
+  #       if: ${{ matrix.rust-toolchain == 'stable' }}
+  #       uses: EmbarkStudios/cargo-deny-action@v2
+  #       with:
+  #         command: check bans licenses sources
 
-      # A hack to make `ld` find the libkrunfw because right now it seems to only look for libkrunfw.so.x
-      # and not libkrunfw.so or libkrunfw.so.x.x.x even though their SONAME is libkrunfw.so.x
-      - name: Create symlinks
-        run: |
-          cd build/libkrunfw
-          objdump -p libkrunfw.so.4.4.2 | grep SONAME # sanity check
-          ln -sf libkrunfw.so.4.4.2 libkrunfw.so.4
-          ln -sf libkrunfw.so.4 libkrunfw.so
+  #     # A hack to make `ld` find the libkrunfw because right now it seems to only look for libkrunfw.so.x
+  #     # and not libkrunfw.so or libkrunfw.so.x.x.x even though their SONAME is libkrunfw.so.x
+  #     - name: Create symlinks
+  #       run: |
+  #         cd build/libkrunfw
+  #         objdump -p libkrunfw.so.4.4.2 | grep SONAME # sanity check
+  #         ln -sf libkrunfw.so.4.4.2 libkrunfw.so.4
+  #         ln -sf libkrunfw.so.4 libkrunfw.so
 
-      - name: Test Release
-        if: ${{ matrix.rust-toolchain == 'stable'  && github.event_name == 'push' }}
-        run: |
-          LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LIBRARY_PATH }} \
-          LD_LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LD_LIBRARY_PATH }} \
-          cargo build --release
+  #     - name: Test Release
+  #       if: ${{ matrix.rust-toolchain == 'stable'  && github.event_name == 'push' }}
+  #       run: |
+  #         LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LIBRARY_PATH }} \
+  #         LD_LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LD_LIBRARY_PATH }} \
+  #         cargo build --release
 
   run-tests:
     needs: [check-libkrun-cache-changes, build-libkrun]
