@@ -59,6 +59,15 @@ Develop and test locally with instant feedback, then deploy to production with c
 
 ## Getting Started
 
+### System Requirements
+
+#### Linux
+- KVM-enabled Linux kernel (check with `ls /dev/kvm`)
+- User must be in the `kvm` group (add with `sudo usermod -aG kvm $USER`)
+
+#### macOS
+- macOS 10.15 (Catalina) or later for Hypervisor.framework support
+
 1. **Install monocore**
 
    ```sh
@@ -148,31 +157,26 @@ Develop and test locally with instant feedback, then deploy to production with c
 
 ## Development
 
-For detailed setup instructions and prerequisites, see [monocore/README.md](monocore/README.md).
+### Prerequisites
 
-Quick setup:
-
+#### Linux Build Dependencies
 ```sh
-# Prerequisites
-- Git
-- Rust toolchain
-- On macOS: Homebrew
+# Ubuntu/Debian:
+sudo apt-get update
+sudo apt-get install build-essential pkg-config libssl-dev flex bison bc libelf-dev python3-pyelftools patchelf
 
-# Build
-make build
-sudo make install
+# Fedora:
+sudo dnf install build-essential pkg-config libssl-dev flex bison bc libelf-dev python3-pyelftools patchelf
 ```
 
-> **Note for Linux users**
-> You may need to install additional dependencies:
-> ```sh
-> # Ubuntu/Debian:
-> sudo apt-get update
-> sudo apt-get install build-essential pkg-config libssl-dev flex bison bc libelf-dev python3-pyelftools patchelf
->
-> # Fedora:
-> sudo dnf install build-essential pkg-config libssl-dev flex bison bc libelf-dev python3-pyelftools patchelf
-> ```
+#### macOS Build Dependencies
+- [Homebrew][brew_home]
+
+```sh
+# Build
+make build
+make install
+```
 
 ## Documentation
 

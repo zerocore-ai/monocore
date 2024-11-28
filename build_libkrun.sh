@@ -13,7 +13,6 @@
 #   --force-build   Force rebuild even if libraries are already installed
 #
 # Requirements:
-#   - sudo privileges
 #   - git
 #   - make
 #   - Rust/Cargo (for libkrun)
@@ -21,13 +20,12 @@
 #   - On macOS: krunvm must be installed (brew install krunvm)
 #
 # The script performs the following tasks:
-#   1. Checks for sudo privileges and maintains sudo session
-#   2. Creates build directory if needed
-#   3. Clones libkrunfw from Github
-#   4. Clones libkrun from GitHub
-#   5. Builds and installs both libraries
-#   6. Creates non-versioned variants of libraries (needed for CI)
-#   7. Handles cleanup unless --no-cleanup is specified
+#   1. Creates build directory if needed
+#   2. Clones libkrunfw from Github
+#   3. Clones libkrun from GitHub
+#   4. Builds and installs both libraries
+#   5. Creates non-versioned variants of libraries (needed for CI)
+#   6. Handles cleanup unless --no-cleanup is specified
 #
 # Library Installation Paths:
 #   Linux:
@@ -78,19 +76,6 @@ warn() {
 error() {
     printf "${RED}:: %s${RESET}\n" "$1"
 }
-
-# Elevate privileges at the start to avoid repeated prompts
-if ! sudo -v; then
-    error "This script requires sudo privileges. Please run with sudo or grant sudo access."
-    exit 1
-fi
-
-# Keep sudo alive in the background
-while true; do
-    sudo -n true
-    sleep 60
-    kill -0 "$$" || exit
-done 2>/dev/null &
 
 # Store the original working directory
 ORIGINAL_DIR="$(pwd)"
@@ -228,7 +213,7 @@ create_non_versioned_lib() {
   local versioned_lib=$(ls "${lib_name}"*".${extension}"*"" 2>/dev/null | head -n 1)
 
   if [ -n "$versioned_lib" ]; then
-    sudo cp "$versioned_lib" "${lib_name}.${extension}"
+    cp "$versioned_lib" "${lib_name}.${extension}"
     check_success "Failed to create non-versioned ${lib_name}.${extension}"
     info "Created non-versioned ${lib_name}.${extension}"
   else
@@ -249,8 +234,8 @@ build_and_install_lib() {
     # Set PYTHONPATH to include the user's site-packages
     export PYTHONPATH="$HOME/.local/lib/python3.*/site-packages:$PYTHONPATH"
 
-    # Use sudo -E to preserve the PYTHONPATH
-    sudo -E make PYTHONPATH="$PYTHONPATH"
+    # Build with PYTHONPATH
+    make PYTHONPATH="$PYTHONPATH"
   else
     # For libkrun
     info "Setting LIBRARY_PATH for libkrunfw..."
@@ -259,8 +244,8 @@ build_and_install_lib() {
     # Ensure Rust and Cargo are in the PATH
     export PATH="$HOME/.cargo/bin:$PATH"
 
-    # Use sudo -E to preserve the PATH and LIBRARY_PATH
-    sudo -E make LIBRARY_PATH="$LIBRARY_PATH" PATH="$PATH"
+    # Build with PATH and LIBRARY_PATH
+    make LIBRARY_PATH="$LIBRARY_PATH" PATH="$PATH"
   fi
   check_success "Failed to build $lib_name"
 

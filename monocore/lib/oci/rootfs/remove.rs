@@ -1,14 +1,8 @@
-use std::{os::unix::fs::PermissionsExt, path::Path};
+use std::path::Path;
 
 use tokio::fs;
 
-use crate::{
-    utils::{self, MERGED_SUBDIR},
-    MonocoreResult,
-};
-
-#[cfg(target_os = "linux")]
-use std::process::Command;
+use crate::{utils::MERGED_SUBDIR, MonocoreResult};
 
 use super::PermissionGuard;
 
@@ -112,89 +106,28 @@ pub async fn unmount(#[allow(unused_variables)] dest_dir: impl AsRef<Path>) -> M
 pub async fn remove(dest_dir: impl AsRef<Path>) -> MonocoreResult<()> {
     let dest_dir = dest_dir.as_ref();
     unmount(dest_dir).await?;
-
-    #[cfg(target_os = "linux")]
-    {
-        remove_with_rm(dest_dir).await
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        remove_merge_copy_files(dest_dir).await
-    }
+    remove_internal(dest_dir).await
 }
 
-#[cfg(target_os = "linux")]
-async fn remove_with_rm(dest_dir: &Path) -> MonocoreResult<()> {
-    use crate::MonocoreError;
-
-    let merged_dir = dest_dir.join(MERGED_SUBDIR);
-    if merged_dir.exists() {
-        // Try using rm command first
-        let status = Command::new("rm")
-            .arg("-rf") // Recursive and force
-            .arg(&merged_dir)
-            .status()
-            .map_err(|e| MonocoreError::LayerHandling {
-                source: e,
-                layer: merged_dir.display().to_string(),
-            })?;
-
-        if !status.success() {
-            tracing::warn!("rm command failed, falling back to manual removal");
-            remove_merge_copy_files(dest_dir).await?;
-        }
-    }
-    Ok(())
-}
-
-async fn remove_merge_copy_files(dest_dir: impl AsRef<Path>) -> MonocoreResult<()> {
+async fn remove_internal(dest_dir: impl AsRef<Path>) -> MonocoreResult<()> {
     let merged_dir = dest_dir.as_ref().join(MERGED_SUBDIR);
     if merged_dir.exists() {
         let mut perm_guard = PermissionGuard::new();
+        let mut dir_stack = vec![merged_dir.clone()];
 
-        // Recursively check and fix permissions where needed
-        let mut stack = vec![merged_dir.clone()];
-        while let Some(current_path) = stack.pop() {
-            // Check current permissions
-            if let Ok(metadata) = fs::metadata(&current_path).await {
-                let mode = metadata.permissions().mode();
-                let is_readable = mode & 0o444 != 0; // Check read permission
-                let is_writable = mode & 0o222 != 0; // Check write permission
-                let is_executable = mode & 0o111 != 0; // Check execute permission for directories
+        // Process directories in a stack-based manner
+        while let Some(dir) = dir_stack.pop() {
+            perm_guard.make_readable_writable(&dir).await?;
 
-                // Only modify permissions if necessary
-                if !is_readable || !is_writable || (!is_executable && metadata.is_dir()) {
-                    tracing::debug!(
-                            "Fixing permissions for {}: {} ({:#o}) - readable: {}, writable: {}, executable: {}",
-                            current_path.display(),
-                            utils::format_mode(mode),
-                            mode,
-                            is_readable,
-                            is_writable,
-                            is_executable
-                        );
-                    perm_guard.make_readable_writable(&current_path).await?;
-                }
-            } else {
-                tracing::warn!("Could not read metadata for {}", current_path.display());
-                // Still try to make it accessible as a fallback
-                perm_guard.make_readable_writable(&current_path).await?;
-            }
-
-            // Process directory contents
-            if let Ok(mut entries) = fs::read_dir(&current_path).await {
+            // Read and queue subdirectories
+            if let Ok(mut entries) = fs::read_dir(&dir).await {
                 while let Ok(Some(entry)) = entries.next_entry().await {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        stack.push(path);
+                    if let Ok(file_type) = entry.file_type().await {
+                        if file_type.is_dir() {
+                            dir_stack.push(entry.path());
+                        }
                     }
                 }
-            } else {
-                tracing::warn!(
-                    "Could not read directory contents of {}",
-                    current_path.display()
-                );
             }
         }
 

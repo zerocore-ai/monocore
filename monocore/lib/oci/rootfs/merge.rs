@@ -644,7 +644,7 @@ mod tests {
         /// Layer Structure:
         /// ```text
         /// Layer 1 (Base Layer - sha256_4444...)
-        /// ├���─ no_read_file.txt     (0o200, w-------)  "no read permission content"
+        /// ├── no_read_file.txt     (0o200, w-------)  "no read permission content"
         /// ├── target.txt           (0o644, rw-r--r--) "target file content"
         /// ├── test.fifo            (0o644, rw-r--r--) [named pipe]
         /// ├── no_read_dir/         (0o311, --x--x--x)
@@ -652,7 +652,7 @@ mod tests {
         /// ├── no_write_dir/        (0o555, r-xr-xr-x)
         /// │   └── protected.txt    (0o444, r--r--r--) "write protected content"
         /// ├── no_perm_dir/         (0o000, ---------)
-        /// │   └���─ hidden.txt       (0o644, rw-r--r--) "hidden content"
+        /// │   └── hidden.txt       (0o644, rw-r--r--) "hidden content"
         /// ├── blocked_dir/         (0o000, ---------)
         /// │   └── inner_dir/       (0o777, rwxrwxrwx)
         /// │       └── nested.txt   (0o666, rw-rw-rw-) "nested file content"
