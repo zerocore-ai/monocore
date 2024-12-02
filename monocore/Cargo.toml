@@ -37,7 +37,7 @@ getset.workspace = true
 hex.workspace = true
 lazy_static.workspace = true
 libc.workspace = true
-oci-spec = { git = "https://github.com/containers/oci-spec-rs", rev = "e436a3024778cf734336952f4d37b69864488d0e" }
+oci-spec = { version = "0.7.1" }
 procspawn.workspace = true
 reqwest.workspace = true
 reqwest-middleware.workspace = true
