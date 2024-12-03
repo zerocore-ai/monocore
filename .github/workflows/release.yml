@@ -2,7 +2,7 @@ name: 🚀 Release Packages & Binaries
 
 on:
   push:
-    branches: [ main ]
+    branches: [ appcypher/base-fix-release ]
 
 permissions:
   contents: write
@@ -21,7 +21,7 @@ jobs:
         with:
           command: manifest
           token: ${{ secrets.GITHUB_TOKEN }}
-          default-branch: main
+          default-branch: appcypher/base-fix-release
 
   build-release-macos-arm64:
     needs: release-please

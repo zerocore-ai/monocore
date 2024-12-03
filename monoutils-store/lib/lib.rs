@@ -1,7 +1,4 @@
-//! Content-addressed storage (CAS) module.
-//!
-//! This module provides utilities for working with content-addressed storage (CAS). CAS is a
-//! storage paradigm where data is addressed by its content, rather than by its location.
+//! `monoutils-store` is a library for working with IPLD content-addressed stores (CAS).
 
 #![warn(missing_docs)]
 #![allow(clippy::module_inception)]

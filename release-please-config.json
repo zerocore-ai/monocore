@@ -1,5 +1,4 @@
 {
-  "plugins": ["cargo-workspace"],
   "bump-minor-pre-major": true,
   "bump-patch-for-minor-pre-major": true,
   "packages": {
@@ -15,5 +14,16 @@
       "package-name": "monoutils-store",
       "release-type": "rust"
     }
-  }
+  },
+  "plugins": [
+    {
+      "type": "cargo-workspace",
+      "merge": false
+    },
+    {
+      "type": "linked-versions",
+      "groupName": "monocore-project",
+      "components": ["monocore", "monofs", "monoutils-store"]
+    }
+  ]
 }
