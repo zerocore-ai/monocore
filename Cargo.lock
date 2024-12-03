@@ -1795,8 +1795,9 @@ dependencies = [
 
 [[package]]
 name = "oci-spec"
-version = "0.7.0"
-source = "git+https://github.com/containers/oci-spec-rs?rev=e436a3024778cf734336952f4d37b69864488d0e#e436a3024778cf734336952f4d37b69864488d0e"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da406e58efe2eb5986a6139626d611ce426e5324a824133d76367c765cf0b882"
 dependencies = [
  "derive_builder",
  "getset",
@@ -1805,7 +1806,7 @@ dependencies = [
  "serde_json",
  "strum",
  "strum_macros",
- "thiserror 1.0.65",
+ "thiserror 2.0.3",
 ]
 
 [[package]]
@@ -2252,9 +2253,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest-middleware"
-version = "0.3.3"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "562ceb5a604d3f7c885a792d42c199fd8af239d0a51b2fa6a78aafa092452b04"
+checksum = "d1ccd3b55e711f91a9885a2fa6fbbb2e39db1776420b062efc058c6410f7e5e3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2267,9 +2268,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest-retry"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a83df1aaec00176d0fabb65dea13f832d2a446ca99107afc17c5d2d4981221d0"
+checksum = "29c73e4195a6bfbcb174b790d9b3407ab90646976c55de58a6515da25d851178"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2281,6 +2282,7 @@ dependencies = [
  "reqwest",
  "reqwest-middleware",
  "retry-policies",
+ "thiserror 1.0.65",
  "tokio",
  "tracing",
  "wasm-timer",
@@ -3089,9 +3091,9 @@ dependencies = [
 
 [[package]]
 name = "typed-path"
-version = "0.9.3"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82205ffd44a9697e34fc145491aa47310f9871540bb7909eaa9365e0a9a46607"
+checksum = "41713888c5ccfd99979fcd1afd47b71652e331b3d4a0e19d30769e80fec76cce"
 
 [[package]]
 name = "typenum"

@@ -26,7 +26,7 @@ impl Orchestrator {
         let mut dir = fs::read_dir(&*MONOCORE_STATE_DIR).await?;
         while let Some(entry) = dir.next_entry().await? {
             let path = entry.path();
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
+            if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
                 match fs::read_to_string(&path).await {
                     Ok(contents) => match serde_json::from_str::<MicroVmState>(&contents) {
                         Ok(state) => {

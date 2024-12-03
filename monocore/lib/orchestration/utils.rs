@@ -36,7 +36,7 @@ pub async fn is_process_running(pid: u32) -> bool {
         .arg(pid.to_string())
         .output()
         .await
-        .map_or(false, |output| output.status.success())
+        .is_ok_and(|output| output.status.success())
 }
 
 /// Reads state files and reconstructs services, groups and running services
@@ -71,7 +71,7 @@ pub async fn load_services_and_groups(
     let mut dir = fs::read_dir(state_dir).await?;
     while let Some(entry) = dir.next_entry().await? {
         let path = entry.path();
-        if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
             match fs::read_to_string(&path).await {
                 Ok(contents) => match serde_json::from_str::<MicroVmState>(&contents) {
                     Ok(state) => {
@@ -118,7 +118,7 @@ pub async fn load_ip_assignments(
     let mut dir = fs::read_dir(state_dir).await?;
     while let Some(entry) = dir.next_entry().await? {
         let path = entry.path();
-        if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
             match fs::read_to_string(&path).await {
                 Ok(contents) => match serde_json::from_str::<MicroVmState>(&contents) {
                     Ok(state) => {
