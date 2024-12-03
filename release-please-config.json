@@ -4,15 +4,18 @@
   "packages": {
     "monocore": {
       "package-name": "monocore",
-      "release-type": "rust"
+      "release-type": "rust",
+      "release-as": "0.1.0"
     },
     "monofs": {
       "package-name": "monofs",
-      "release-type": "rust"
+      "release-type": "rust",
+      "release-as": "0.1.0"
     },
     "monoutils-store": {
       "package-name": "monoutils-store",
-      "release-type": "rust"
+      "release-type": "rust",
+      "release-as": "0.1.0"
     }
   },
   "plugins": [
