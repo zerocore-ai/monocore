@@ -41,7 +41,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: "1.82.0"
+          toolchain: stable
           override: true
 
       - name: Build libkrun
@@ -104,7 +104,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: "1.82.0"
+          toolchain: stable
           override: true
 
       - name: Build libkrun

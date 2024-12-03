@@ -51,7 +51,7 @@ async fn main() -> MonocoreResult<()> {
                 let services = config
                     .get_services()
                     .iter()
-                    .filter(|s| s.get_group().map_or(false, |g| g == group_name))
+                    .filter(|s| s.get_group().is_some_and(|g| g == group_name))
                     .cloned()
                     .collect::<Vec<_>>();
                 config = Monocore::builder()
@@ -97,7 +97,7 @@ async fn main() -> MonocoreResult<()> {
                     .filter(|&name| {
                         orchestrator
                             .get_service(name)
-                            .map_or(false, |s| s.get_group() == Some(&group_name))
+                            .is_some_and(|s| s.get_group() == Some(&group_name))
                     })
                     .cloned()
                     .collect::<Vec<_>>();

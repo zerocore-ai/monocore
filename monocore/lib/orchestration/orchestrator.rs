@@ -280,7 +280,7 @@ impl Orchestrator {
         let path = entry.path();
         let is_log = path
             .extension()
-            .map_or(false, |ext| ext == "log" || ext == "old");
+            .is_some_and(|ext| ext == "log" || ext == "old");
 
         if !is_log {
             return Ok(false);

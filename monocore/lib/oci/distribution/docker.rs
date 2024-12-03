@@ -280,20 +280,20 @@ impl OciRegistryPull for DockerRegistry {
             .manifests()
             .iter()
             .find(|m| {
-                m.platform().as_ref().map_or(false, |p| {
+                m.platform().as_ref().is_some_and(|p| {
                     // First priority: match both Linux OS and architecture
                     matches!(p.os(), Os::Linux) &&
                     p.architecture() == platform.architecture() &&
                     // Skip attestation manifests
-                    !m.annotations().as_ref().map_or(false, |a| a.contains_key(DOCKER_REFERENCE_TYPE_ANNOTATION))
+                    !m.annotations().as_ref().is_some_and(|a| a.contains_key(DOCKER_REFERENCE_TYPE_ANNOTATION))
                 })
             })
             .or_else(|| {
                 // Second priority: match architecture only, if no Linux match found
                 index.manifests().iter().find(|m| {
-                    m.platform().as_ref().map_or(false, |p| {
+                    m.platform().as_ref().is_some_and(|p| {
                         p.architecture() == platform.architecture() &&
-                        !m.annotations().as_ref().map_or(false, |a| a.contains_key(DOCKER_REFERENCE_TYPE_ANNOTATION))
+                        !m.annotations().as_ref().is_some_and(|a| a.contains_key(DOCKER_REFERENCE_TYPE_ANNOTATION))
                     })
                 })
             })
