@@ -75,13 +75,11 @@ jobs:
           key: macos-arm64-monocore-${{ needs.release-please.outputs.release_tag }}
 
       - name: Build monoutils-store
-        if: ${{ steps.release.outputs['packages/monoutils-store--release_created'] }}
         working-directory: monoutils-store
         run: |
           cargo build --release -p monoutils-store
 
       - name: Build monofs
-        if: ${{ steps.release.outputs['packages/monofs--release_created'] }}
         working-directory: monofs
         run: |
           cargo build --release -p monofs
@@ -131,26 +129,27 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            build/monocore-macos-arm64
-            build/monokrun-macos-arm64
-            build/libkrun-macos-arm64*.so*
-            build/libkrunfw-macos-arm64*.so*
+            build/monocore-linux-x86_64
+            build/monokrun-linux-x86_64
+            build/libkrun-linux-x86_64*.so*
+            build/libkrunfw-linux-x86_64*.so*
           key: linux-x86_64-monocore-${{ needs.release-please.outputs.release_tag }}
 
       - name: Build monoutils-store
-        if: ${{ steps.release.outputs['packages/monoutils-store--release_created'] }}
         working-directory: monoutils-store
         run: |
           cargo build --release -p monoutils-store
 
       - name: Build monofs
-        if: ${{ steps.release.outputs['packages/monofs--release_created'] }}
         working-directory: monofs
         run: |
           cargo build --release -p monofs
 
   publish-release:
-    needs: build-release-macos-arm64
+    needs:
+      - release-please
+      - build-release-macos-arm64
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -161,7 +160,7 @@ jobs:
         env:
           CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
         run: |
-          cargo publish -p monoutils-store
+          cargo publish -p monoutils-store || exit 1
 
       - name: Wait for crates.io index update
         run: |
@@ -173,35 +172,38 @@ jobs:
         env:
           CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
         run: |
-          cargo publish -p monofs
+          cargo publish -p monofs || exit 1
 
       - name: Publish monocore
         working-directory: monocore
         env:
           CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
         run: |
-          cargo publish -p monocore
+          cargo publish -p monocore || exit 1
 
   upload-release:
     needs:
+      - release-please
       - build-release-macos-arm64
       - build-release-linux-x86_64
+      - publish-release
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Restore cache
+      - name: Restore macOS arm64 cache
         uses: actions/cache/restore@v4
         with:
           path: |
             build/monocore-macos-arm64
             build/monokrun-macos-arm64
-            build/libkrun-macos-arm64*.so*
-            build/libkrunfw-macos-arm64*.so*
+            build/libkrun-macos-arm64*.dylib
+            build/libkrunfw-macos-arm64*.dylib
           key: macos-arm64-monocore-${{ needs.release-please.outputs.release_tag }}
 
-      - name: Restore cache
+      - name: Restore Linux x86_64 cache
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -220,3 +222,5 @@ jobs:
             build/monokrun-*
             build/libkrun-*
             build/libkrunfw-*
+          tag_name: ${{ needs.release-please.outputs.release_tag }}
+          token: ${{ secrets.GITHUB_TOKEN }}
