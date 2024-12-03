@@ -19,9 +19,11 @@ jobs:
         uses: googleapis/release-please-action@v4
         id: release
         with:
-          command: manifest
           token: ${{ secrets.GITHUB_TOKEN }}
           default-branch: appcypher/base-fix-release
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          primary: true
 
   build-release-macos-arm64:
     needs: release-please
