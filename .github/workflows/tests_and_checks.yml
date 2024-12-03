@@ -102,8 +102,8 @@ jobs:
       fail-fast: false
       matrix:
         rust-toolchain:
-          - stable
-          - nightly
+          - "1.82.0"
+          - "nightly-2024-03-20" # 1.84.0-nightly
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -177,8 +177,8 @@ jobs:
       fail-fast: false
       matrix:
         rust-toolchain:
-          - stable
-          - nightly
+          - "1.82.0"
+          - "nightly-2024-11-19" # 1.84.0-nightly
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
