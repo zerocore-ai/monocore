@@ -1,4 +1,4 @@
-//! `monovue` is a UI for working with monocore.
+//! `monoagent` is an AI agent for the monocore project.
 
 #![warn(missing_docs)]
 #![allow(clippy::module_inception)]
