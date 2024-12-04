@@ -1,7 +1,7 @@
 use std::{env, net::Ipv4Addr, path::PathBuf};
 
 use monocore::{
-    config::{EnvPair, Group, Service},
+    config::{Group, Service},
     runtime::Supervisor,
     vm::MicroVm,
     MonocoreError, MonocoreResult,
@@ -36,10 +36,14 @@ pub async fn main() -> MonocoreResult<()> {
     if args.len() == 7 && args[1] == "--run-microvm" {
         // Handle microvm mode
         let service: Service = serde_json::from_str(&args[2])?;
-        let env: Vec<EnvPair> = serde_json::from_str(&args[3])?;
+        let group: Group = serde_json::from_str(&args[3])?;
         let local_only: bool = serde_json::from_str(&args[4])?;
         let group_ip: Option<Ipv4Addr> = serde_json::from_str(&args[5])?;
         let rootfs_path = PathBuf::from(&args[6]);
+
+        // Resolve environment variables
+        let env_pairs = service.resolve_environment_variables(&group)?;
+        let volumes = service.resolve_volumes(&group)?;
 
         // Set up micro VM options
         let mut builder = MicroVm::builder()
@@ -49,14 +53,9 @@ pub async fn main() -> MonocoreResult<()> {
             .port_map(service.get_port().cloned().into_iter())
             .workdir_path(service.get_workdir().unwrap_or("/"))
             .exec_path(service.get_command().unwrap_or("/bin/sh"))
-            .args(
-                service
-                    .get_args()
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|s| s.as_str()),
-            )
-            .env(env)
+            .args(service.get_args().iter().map(|s| s.as_str()))
+            .env(env_pairs)
+            .mapped_dirs(volumes)
             .local_only(local_only);
 
         // Only set assigned_ip if Some

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use tracing::Level;
 
-use crate::{config::DEFAULT_SERVER_PORT, utils::DEFAULT_MONOCORE_HOME};
+use crate::config::{DEFAULT_MONOCORE_HOME, DEFAULT_SERVER_PORT};
 
 use super::styles;
 
@@ -58,7 +58,7 @@ pub enum MonocoreSubcommand {
         home_dir: PathBuf,
     },
 
-    /// Pull container image from registry
+    /// Pull container image from the Docker registry
     #[command(arg_required_else_help = true)]
     Pull {
         /// Image reference (e.g. 'alpine:latest')

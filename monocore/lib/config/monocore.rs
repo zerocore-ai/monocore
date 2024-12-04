@@ -1,8 +1,8 @@
 //! Monocore configuration types and helpers.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use getset::{Getters, Setters};
+use getset::Getters;
 use serde::{Deserialize, Serialize};
 use typed_builder::TypedBuilder;
 use uuid::Uuid;
@@ -10,8 +10,9 @@ use uuid::Uuid;
 use crate::{MonocoreError, MonocoreResult};
 
 use super::{
-    monocore_builder::MonocoreBuilder, EnvPair, PathPair, PortPair, ServiceDefaultBuilder,
-    ServiceHttpHandlerBuilder, ServicePrecursorBuilder, DEFAULT_NUM_VCPUS, DEFAULT_RAM_MIB,
+    monocore_builder::MonocoreBuilder,
+    validate::{normalize_path, normalize_volume_path},
+    EnvPair, PathPair, PortPair, ServiceBuilder, DEFAULT_NUM_VCPUS, DEFAULT_RAM_MIB,
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -19,8 +20,7 @@ use super::{
 //--------------------------------------------------------------------------------------------------
 
 /// The monocore configuration.
-#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Getters, Setters)]
-#[getset(get = "pub with_prefix")]
+#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Monocore {
     /// The services to run.
     #[serde(rename = "service")]
@@ -55,34 +55,34 @@ pub struct Group {
     pub(super) local_only: bool,
 }
 
-impl Group {
-    fn default_local_only() -> bool {
-        true
-    }
-}
-
-/// The volume to mount.
+/// A volume definition in a group that specifies a base host path.
+/// The path must be normalized (absolute path, no '..' components, no redundant separators).
+/// Services in the group can mount this volume or its subdirectories using VolumeMount.
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct GroupVolume {
-    /// The name of the volume.
+    /// The name of the volume, used by services to reference this volume.
     #[builder(setter(transform = |name: impl AsRef<str>| name.as_ref().to_string()))]
     pub(super) name: String,
 
-    /// The path to mount the volume from.
+    /// The normalized base path on the host system.
+    /// Must be an absolute path without '..' components or redundant separators.
     #[builder(setter(transform = |path: impl AsRef<str>| path.as_ref().to_string()))]
     pub(super) path: String,
 }
 
-/// The volume to mount.
+/// Specifies how a service mounts a group volume.
+/// References a GroupVolume by name and specifies where to mount it in the guest.
 #[derive(Debug, Clone, Serialize, TypedBuilder, Deserialize, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
-pub struct ServiceVolume {
-    /// The name of the volume.
+pub struct VolumeMount {
+    /// The name of the group volume to mount.
     #[builder(setter(transform = |name: impl AsRef<str>| name.as_ref().to_string()))]
     pub(super) name: String,
 
-    /// The path to mount the volume to.
+    /// The mount specification.
+    /// - If Same: mounts the group volume's path to the same path in guest
+    /// - If Distinct: mounts the group volume's path to a specified guest path
     pub(super) mount: PathPair,
 }
 
@@ -101,138 +101,62 @@ pub struct GroupEnv {
 
 /// The service to run.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "type")]
-pub enum Service {
-    /// The default service.
-    #[serde(rename = "default")]
-    Default {
-        /// The name of the service.
-        name: String,
+pub struct Service {
+    /// The name of the service.
+    pub(super) name: String,
 
-        /// The base image to use.
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        base: Option<String>,
+    /// The base image to use.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub(super) base: Option<String>,
 
-        /// The group to run the service in.
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        group: Option<String>,
+    /// The group to run the service in.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub(super) group: Option<String>,
 
-        /// The volumes to mount.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        volumes: Vec<ServiceVolume>,
+    /// The volumes specific to this service. These take precedence over group volumes.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub(super) volumes: Vec<PathPair>,
 
-        /// The environment groups to use.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        envs: Vec<String>,
+    /// The environment variables specific to this service. These take precedence over group envs.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub(super) envs: Vec<EnvPair>,
 
-        /// The services to depend on.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        depends_on: Vec<String>,
+    /// The group volumes to use.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub(super) group_volumes: Vec<VolumeMount>,
 
-        /// The setup commands to run.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        setup: Vec<String>,
+    /// The group environment variables to use.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub(super) group_envs: Vec<String>,
 
-        /// The command to run.
-        #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-        scripts: HashMap<String, String>,
+    /// The services to depend on.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub(super) depends_on: Vec<String>,
 
-        /// The port to expose.
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        port: Option<PortPair>,
+    /// The port to expose.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub(super) port: Option<PortPair>,
 
-        /// The working directory to use.
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        workdir: Option<String>,
+    /// The working directory to use.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub(super) workdir: Option<String>,
 
-        /// The command to run. If the `scripts.start` is not specified, this will be used as the
-        /// command to run.
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        command: Option<String>,
+    /// The command to run. If the `scripts.start` is not specified, this will be used as the
+    /// command to run.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub(super) command: Option<String>,
 
-        /// The arguments to pass to the command.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        args: Vec<String>,
+    /// The arguments to pass to the command.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub(super) args: Vec<String>,
 
-        /// The number of vCPUs to use.
-        #[serde(default = "Monocore::default_num_vcpus")]
-        cpus: u8,
+    /// The number of vCPUs to use.
+    #[serde(default = "Monocore::default_num_vcpus")]
+    pub(super) cpus: u8,
 
-        /// The amount of RAM in MiB to use.
-        #[serde(default = "Monocore::default_ram_mib")]
-        ram: u32,
-    },
-
-    /// An HTTP event handler service. It enables serverless type workloads.
-    #[serde(rename = "http_handler")]
-    HttpHandler {
-        /// The name of the service.
-        name: String,
-
-        /// The base image to use.
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        base: Option<String>,
-
-        /// The group to run the service in.
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        group: Option<String>,
-
-        /// The volumes to mount.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        volumes: Vec<ServiceVolume>,
-
-        /// The environment groups to use.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        envs: Vec<String>,
-
-        /// The services to depend on.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        depends_on: Vec<String>,
-
-        /// The setup commands to run.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        setup: Vec<String>,
-
-        /// The port to expose.
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        port: Option<PortPair>,
-
-        /// The number of vCPUs to use.
-        #[serde(default = "Monocore::default_num_vcpus")]
-        cpus: u8,
-
-        /// The amount of RAM in MiB to use.
-        #[serde(default = "Monocore::default_ram_mib")]
-        ram: u32,
-    },
-
-    /// An ephemeral service that does not actually run anything.
-    /// It is typically used to setup the environment for the actual services.
-    #[serde(rename = "precursor")]
-    Precursor {
-        /// The name of the service.
-        name: String,
-
-        /// The base image to use.
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        base: Option<String>,
-
-        /// The volumes to mount.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        volumes: Vec<ServiceVolume>,
-
-        /// The environment groups to use.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        envs: Vec<String>,
-
-        /// The services to depend on.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        depends_on: Vec<String>,
-
-        /// The setup commands to run.
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        setup: Vec<String>,
-    },
+    /// The amount of RAM in MiB to use.
+    #[serde(default = "Monocore::default_ram_mib")]
+    pub(super) ram: u32,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -274,80 +198,23 @@ impl Monocore {
     }
 
     /// Get a group by name in this configuration
-    pub fn get_group(&self, group_name: Option<&str>) -> Option<&Group> {
-        group_name.and_then(|name| self.groups.iter().find(|g| g.get_name() == name))
+    pub fn get_group(&self, group_name: &str) -> Option<&Group> {
+        self.groups.iter().find(|g| g.name == group_name)
+    }
+
+    /// Get all groups in this configuration
+    pub fn get_groups(&self) -> &[Group] {
+        &self.groups
     }
 
     /// Get a service by name in this configuration
     pub fn get_service(&self, service_name: &str) -> Option<&Service> {
         self.services.iter().find(|s| s.get_name() == service_name)
     }
-    /// Gets a group environment by name
-    pub fn get_group_env(&self, env_name: &str, group_name: &str) -> Option<&GroupEnv> {
-        // Find env in specified group
-        self.groups
-            .iter()
-            .find(|g| g.get_name() == group_name)
-            .and_then(|g| g.get_envs().iter().find(|e| e.get_name() == env_name))
-    }
 
-    /// Gets a group volume by name
-    pub fn get_group_volume(&self, volume_name: &str, group_name: &str) -> Option<&GroupVolume> {
-        self.groups
-            .iter()
-            .find(|g| g.get_name() == group_name)
-            .and_then(|g| g.get_volumes().iter().find(|v| v.get_name() == volume_name))
-    }
-
-    /// Gets all environment variables for a service by combining all referenced env groups
-    pub fn get_service_envs(&self, service: &Service) -> MonocoreResult<Vec<&EnvPair>> {
-        let group_name = service.get_group().ok_or_else(|| {
-            MonocoreError::ServiceBelongsToNoGroup(service.get_name().to_string())
-        })?;
-
-        Ok(service
-            .get_envs()
-            .iter()
-            .filter_map(|env_name| self.get_group_env(env_name, group_name))
-            .flat_map(|group_env| group_env.get_envs())
-            .collect())
-    }
-
-    /// Gets all volumes for a service
-    pub fn get_service_volumes<'a>(
-        &'a self,
-        service: &'a Service,
-    ) -> MonocoreResult<Vec<(&'a GroupVolume, &'a ServiceVolume)>> {
-        let group_name = service.get_group().ok_or_else(|| {
-            MonocoreError::ServiceBelongsToNoGroup(service.get_name().to_string())
-        })?;
-
-        Ok(service
-            .get_volumes()
-            .iter()
-            .filter_map(|service_volume| {
-                self.get_group_volume(service_volume.get_name(), group_name)
-                    .map(|group_volume| (group_volume, service_volume))
-            })
-            .collect())
-    }
-
-    /// Gets the group configuration for a service.
-    pub fn get_group_for_service(&self, service: &Service) -> MonocoreResult<&Group> {
-        let group_name = service.get_group().ok_or_else(|| {
-            MonocoreError::ServiceBelongsToNoGroup(service.get_name().to_string())
-        })?;
-
-        self.groups
-            .iter()
-            .find(|g| g.get_name() == group_name)
-            .ok_or_else(|| {
-                MonocoreError::ConfigValidation(format!(
-                    "Group not found for service {}: {}",
-                    service.get_name(),
-                    group_name
-                ))
-            })
+    /// Get all services in this configuration
+    pub fn get_services(&self) -> &[Service] {
+        &self.services
     }
 
     /// Removes specified services from the configuration in place.
@@ -355,21 +222,10 @@ impl Monocore {
     /// Groups are preserved unless all services are removed.
     ///
     /// ## Arguments
-    /// * `service_names` - Optional set of service names to remove. If None, removes all services.
-    pub fn remove_services(&mut self, service_names: Option<&[String]>) {
-        match service_names {
-            Some(names) => {
-                self.services
-                    .retain(|s| !names.contains(&s.get_name().to_string()));
-                if self.services.is_empty() {
-                    self.groups.clear();
-                }
-            }
-            None => {
-                self.services.clear();
-                self.groups.clear();
-            }
-        }
+    /// * `names` - The set of service names to remove.
+    pub fn remove_services(&mut self, names: &[String]) {
+        self.services
+            .retain(|s| !names.contains(&s.get_name().to_string()));
     }
 
     /// Gets all services ordered by their dependencies, such that dependencies come before dependents.
@@ -419,240 +275,253 @@ impl Monocore {
 
         ordered
     }
+
+    /// Gets the group for a service by name.
+    ///
+    /// # Arguments
+    /// * `service_name` - The name of the service to get the group for
+    ///
+    /// # Returns
+    /// - `Ok(Some(group))` if the service exists and has a valid group configuration
+    /// - `Ok(None)` if the service exists but:
+    ///   - Has no group specified
+    ///   - References a non-existent group
+    /// - `Err(_)` if the service doesn't exist
+    pub fn get_group_for_service<'a>(
+        &'a self,
+        service_name: &str,
+    ) -> MonocoreResult<Option<&'a Group>> {
+        let service = self.get_service(service_name).ok_or_else(|| {
+            MonocoreError::ConfigValidation(format!("Service '{}' not found", service_name))
+        })?;
+
+        Ok(service
+            .get_group()
+            .and_then(|group_name| self.get_group(group_name)))
+    }
 }
 
 impl Service {
-    /// Creates a new builder for a default service.
-    ///
-    /// This builder provides a fluent interface for configuring and creating a default service.
-    /// Default services are general-purpose services that can run any command with custom configuration.
-    ///
-    /// ## Examples
-    ///
-    /// ```rust
-    /// use monocore::config::Service;
-    ///
-    /// let service = Service::builder_default()
-    ///     .name("my-service")
-    ///     .base("ubuntu:24.04")
-    ///     .group("app")
-    ///     .build();
-    /// ```
-    pub fn builder_default() -> ServiceDefaultBuilder<()> {
-        ServiceDefaultBuilder::default()
+    /// Creates a new builder for a service.
+    pub fn builder() -> ServiceBuilder<()> {
+        ServiceBuilder::default()
     }
 
-    /// Creates a new builder for an HTTP handler service.
-    ///
-    /// This builder provides a fluent interface for configuring and creating an HTTP handler service.
-    /// HTTP handler services are specialized services that handle HTTP requests in a serverless-like manner.
-    ///
-    /// ## Examples
-    ///
-    /// ```rust
-    /// use monocore::config::Service;
-    ///
-    /// let service = Service::builder_http_handler()
-    ///     .name("my-handler")
-    ///     .base("ubuntu:24.04")
-    ///     .port("8080:80".parse().unwrap())
-    ///     .build();
-    /// ```
-    pub fn builder_http_handler() -> ServiceHttpHandlerBuilder<()> {
-        ServiceHttpHandlerBuilder::default()
-    }
-
-    /// Creates a new builder for a precursor service.
-    ///
-    /// This builder provides a fluent interface for configuring and creating a precursor service.
-    /// Precursor services are ephemeral services that run setup tasks before other services start.
-    ///
-    /// ## Examples
-    ///
-    /// ```rust
-    /// use monocore::config::Service;
-    ///
-    /// let service = Service::builder_precursor()
-    ///     .name("setup")
-    ///     .base("ubuntu:24.04")
-    ///     .setup(vec!["apt update".to_string()])
-    ///     .build();
-    /// ```
-    pub fn builder_precursor() -> ServicePrecursorBuilder<()> {
-        ServicePrecursorBuilder::default()
-    }
-
-    /// The default HTTP handler service.
-    pub fn default_http_handler() -> Self {
-        Service::HttpHandler {
-            name: Uuid::new_v4().to_string(),
-            base: None,
-            group: None,
-            volumes: vec![],
-            envs: vec![],
-            depends_on: vec![],
-            setup: vec![],
-            port: None,
-            cpus: Monocore::default_num_vcpus(),
-            ram: Monocore::default_ram_mib(),
-        }
-    }
-
-    /// Gets all environment variables for a service by combining all referenced env groups
-    pub fn get_group_env<'a>(&'a self, group: &'a Group) -> MonocoreResult<Vec<&'a EnvPair>> {
-        // First check if service has a group
-        let service_group = self
-            .get_group()
-            .ok_or_else(|| MonocoreError::ServiceBelongsToNoGroup(self.get_name().to_string()))?;
-
-        // Then check if it matches the provided group
-        if service_group != group.get_name() {
-            return Err(MonocoreError::ServiceBelongsToWrongGroup(
-                self.get_name().to_string(),
-                group.get_name().to_string(),
-            ));
-        }
-
-        // Get all environment variables from the referenced env groups
-        Ok(self
-            .get_envs()
-            .iter()
-            .filter_map(|env_name| {
-                group
-                    .get_envs()
-                    .iter()
-                    .find(|group_env| group_env.get_name() == env_name)
-            })
-            .flat_map(|group_env| group_env.get_envs())
-            .collect())
-    }
-
-    /// Returns true if the service is a precursor.
-    pub fn is_precursor(&self) -> bool {
-        matches!(self, Service::Precursor { .. })
-    }
-
-    /// Returns true if the service is a default service.
-    pub fn is_default(&self) -> bool {
-        matches!(self, Service::Default { .. })
-    }
-
-    /// Returns true if the service is an HTTP handler service.
-    pub fn is_http_handler(&self) -> bool {
-        matches!(self, Service::HttpHandler { .. })
-    }
-
-    /// Returns the name of the service.
+    /// Gets the name of the service.
     pub fn get_name(&self) -> &str {
-        match self {
-            Service::Default { name, .. } => name,
-            Service::Precursor { name, .. } => name,
-            Service::HttpHandler { name, .. } => name,
-        }
+        &self.name
     }
 
-    /// Returns the group of the service.
-    pub fn get_group(&self) -> Option<&str> {
-        match self {
-            Service::Default { group, .. } => group.as_deref(),
-            Service::Precursor { .. } => None,
-            Service::HttpHandler { group, .. } => group.as_deref(),
-        }
-    }
-
-    /// Returns the base image of the service.
+    /// Gets the base image of the service.
     pub fn get_base(&self) -> Option<&str> {
-        match self {
-            Service::Default { base, .. } => base.as_deref(),
-            Service::Precursor { base, .. } => base.as_deref(),
-            Service::HttpHandler { base, .. } => base.as_deref(),
-        }
+        self.base.as_deref()
     }
 
-    /// Returns the volumes of the service.
-    pub fn get_volumes(&self) -> &[ServiceVolume] {
-        match self {
-            Service::Default { volumes, .. } => volumes,
-            Service::Precursor { volumes, .. } => volumes,
-            Service::HttpHandler { volumes, .. } => volumes,
-        }
+    /// Gets the group of the service.
+    ///
+    /// ## Returns
+    /// The name of the group the service is in, or None if the service is not in a group.
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
     }
 
-    /// Returns the environment groups to use.
-    pub fn get_envs(&self) -> &[String] {
-        match self {
-            Service::Default { envs, .. } => envs,
-            Service::Precursor { envs, .. } => envs,
-            Service::HttpHandler { envs, .. } => envs,
-        }
-    }
-
-    /// Returns the services to depend on.
+    /// Gets the services the service depends on.
     pub fn get_depends_on(&self) -> &[String] {
-        match self {
-            Service::Default { depends_on, .. } => depends_on,
-            Service::Precursor { depends_on, .. } => depends_on,
-            Service::HttpHandler { depends_on, .. } => depends_on,
-        }
+        &self.depends_on
     }
 
-    /// Returns the scripts of the service.
-    pub fn get_scripts(&self) -> Option<&HashMap<String, String>> {
-        match self {
-            Service::Default { scripts, .. } => Some(scripts),
-            _ => None,
-        }
-    }
-
-    /// Returns the number of vCPUs to use.
-    pub fn get_cpus(&self) -> u8 {
-        match self {
-            Service::Default { cpus, .. } => *cpus,
-            Service::HttpHandler { cpus, .. } => *cpus,
-            _ => Monocore::default_num_vcpus(),
-        }
-    }
-
-    /// Returns the amount of RAM in MiB to use.
-    pub fn get_ram(&self) -> u32 {
-        match self {
-            Service::Default { ram, .. } => *ram,
-            Service::HttpHandler { ram, .. } => *ram,
-            _ => Monocore::default_ram_mib(),
-        }
-    }
-
-    /// Returns the port to expose.
+    /// Gets the port of the service.
+    ///
+    /// ## Returns
+    /// The port of the service, or None if the service is not exposed.
     pub fn get_port(&self) -> Option<&PortPair> {
-        match self {
-            Service::Default { port, .. } => port.as_ref(),
-            Service::HttpHandler { port, .. } => port.as_ref(),
-            _ => None,
-        }
+        self.port.as_ref()
     }
 
-    /// Returns the working directory to use.
+    /// Gets the working directory of the service.
     pub fn get_workdir(&self) -> Option<&str> {
-        match self {
-            Service::Default { workdir, .. } => workdir.as_deref(),
-            _ => None,
-        }
+        self.workdir.as_deref()
     }
 
-    /// Returns the command to run.
+    /// Gets the command of the service.
     pub fn get_command(&self) -> Option<&str> {
-        match self {
-            Service::Default { command, .. } => command.as_deref(),
-            _ => None,
-        }
+        self.command.as_deref()
     }
 
-    /// Returns the arguments to pass to the command.
-    pub fn get_args(&self) -> Option<&[String]> {
-        match self {
-            Service::Default { args, .. } => Some(args),
-            _ => None,
+    /// Gets the arguments of the service.
+    pub fn get_args(&self) -> &[String] {
+        &self.args
+    }
+
+    /// Gets the number of vCPUs the service uses.
+    pub fn get_cpus(&self) -> u8 {
+        self.cpus
+    }
+
+    /// Gets the amount of RAM in MiB the service uses.
+    pub fn get_ram(&self) -> u32 {
+        self.ram
+    }
+
+    /// Gets the environment variables specific to this service. These take precedence over group envs.
+    pub fn get_own_envs(&self) -> &[EnvPair] {
+        &self.envs
+    }
+
+    /// Gets the environment variables specific to this service's group.
+    pub fn get_group_envs(&self) -> &[String] {
+        &self.group_envs
+    }
+
+    /// Gets the volumes specific to this service. These take precedence over group volumes.
+    pub fn get_own_volumes(&self) -> &[PathPair] {
+        &self.volumes
+    }
+
+    /// Gets the volumes specific to this service's group.
+    pub fn get_group_volumes(&self) -> &[VolumeMount] {
+        &self.group_volumes
+    }
+
+    /// Resolves all environment variables for this service by merging group environment variables
+    /// with service-specific ones. Service-specific variables take precedence over group variables.
+    ///
+    /// # Arguments
+    /// * `group` - The group containing environment variable definitions
+    ///
+    /// # Returns
+    /// A Result containing either:
+    /// - Ok(Vec<EnvPair>): The merged environment variables
+    /// - Err: If any referenced group environment doesn't exist
+    pub fn resolve_environment_variables(&self, group: &Group) -> MonocoreResult<Vec<EnvPair>> {
+        let mut env_pairs = Vec::new();
+
+        // First add group environment variables
+        for group_env_name in &self.group_envs {
+            let group_env = group
+                .get_envs()
+                .iter()
+                .find(|e| e.get_name() == group_env_name)
+                .ok_or_else(|| {
+                    MonocoreError::ConfigValidation(format!(
+                        "Service '{}' references non-existent group environment '{}'",
+                        self.name, group_env_name
+                    ))
+                })?;
+            env_pairs.extend(group_env.get_envs().iter().cloned());
         }
+
+        // Then add/override with service-specific environment variables
+        for own_env in &self.envs {
+            // Remove any existing env var with same name from group envs
+            if let Some(idx) = env_pairs
+                .iter()
+                .position(|e| e.get_name() == own_env.get_name())
+            {
+                env_pairs.remove(idx);
+            }
+            env_pairs.push(own_env.clone());
+        }
+
+        Ok(env_pairs)
+    }
+
+    /// Resolves all volume mounts for this service by merging group volumes
+    /// with service-specific ones. Service-specific volumes take precedence over group volumes
+    /// when mounting to the same guest path.
+    ///
+    /// For group volumes:
+    /// - Base path comes from group volume definition (must be normalized)
+    /// - Service can specify a subdirectory of the base path to mount
+    /// - Final host path will be base_path + service_subdir
+    ///
+    /// For service volumes:
+    /// - Host paths are normalized
+    /// - Direct mapping to guest path
+    ///
+    /// # Arguments
+    /// * `group` - The group containing volume definitions
+    ///
+    /// # Returns
+    /// A Result containing either:
+    /// - Ok(Vec<PathPair>): The resolved volume mounts
+    /// - Err: If any referenced group volume doesn't exist or if path normalization fails
+    pub fn resolve_volumes(&self, group: &Group) -> MonocoreResult<Vec<PathPair>> {
+        let mut volume_mounts = Vec::new();
+
+        // First add group volumes referenced by the service
+        for group_volume_mount in &self.group_volumes {
+            let group_volume = group
+                .get_volumes()
+                .iter()
+                .find(|v| v.get_name() == group_volume_mount.get_name())
+                .ok_or_else(|| {
+                    MonocoreError::ConfigValidation(format!(
+                        "Service '{}' references non-existent group volume '{}'",
+                        self.name,
+                        group_volume_mount.get_name()
+                    ))
+                })?;
+
+            // Group volume base path.
+            let base_path = group_volume.get_path();
+
+            // Create PathPair from group volume path and mount point
+            let path_pair = match group_volume_mount.get_mount() {
+                PathPair::Same(path) => {
+                    let normalized_full_host_path =
+                        normalize_volume_path(base_path, path.as_str())?;
+                    PathPair::Distinct {
+                        host: normalized_full_host_path.into(),
+                        guest: path.into(),
+                    }
+                }
+                PathPair::Distinct { host, guest } => {
+                    let normalized_full_host_path =
+                        normalize_volume_path(base_path, host.as_str())?;
+                    PathPair::Distinct {
+                        host: normalized_full_host_path.into(),
+                        guest: guest.clone(),
+                    }
+                }
+            };
+            volume_mounts.push(path_pair);
+        }
+
+        // Then add/override with service-specific volumes
+        for own_volume in &self.volumes {
+            let normalized_volume = match own_volume {
+                PathPair::Same(path) => {
+                    let normalized = normalize_path(path.as_str(), true)?;
+                    PathPair::Same(normalized.into())
+                }
+                PathPair::Distinct { host, guest } => {
+                    let normalized = normalize_path(host.as_str(), true)?;
+                    PathPair::Distinct {
+                        host: normalized.into(),
+                        guest: guest.clone(),
+                    }
+                }
+            };
+
+            // Remove any existing mount with same guest path
+            if let Some(idx) = volume_mounts
+                .iter()
+                .position(|v| v.get_guest() == normalized_volume.get_guest())
+            {
+                volume_mounts.remove(idx);
+            }
+            volume_mounts.push(normalized_volume);
+        }
+
+        Ok(volume_mounts)
+    }
+}
+
+impl Group {
+    /// Returns the default value for local_only.
+    pub fn default_local_only() -> bool {
+        true
     }
 }
 
@@ -662,22 +531,7 @@ impl Service {
 
 impl Default for Service {
     fn default() -> Self {
-        Service::Default {
-            name: Uuid::new_v4().to_string(),
-            base: None,
-            group: None,
-            volumes: vec![],
-            envs: vec![],
-            depends_on: vec![],
-            setup: vec![],
-            scripts: HashMap::new(),
-            port: None,
-            workdir: None,
-            command: None,
-            args: vec![],
-            cpus: Monocore::default_num_vcpus(),
-            ram: Monocore::default_ram_mib(),
-        }
+        Service::builder().name(Uuid::new_v4().to_string()).build()
     }
 }
 
@@ -688,109 +542,89 @@ impl Default for Service {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::MonocoreError;
 
     #[test]
     fn test_monocore_config_from_toml_string() -> anyhow::Result<()> {
         let config = r#"
         [[service]]
-        type = "precursor"
-        name = "precursor"
-        base = "ubuntu:24.04"
-        envs = ["main"]
-        setup = [
-            "apt update && apt install -y curl",
-            "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
-            "cd /project && cargo build --release",
-            "cp target/release/monocore /main/monocore"
+        name = "database"
+        base = "postgres:16.1"
+        volumes = [
+            "/var/lib/postgresql/data:/"
         ]
+        port = "5432:5432"
 
         [[service]]
-        type = "default"
         name = "server"
-        base = "ubuntu:24.04"
-        group = "app"
+        base = "debian:12-slim"
         volumes = [
-            { name = "main", mount = "/project:/" }
+            "/logs:/"
         ]
-        envs = ["main"]
-        depends_on = ["precursor"]
-        setup = [
-            "cd /main"
+        envs = [
+            "LOG_LEVEL=info"
         ]
+        group = "app_grp"
+        group_envs = ["app_grp_env"]
+        depends_on = ["database"]
         port = "3000:3000"
-        scripts = { start = "./monocore" }
+        command = "/app/bin/mcp-server"
+
+        [[service.group_volumes]]
+        name = "app_grp_vol"
+        mount = "/User/mark/Desktop/project/server:/app"
 
         [[group]]
-        name = "app"
-        address = "10.0.0.1"
+        name = "app_grp"
         local_only = true
 
         [[group.volume]]
-        name = "main"
-        path = "~/Desktop/project"
+        name = "app_grp_vol"
+        path = "/User/mark/Desktop/project"
 
         [[group.env]]
-        name = "main"
+        name = "app_grp_env"
         envs = [
-            "LOG_LEVEL=info",
-            "PROJECT_PATH=/project"
+            "PROJECT_PATH=/app"
         ]
         "#;
 
         let config: Monocore = toml::from_str(config)?;
 
-        tracing::info!("config: {:?}", config);
-
-        let mut scripts = HashMap::new();
-        scripts.insert("start".to_string(), "./monocore".to_string());
-
         let expected_monocore = Monocore::builder()
             .services(vec![
-                Service::builder_precursor()
-                    .name("precursor")
-                    .base("ubuntu:24.04")
-                    .envs(vec!["main".to_string()])
-                    .setup(vec![
-                        "apt update && apt install -y curl".to_string(),
-                        "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
-                            .to_string(),
-                        "cd /project && cargo build --release".to_string(),
-                        "cp target/release/monocore /main/monocore".to_string(),
-                    ])
+                Service::builder()
+                    .name("database")
+                    .base("postgres:16.1")
+                    .volumes(vec!["/var/lib/postgresql/data:/".parse::<PathPair>()?])
+                    .port("5432:5432".parse::<PortPair>()?)
                     .build(),
-                Service::builder_default()
+                Service::builder()
                     .name("server")
-                    .base("ubuntu:24.04")
-                    .group("app")
-                    .volumes(vec![ServiceVolume::builder()
-                        .name("main")
-                        .mount(PathPair::Distinct {
-                            host: "/project".parse()?,
-                            guest: "/".parse()?,
-                        })
+                    .base("debian:12-slim")
+                    .volumes(vec!["/logs:/".parse::<PathPair>()?])
+                    .envs(vec!["LOG_LEVEL=info".parse::<EnvPair>()?])
+                    .group("app_grp")
+                    .group_envs(vec!["app_grp_env".to_string()])
+                    .depends_on(vec!["database".to_string()])
+                    .port("3000:3000".parse::<PortPair>()?)
+                    .command("/app/bin/mcp-server")
+                    .group_volumes(vec![VolumeMount::builder()
+                        .name("app_grp_vol")
+                        .mount("/User/mark/Desktop/project/server:/app".parse::<PathPair>()?)
                         .build()])
-                    .envs(vec!["main".to_string()])
-                    .depends_on(vec!["precursor".to_string()])
-                    .setup(vec!["cd /main".to_string()])
-                    .scripts(scripts)
-                    .port("3000:3000".parse()?)
                     .build(),
             ])
             .groups(vec![Group::builder()
-                .name("app")
+                .name("app_grp")
+                .local_only(true)
                 .volumes(vec![GroupVolume::builder()
-                    .name("main")
-                    .path("~/Desktop/project")
+                    .name("app_grp_vol")
+                    .path("/User/mark/Desktop/project")
                     .build()])
                 .envs(vec![GroupEnv::builder()
-                    .name("main")
-                    .envs(vec![
-                        "LOG_LEVEL=info".parse()?,
-                        "PROJECT_PATH=/project".parse()?,
-                    ])
+                    .name("app_grp_env")
+                    .envs(vec!["PROJECT_PATH=/app".parse::<EnvPair>()?])
                     .build()])
-                .local_only(true)
                 .build()])
             .build()?;
 
@@ -804,54 +638,43 @@ mod tests {
         let config = r#"{
             "service": [
                 {
-                    "type": "precursor",
-                    "name": "precursor",
-                    "base": "ubuntu:24.04",
-                    "envs": ["main"],
-                    "setup": [
-                        "apt update && apt install -y curl",
-                        "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
-                        "cd /project && cargo build --release",
-                        "cp target/release/monocore /main/monocore"
-                    ]
+                    "name": "database",
+                    "base": "postgres:16.1",
+                    "volumes": ["/var/lib/postgresql/data:/"],
+                    "port": "5432:5432"
                 },
                 {
-                    "type": "default",
                     "name": "server",
-                    "base": "ubuntu:24.04",
-                    "group": "app",
-                    "volumes": [
-                        {
-                            "name": "main",
-                            "mount": "/project:/"
-                        }
-                    ],
-                    "envs": ["main"],
-                    "depends_on": ["precursor"],
-                    "setup": ["cd /main"],
+                    "base": "debian:12-slim",
+                    "volumes": ["/logs:/"],
+                    "envs": ["LOG_LEVEL=info"],
+                    "group": "app_grp",
+                    "group_envs": ["app_grp_env"],
+                    "depends_on": ["database"],
                     "port": "3000:3000",
-                    "scripts": {
-                        "start": "./monocore"
-                    }
+                    "command": "/app/bin/mcp-server",
+                    "group_volumes": [
+                        {
+                            "name": "app_grp_vol",
+                            "mount": "/User/mark/Desktop/project/server:/app"
+                        }
+                    ]
                 }
             ],
             "group": [
                 {
-                    "name": "app",
+                    "name": "app_grp",
                     "local_only": true,
                     "volume": [
                         {
-                            "name": "main",
-                            "path": "~/Desktop/project"
+                            "name": "app_grp_vol",
+                            "path": "/User/mark/Desktop/project"
                         }
                     ],
                     "env": [
                         {
-                            "name": "main",
-                            "envs": [
-                                "LOG_LEVEL=info",
-                                "PROJECT_PATH=/project"
-                            ]
+                            "name": "app_grp_env",
+                            "envs": ["PROJECT_PATH=/app"]
                         }
                     ]
                 }
@@ -860,55 +683,41 @@ mod tests {
 
         let config: Monocore = serde_json::from_str(config)?;
 
-        let mut scripts = std::collections::HashMap::new();
-        scripts.insert("start".to_string(), "./monocore".to_string());
-
         let expected_monocore = Monocore::builder()
             .services(vec![
-                Service::builder_precursor()
-                    .name("precursor")
-                    .base("ubuntu:24.04")
-                    .envs(vec!["main".to_string()])
-                    .setup(vec![
-                        "apt update && apt install -y curl".to_string(),
-                        "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
-                            .to_string(),
-                        "cd /project && cargo build --release".to_string(),
-                        "cp target/release/monocore /main/monocore".to_string(),
-                    ])
+                Service::builder()
+                    .name("database")
+                    .base("postgres:16.1")
+                    .volumes(vec!["/var/lib/postgresql/data:/".parse::<PathPair>()?])
+                    .port("5432:5432".parse::<PortPair>()?)
                     .build(),
-                Service::builder_default()
+                Service::builder()
                     .name("server")
-                    .base("ubuntu:24.04")
-                    .group("app")
-                    .volumes(vec![ServiceVolume::builder()
-                        .name("main".to_string())
-                        .mount(PathPair::Distinct {
-                            host: "/project".parse()?,
-                            guest: "/".parse()?,
-                        })
+                    .base("debian:12-slim")
+                    .volumes(vec!["/logs:/".parse::<PathPair>()?])
+                    .envs(vec!["LOG_LEVEL=info".parse::<EnvPair>()?])
+                    .group("app_grp")
+                    .group_envs(vec!["app_grp_env".to_string()])
+                    .depends_on(vec!["database".to_string()])
+                    .port("3000:3000".parse::<PortPair>()?)
+                    .command("/app/bin/mcp-server")
+                    .group_volumes(vec![VolumeMount::builder()
+                        .name("app_grp_vol")
+                        .mount("/User/mark/Desktop/project/server:/app".parse::<PathPair>()?)
                         .build()])
-                    .envs(vec!["main".to_string()])
-                    .depends_on(vec!["precursor".to_string()])
-                    .setup(vec!["cd /main".to_string()])
-                    .scripts(scripts)
-                    .port("3000:3000".parse()?)
                     .build(),
             ])
             .groups(vec![Group::builder()
-                .name("app")
+                .name("app_grp")
+                .local_only(true)
                 .volumes(vec![GroupVolume::builder()
-                    .name("main")
-                    .path("~/Desktop/project".to_string())
+                    .name("app_grp_vol")
+                    .path("/User/mark/Desktop/project")
                     .build()])
                 .envs(vec![GroupEnv::builder()
-                    .name("main".to_string())
-                    .envs(vec![
-                        "LOG_LEVEL=info".parse()?,
-                        "PROJECT_PATH=/project".parse()?,
-                    ])
+                    .name("app_grp_env")
+                    .envs(vec!["PROJECT_PATH=/app".parse::<EnvPair>()?])
                     .build()])
-                .local_only(true)
                 .build()])
             .build()?;
 
@@ -918,196 +727,20 @@ mod tests {
     }
 
     #[test]
-    fn test_monocore_config_get_group_env() -> anyhow::Result<()> {
-        let group = Group::builder()
-            .name("test-group")
-            .volumes(vec![])
-            .envs(vec![GroupEnv::builder()
-                .name("test-env")
-                .envs(vec![EnvPair::new("TEST", "value")])
-                .build()])
-            .build();
-
-        let monocore = Monocore::builder()
-            .services(vec![])
-            .groups(vec![group])
-            .build()?;
-
-        // Test finding env in specific group
-        let env = monocore.get_group_env("test-env", "test-group");
-        assert!(env.is_some());
-        assert_eq!(env.unwrap().get_name(), "test-env");
-
-        // Test non-existent env in existing group
-        let env = monocore.get_group_env("non-existent", "test-group");
-        assert!(env.is_none());
-
-        // Test env in non-existent group
-        let env = monocore.get_group_env("test-env", "non-existent-group");
-        assert!(env.is_none());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_monocore_config_get_group_volume() -> anyhow::Result<()> {
-        let group = Group::builder()
-            .name("test-group")
-            .volumes(vec![GroupVolume::builder()
-                .name("test-volume")
-                .path("/test")
-                .build()])
-            .envs(vec![])
-            .build();
-
-        let monocore = Monocore::builder()
-            .services(vec![])
-            .groups(vec![group])
-            .build()?;
-
-        // Test finding volume in specific group
-        let volume = monocore.get_group_volume("test-volume", "test-group");
-        assert!(volume.is_some());
-        assert_eq!(volume.unwrap().get_name(), "test-volume");
-
-        // Test non-existent volume in existing group
-        let volume = monocore.get_group_volume("non-existent", "test-group");
-        assert!(volume.is_none());
-
-        // Test volume in non-existent group
-        let volume = monocore.get_group_volume("test-volume", "non-existent-group");
-        assert!(volume.is_none());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_monocore_config_get_service_envs() -> anyhow::Result<()> {
-        let group = Group::builder()
-            .name("test-group")
-            .volumes(vec![])
-            .envs(vec![GroupEnv::builder()
-                .name("test-env")
-                .envs(vec![
-                    EnvPair::new("TEST1", "value1"),
-                    EnvPair::new("TEST2", "value2"),
-                ])
-                .build()])
-            .build();
-
-        let service = Service::builder_default()
-            .name("test-service")
-            .command("/bin/sleep")
-            .group("test-group")
-            .envs(vec!["test-env".to_string()])
-            .build();
-
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![group])
-            .build()?;
-
-        let envs = monocore.get_service_envs(&monocore.services[0])?;
-        assert_eq!(envs.len(), 2);
-        assert_eq!(envs[0].get_name(), "TEST1");
-        assert_eq!(envs[0].get_value(), "value1");
-        assert_eq!(envs[1].get_name(), "TEST2");
-        assert_eq!(envs[1].get_value(), "value2");
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_monocore_config_get_service_envs_no_group() -> anyhow::Result<()> {
-        let service = Service::builder_default()
-            .name("test-service")
-            .command("/bin/sleep")
-            .build();
-
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![])
-            .build()?;
-
-        let result = monocore.get_service_envs(&monocore.services[0]);
-        assert!(matches!(
-            result,
-            Err(MonocoreError::ServiceBelongsToNoGroup(name)) if name == "test-service"
-        ));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_monocore_config_get_service_volumes() -> anyhow::Result<()> {
-        let group = Group::builder()
-            .name("test-group")
-            .volumes(vec![GroupVolume::builder()
-                .name("test-volume")
-                .path("/test")
-                .build()])
-            .envs(vec![])
-            .build();
-
-        let service = Service::builder_default()
-            .name("test-service")
-            .command("/bin/sleep")
-            .group("test-group")
-            .volumes(vec![ServiceVolume::builder()
-                .name("test-volume")
-                .mount(PathPair::Same("/test".parse()?))
-                .build()])
-            .build();
-
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![group])
-            .build()?;
-
-        let volumes = monocore.get_service_volumes(&monocore.services[0])?;
-        assert_eq!(volumes.len(), 1);
-        assert_eq!(volumes[0].0.get_name(), "test-volume");
-        assert_eq!(volumes[0].1.get_name(), "test-volume");
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_monocore_config_get_service_volumes_no_group() -> anyhow::Result<()> {
-        let service = Service::builder_default()
-            .name("test-service")
-            .command("/bin/sleep")
-            .build();
-
-        let monocore = Monocore::builder()
-            .services(vec![service])
-            .groups(vec![])
-            .build()?;
-
-        let result = monocore.get_service_volumes(&monocore.services[0]);
-        assert!(matches!(
-            result,
-            Err(MonocoreError::ServiceBelongsToNoGroup(name)) if name == "test-service"
-        ));
-
-        Ok(())
-    }
-
-    #[test]
     fn test_get_ordered_services() -> anyhow::Result<()> {
         // Create services with dependencies
-        let service1 = Service::builder_default()
+        let service1 = Service::builder()
             .name("service1")
             .command("./service1")
             .build();
 
-        let service2 = Service::builder_default()
+        let service2 = Service::builder()
             .name("service2")
             .command("./service2")
             .depends_on(vec!["service1".to_string()])
             .build();
 
-        let service3 = Service::builder_default()
+        let service3 = Service::builder()
             .name("service3")
             .command("./service3")
             .depends_on(vec!["service2".to_string()])
@@ -1133,13 +766,13 @@ mod tests {
     #[test]
     fn test_get_ordered_services_circular() -> anyhow::Result<()> {
         // Create services with circular dependencies
-        let service1 = Service::builder_default()
+        let service1 = Service::builder()
             .name("service1")
             .command("./service1")
             .depends_on(vec!["service2".to_string()])
             .build();
 
-        let service2 = Service::builder_default()
+        let service2 = Service::builder()
             .name("service2")
             .command("./service2")
             .depends_on(vec!["service1".to_string()])
@@ -1163,24 +796,24 @@ mod tests {
     #[test]
     fn test_get_ordered_services_complex() -> anyhow::Result<()> {
         // Create a more complex dependency graph
-        let service1 = Service::builder_default()
+        let service1 = Service::builder()
             .name("service1")
             .command("./service1")
             .build();
 
-        let service2 = Service::builder_default()
+        let service2 = Service::builder()
             .name("service2")
             .command("./service2")
             .depends_on(vec!["service1".to_string()])
             .build();
 
-        let service3 = Service::builder_default()
+        let service3 = Service::builder()
             .name("service3")
             .command("./service3")
             .depends_on(vec!["service1".to_string()])
             .build();
 
-        let service4 = Service::builder_default()
+        let service4 = Service::builder()
             .name("service4")
             .command("./service4")
             .depends_on(vec!["service2".to_string(), "service3".to_string()])
@@ -1205,5 +838,248 @@ mod tests {
         assert_eq!(ordered[3].get_name(), "service4");
 
         Ok(())
+    }
+
+    #[test]
+    fn test_resolve_environment_variables() -> anyhow::Result<()> {
+        // Create a group with some environment variables
+        let group = Group::builder()
+            .name("test-group")
+            .envs(vec![GroupEnv::builder()
+                .name("group_env1")
+                .envs(vec![
+                    "SHARED=from_group".parse()?,
+                    "GROUP_ONLY=value".parse()?,
+                ])
+                .build()])
+            .build();
+
+        // Create a service that uses the group env and has its own env vars
+        let service = Service::builder()
+            .name("test-service")
+            .group_envs(vec!["group_env1".to_string()])
+            .envs(vec![
+                "SHARED=from_service".parse()?, // Should override group value
+                "SERVICE_ONLY=value".parse()?,
+            ])
+            .build();
+
+        // Resolve environment variables
+        let resolved = service.resolve_environment_variables(&group)?;
+
+        // Check that we have the expected number of variables
+        assert_eq!(resolved.len(), 3);
+
+        // Check that service-specific value overrode group value
+        assert!(resolved
+            .iter()
+            .any(|e| e.get_name() == "SHARED" && e.get_value() == "from_service"));
+
+        // Check that other variables are present
+        assert!(resolved
+            .iter()
+            .any(|e| e.get_name() == "GROUP_ONLY" && e.get_value() == "value"));
+        assert!(resolved
+            .iter()
+            .any(|e| e.get_name() == "SERVICE_ONLY" && e.get_value() == "value"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_volumes_with_normalization() -> anyhow::Result<()> {
+        let group = Group::builder()
+            .name("test-group")
+            .volumes(vec![GroupVolume::builder()
+                .name("data")
+                .path("/data/shared") // Base path
+                .build()])
+            .build();
+
+        let service = Service::builder()
+            .name("test-service")
+            .group_volumes(vec![
+                // Mount a subdirectory of the group volume with path that needs normalization
+                VolumeMount::builder()
+                    .name("data")
+                    .mount("user1//subdir/:/container/data".parse()?) // Will become /data/shared/user1/subdir
+                    .build(),
+            ])
+            .volumes(vec!["/var/log///app/:/container/logs".parse()?])
+            .build();
+
+        let resolved = service.resolve_volumes(&group)?;
+
+        assert_eq!(resolved.len(), 2);
+
+        // Check that combined group volume path is normalized
+        assert!(resolved.iter().any(|v| {
+            matches!(v, PathPair::Distinct { host, guest }
+                if host == "/data/shared/user1/subdir" && guest == "/container/data")
+        }));
+
+        // Check that service-specific volume is normalized
+        assert!(resolved.iter().any(|v| {
+            matches!(v, PathPair::Distinct { host, guest }
+                if host == "/var/log/app" && guest == "/container/logs")
+        }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_volumes_escape_prevention() -> anyhow::Result<()> {
+        // Create a group with a base volume
+        let group = Group::builder()
+            .name("test-group")
+            .volumes(vec![GroupVolume::builder()
+                .name("data")
+                .path("/data/shared")
+                .build()])
+            .build();
+
+        // Test 1: Direct path traversal attempt with relative path
+        let service1 = Service::builder()
+            .name("service1")
+            .group_volumes(vec![VolumeMount::builder()
+                .name("data")
+                .mount("../escaped:/container/data".parse()?)
+                .build()])
+            .build();
+
+        let result = service1.resolve_volumes(&group);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("cannot traverse above root"));
+
+        // Test 2: Sneaky path traversal with normalized result outside base
+        let service2 = Service::builder()
+            .name("service2")
+            .group_volumes(vec![VolumeMount::builder()
+                .name("data")
+                .mount("subdir/../../etc:/container/data".parse()?)
+                .build()])
+            .build();
+
+        let result = service2.resolve_volumes(&group);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("cannot traverse above root"));
+
+        // Test 3: Absolute path outside base path
+        let service3 = Service::builder()
+            .name("service3")
+            .group_volumes(vec![VolumeMount::builder()
+                .name("data")
+                .mount("/etc/passwd:/container/data".parse()?)
+                .build()])
+            .build();
+
+        let result = service3.resolve_volumes(&group);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must be under base path"));
+
+        // Test 4: Absolute path that is under base path
+        let service4 = Service::builder()
+            .name("service4")
+            .group_volumes(vec![VolumeMount::builder()
+                .name("data")
+                .mount("/data/shared/logs:/container/data".parse()?)
+                .build()])
+            .build();
+
+        let result = service4.resolve_volumes(&group)?;
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            &result[0],
+            PathPair::Distinct { host, guest }
+            if host == "/data/shared/logs" && guest == "/container/data"
+        ));
+
+        // Test 5: Valid subdirectory mount
+        let service5 = Service::builder()
+            .name("service5")
+            .group_volumes(vec![VolumeMount::builder()
+                .name("data")
+                .mount("subdir/logs:/container/data".parse()?)
+                .build()])
+            .build();
+
+        let result = service5.resolve_volumes(&group)?;
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            &result[0],
+            PathPair::Distinct { host, guest }
+            if host == "/data/shared/subdir/logs" && guest == "/container/data"
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_environment_variables_missing_group_env() {
+        let group = Group::builder()
+            .name("test-group")
+            .envs(vec![GroupEnv::builder()
+                .name("existing-env")
+                .envs(vec!["EXISTING=value".parse().unwrap()])
+                .build()])
+            .build();
+
+        let service = Service::builder()
+            .name("test-service")
+            .group_envs(vec![
+                "existing-env".to_string(),
+                "non-existent-env".to_string(),
+            ])
+            .envs(vec!["SERVICE_ENV=value".parse().unwrap()])
+            .build();
+
+        let result = service.resolve_environment_variables(&group);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("references non-existent group environment"));
+    }
+
+    #[test]
+    fn test_resolve_volumes_missing_group_volume() {
+        let group = Group::builder()
+            .name("test-group")
+            .volumes(vec![GroupVolume::builder()
+                .name("existing-volume")
+                .path("/data/existing")
+                .build()])
+            .build();
+
+        let service = Service::builder()
+            .name("test-service")
+            .group_volumes(vec![
+                VolumeMount::builder()
+                    .name("existing-volume")
+                    .mount("/data/existing:/app".parse().unwrap())
+                    .build(),
+                VolumeMount::builder()
+                    .name("non-existent-volume")
+                    .mount("/data/existing:/other".parse().unwrap())
+                    .build(),
+            ])
+            .volumes(vec!["/service/data:/service".parse().unwrap()])
+            .build();
+
+        let result = service.resolve_volumes(&group);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("references non-existent group volume"));
     }
 }

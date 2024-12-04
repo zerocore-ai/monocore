@@ -65,6 +65,8 @@ flate2 = "1.0"
 walkdir = "2.4"
 scopeguard = "1.2"
 tokio-stream = { version = "0.1.17", features = ["fs"] }
+pretty-error-debug.workspace = true
+serde_yaml = "0.9.34"
 
 [dev-dependencies]
 test-log.workspace = true

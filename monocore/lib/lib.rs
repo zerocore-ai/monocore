@@ -38,7 +38,7 @@
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     // Configure a service
-//!     let service = Service::builder_default()
+//!     let service = Service::builder()
 //!         .name("ai-agent")
 //!         .base("alpine:latest")
 //!         .ram(512)

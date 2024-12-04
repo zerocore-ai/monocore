@@ -8,7 +8,7 @@ mod monocore_builder;
 mod path_pair;
 mod port_pair;
 mod service_builder;
-mod validate;
+pub mod validate;
 
 //--------------------------------------------------------------------------------------------------
 // Exports

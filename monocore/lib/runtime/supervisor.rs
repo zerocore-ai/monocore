@@ -164,18 +164,19 @@ impl Supervisor {
         let current_exe = env::current_exe()?;
 
         // Get all the needed data under a single lock
-        let (service_json, env_pairs, local_only_json, group_ip_json, rootfs_path) = {
+        let (service_json, group_json, local_only_json, group_ip_json, rootfs_path) = {
             let state = self.state.lock().await;
-            let service_json = serde_json::to_string(state.get_service())?;
-            let env_pairs = state.get_service().get_group_env(state.get_group())?;
-            let env_json = serde_json::to_string(&env_pairs)?;
+            let service = state.get_service();
+            let service_json = serde_json::to_string(service)?;
+            let group_json = serde_json::to_string(state.get_group())?;
+
             let local_only_json = serde_json::to_string(state.get_group().get_local_only())?;
             let group_ip_json =
                 serde_json::to_string(&state.get_group_ip().unwrap_or(Ipv4Addr::LOCALHOST))?;
             let rootfs_path = state.get_rootfs_path().to_str().unwrap().to_string();
             (
                 service_json,
-                env_json,
+                group_json,
                 local_only_json,
                 group_ip_json,
                 rootfs_path,
@@ -187,7 +188,7 @@ impl Supervisor {
             .args([
                 "--run-microvm",
                 &service_json,
-                &env_pairs,
+                &group_json,
                 &local_only_json,
                 &group_ip_json,
                 &rootfs_path,

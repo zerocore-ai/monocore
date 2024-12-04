@@ -1,4 +1,9 @@
-use std::{ffi::CString, net::Ipv4Addr, path::PathBuf};
+use std::{
+    ffi::CString,
+    fs,
+    net::Ipv4Addr,
+    path::{Path, PathBuf},
+};
 
 use getset::Getters;
 use typed_path::Utf8UnixPathBuf;
@@ -9,6 +14,15 @@ use crate::{
 };
 
 use super::{ffi, LinuxRlimit, MicroVmBuilder, MicroVmConfigBuilder};
+
+use crate::config::validate::normalize_path;
+
+//--------------------------------------------------------------------------------------------------
+// Constants
+//--------------------------------------------------------------------------------------------------
+
+/// The prefix used for virtio-fs tags when mounting shared directories
+const VIRTIOFS_TAG_PREFIX: &str = "virtiofs";
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -89,8 +103,9 @@ pub struct MicroVmConfig {
     /// The amount of RAM in MiB to use for the MicroVm.
     pub ram_mib: u32,
 
-    /// The virtio-fs mounts to use for the MicroVm.
-    pub virtiofs: Vec<PathPair>,
+    /// The directories to mount in the MicroVm using virtio-fs.
+    /// Each PathPair represents a host:guest path mapping.
+    pub mapped_dirs: Vec<PathPair>,
 
     /// The port map to use for the MicroVm.
     pub port_map: Vec<PortPair>,
@@ -239,6 +254,111 @@ impl MicroVm {
         ctx_id as u32
     }
 
+    /// Updates the /etc/fstab file in the guest rootfs to mount the mapped directories.
+    /// Creates the file if it doesn't exist.
+    ///
+    /// This method:
+    /// 1. Creates or updates the /etc/fstab file in the guest rootfs
+    /// 2. Adds entries for each mapped directory using virtio-fs
+    /// 3. Creates the mount points in the guest rootfs
+    /// 4. Sets appropriate permissions on the fstab file
+    ///
+    /// ## Format
+    /// Each mapped directory is mounted using virtiofs with the following format:
+    /// ```text
+    /// virtiofs_N  /guest/path  virtiofs  defaults  0  0
+    /// ```
+    /// where N is the index of the mapped directory.
+    ///
+    /// ## Arguments
+    /// * `root_path` - Path to the guest rootfs
+    /// * `mapped_dirs` - List of host:guest directory mappings to mount
+    ///
+    /// ## Errors
+    /// Returns an error if:
+    /// - Cannot create directories in the rootfs
+    /// - Cannot read or write the fstab file
+    /// - Cannot set permissions on the fstab file
+    fn update_rootfs_fstab(root_path: &Path, mapped_dirs: &[PathPair]) -> MonocoreResult<()> {
+        let fstab_path = root_path.join("etc/fstab");
+
+        // Create parent directories if they don't exist
+        if let Some(parent) = fstab_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Read existing fstab content if it exists
+        let mut fstab_content = if fstab_path.exists() {
+            fs::read_to_string(&fstab_path)?
+        } else {
+            String::new()
+        };
+
+        // Add header comment if file is empty
+        if fstab_content.is_empty() {
+            fstab_content.push_str(
+                "# /etc/fstab: static file system information.\n\
+                 # <file system>\t<mount point>\t<type>\t<options>\t<dump>\t<pass>\n",
+            );
+        }
+
+        // Add entries for mapped directories
+        for (idx, dir) in mapped_dirs.iter().enumerate() {
+            let tag = format!("{}_{}", VIRTIOFS_TAG_PREFIX, idx);
+            let guest_path = dir.get_guest();
+
+            // Add entry for this mapped directory
+            fstab_content.push_str(&format!(
+                "{}\t{}\tvirtiofs\tdefaults\t0\t0\n",
+                tag, guest_path
+            ));
+
+            // Create the mount point directory in the guest rootfs
+            // Convert guest path to a relative path by removing leading slash
+            let guest_path_str = guest_path.as_str();
+            let relative_path = guest_path_str.strip_prefix('/').unwrap_or(guest_path_str);
+            let mount_point = root_path.join(relative_path);
+            fs::create_dir_all(mount_point)?;
+        }
+
+        // Write updated fstab content
+        fs::write(&fstab_path, fstab_content)?;
+
+        // Set proper permissions (644 - rw-r--r--)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = fs::metadata(&fstab_path)?.permissions();
+            let mut new_perms = perms;
+            new_perms.set_mode(0o644);
+            fs::set_permissions(&fstab_path, new_perms)?;
+        }
+
+        Ok(())
+    }
+
+    /// Applies the configuration to the MicroVm context.
+    ///
+    /// This method configures all aspects of the MicroVm including:
+    /// - Basic VM settings (vCPUs, RAM)
+    /// - Root filesystem
+    /// - Directory mappings via virtio-fs
+    /// - Port mappings
+    /// - Resource limits
+    /// - Working directory
+    /// - Executable and arguments
+    /// - Environment variables
+    /// - Console output
+    /// - Network settings
+    ///
+    /// ## Arguments
+    /// * `ctx_id` - The MicroVm context ID to configure
+    /// * `config` - The configuration to apply
+    ///
+    /// ## Panics
+    /// Panics if:
+    /// - Any libkrun API call fails
+    /// - Cannot update the rootfs fstab file
     fn apply_config(ctx_id: u32, config: &MicroVmConfig) {
         // Set log level
         unsafe {
@@ -259,13 +379,24 @@ impl MicroVm {
             assert!(status >= 0, "Failed to set root path: {}", status);
         }
 
-        // Add virtio-fs mounts
-        for mount in &config.virtiofs {
-            let tag = CString::new(mount.get_guest().to_string().as_bytes()).unwrap();
-            let path = CString::new(mount.get_host().to_string().as_bytes()).unwrap();
+        // Add mapped directories using virtio-fs
+        // First, update the rootfs fstab to mount the directories
+        let root_path = &config.root_path;
+        let mapped_dirs = &config.mapped_dirs;
+
+        // Update fstab
+        if let Err(e) = Self::update_rootfs_fstab(root_path, mapped_dirs) {
+            tracing::error!("Failed to update rootfs fstab: {}", e);
+            panic!("Failed to update rootfs fstab: {}", e);
+        }
+
+        // Then add the virtiofs mounts
+        for (idx, dir) in mapped_dirs.iter().enumerate() {
+            let tag = CString::new(format!("{}_{}", VIRTIOFS_TAG_PREFIX, idx)).unwrap();
+            let host_path = CString::new(dir.get_host().to_string().as_bytes()).unwrap();
             unsafe {
-                let status = ffi::krun_add_virtiofs(ctx_id, tag.as_ptr(), path.as_ptr());
-                assert!(status >= 0, "Failed to add virtio-fs mount: {}", status);
+                let status = ffi::krun_add_virtiofs(ctx_id, tag.as_ptr(), host_path.as_ptr());
+                assert!(status >= 0, "Failed to add mapped directory: {}", status);
             }
         }
 
@@ -407,20 +538,68 @@ impl MicroVmConfig {
         MicroVmConfigBuilder::default()
     }
 
+    /// Validates that guest paths are not subsets of each other.
+    ///
+    /// For example, these paths would conflict:
+    /// - /app and /app/data
+    /// - /var/log and /var
+    /// - /data and /data
+    ///
+    /// ## Arguments
+    /// * `mapped_dirs` - The mapped directories to validate
+    ///
+    /// ## Returns
+    /// - Ok(()) if no paths are subsets of each other
+    /// - Err with details about conflicting paths
+    fn validate_guest_paths(mapped_dirs: &[PathPair]) -> MonocoreResult<()> {
+        // Early return if we have 0 or 1 paths - no conflicts possible
+        if mapped_dirs.len() <= 1 {
+            return Ok(());
+        }
+
+        // Pre-normalize all paths once to avoid repeated normalization
+        let normalized_paths: Vec<_> = mapped_dirs
+            .iter()
+            .map(|dir| normalize_path(dir.get_guest().as_str(), true))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Compare each path with every other path only once
+        // Using windows of size 2 would miss some comparisons since we need to check both directions
+        for i in 0..normalized_paths.len() {
+            let path1 = &normalized_paths[i];
+
+            // Only need to check paths after this one since previous comparisons were already done
+            for path2 in &normalized_paths[i + 1..] {
+                // Check both directions for prefix relationship
+                if utils::paths_overlap(path1, path2) {
+                    return Err(MonocoreError::InvalidMicroVMConfig(
+                        InvalidMicroVMConfigError::ConflictingGuestPaths(
+                            path1.clone(),
+                            path2.clone(),
+                        ),
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Validates the MicroVm configuration.
     ///
     /// Performs a series of checks to ensure the configuration is valid:
-    /// - Verifies the root path exists
+    /// - Verifies the root path exists and is accessible
+    /// - Verifies all host paths in mapped_dirs exist and are accessible
     /// - Ensures number of vCPUs is non-zero
     /// - Ensures RAM allocation is non-zero
     /// - Validates executable path and arguments contain only printable ASCII characters
+    /// - Validates guest paths don't overlap or conflict with each other
     ///
     /// ## Returns
     /// - `Ok(())` if the configuration is valid
-    /// - `Err(MonocoreError::InvalidMicroVMConfig)` if any validation check fails
+    /// - `Err(MonocoreError::InvalidMicroVMConfig)` with details about what failed
     ///
     /// ## Examples
-    ///
     /// ```rust
     /// use monocore::vm::MicroVmConfig;
     /// use tempfile::TempDir;
@@ -437,12 +616,25 @@ impl MicroVmConfig {
     /// # }
     /// ```
     pub fn validate(&self) -> MonocoreResult<()> {
+        // Check root path exists
         if !self.root_path.exists() {
             return Err(MonocoreError::InvalidMicroVMConfig(
                 InvalidMicroVMConfigError::RootPathDoesNotExist(
                     self.root_path.to_str().unwrap().into(),
                 ),
             ));
+        }
+
+        // Check all host paths in mapped_dirs exist
+        for dir in &self.mapped_dirs {
+            let host_path = PathBuf::from(dir.get_host().as_str());
+            if !host_path.exists() {
+                return Err(MonocoreError::InvalidMicroVMConfig(
+                    InvalidMicroVMConfigError::HostPathDoesNotExist(
+                        host_path.to_str().unwrap().into(),
+                    ),
+                ));
+            }
         }
 
         if self.num_vcpus == 0 {
@@ -465,15 +657,40 @@ impl MicroVmConfig {
             Self::validate_command_line(arg)?;
         }
 
+        // Validate guest paths are not subsets of each other
+        Self::validate_guest_paths(&self.mapped_dirs)?;
+
         Ok(())
     }
 
     /// Validates that a command line string contains only allowed characters.
     ///
     /// Command line strings (executable paths and arguments) must contain only printable ASCII
-    /// characters in the range from space (0x20) to tilde (0x7E). This excludes control characters
-    /// like newlines and tabs, as well as any non-ASCII Unicode characters.
-    fn validate_command_line(s: &str) -> MonocoreResult<()> {
+    /// characters in the range from space (0x20) to tilde (0x7E). This excludes:
+    /// - Control characters (newlines, tabs, etc.)
+    /// - Non-ASCII Unicode characters
+    /// - Null bytes
+    ///
+    /// ## Arguments
+    /// * `s` - The string to validate
+    ///
+    /// ## Returns
+    /// - `Ok(())` if the string contains only valid characters
+    /// - `Err(MonocoreError::InvalidMicroVMConfig)` if invalid characters are found
+    ///
+    /// ## Examples
+    /// ```rust
+    /// use monocore::vm::MicroVmConfig;
+    ///
+    /// // Valid strings
+    /// assert!(MicroVmConfig::validate_command_line("/bin/echo").is_ok());
+    /// assert!(MicroVmConfig::validate_command_line("Hello, World!").is_ok());
+    ///
+    /// // Invalid strings
+    /// assert!(MicroVmConfig::validate_command_line("/bin/echo\n").is_err());  // newline
+    /// assert!(MicroVmConfig::validate_command_line("hello🌎").is_err());      // emoji
+    /// ```
+    pub fn validate_command_line(s: &str) -> MonocoreResult<()> {
         fn valid_char(c: char) -> bool {
             matches!(c, ' '..='~')
         }
@@ -636,5 +853,233 @@ mod tests {
                 InvalidMicroVMConfigError::InvalidCommandLineString(_)
             ))
         ));
+    }
+
+    #[test]
+    fn test_update_rootfs_fstab() -> anyhow::Result<()> {
+        // Create a temporary directory to act as our rootfs
+        let root_dir = TempDir::new()?;
+        let root_path = root_dir.path();
+
+        // Create temporary directories for host paths
+        let host_dir = TempDir::new()?;
+        let host_data = host_dir.path().join("data");
+        let host_config = host_dir.path().join("config");
+        let host_app = host_dir.path().join("app");
+
+        // Create the host directories
+        fs::create_dir_all(&host_data)?;
+        fs::create_dir_all(&host_config)?;
+        fs::create_dir_all(&host_app)?;
+
+        // Create test directory mappings using our temporary paths
+        let mapped_dirs = vec![
+            format!("{}:/container/data", host_data.display()).parse::<PathPair>()?,
+            format!("{}:/etc/app/config", host_config.display()).parse::<PathPair>()?,
+            format!("{}:/app", host_app.display()).parse::<PathPair>()?,
+        ];
+
+        // Update fstab
+        MicroVm::update_rootfs_fstab(root_path, &mapped_dirs)?;
+
+        // Verify fstab file was created with correct content
+        let fstab_path = root_path.join("etc/fstab");
+        assert!(fstab_path.exists());
+
+        let fstab_content = fs::read_to_string(&fstab_path)?;
+
+        // Check header
+        assert!(fstab_content.contains("# /etc/fstab: static file system information"));
+        assert!(fstab_content
+            .contains("<file system>\t<mount point>\t<type>\t<options>\t<dump>\t<pass>"));
+
+        // Check entries
+        assert!(fstab_content.contains("virtiofs_0\t/container/data\tvirtiofs\tdefaults\t0\t0"));
+        assert!(fstab_content.contains("virtiofs_1\t/etc/app/config\tvirtiofs\tdefaults\t0\t0"));
+        assert!(fstab_content.contains("virtiofs_2\t/app\tvirtiofs\tdefaults\t0\t0"));
+
+        // Verify mount points were created
+        assert!(root_path.join("container/data").exists());
+        assert!(root_path.join("etc/app/config").exists());
+        assert!(root_path.join("app").exists());
+
+        // Verify file permissions
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = fs::metadata(&fstab_path)?.permissions();
+            assert_eq!(perms.mode() & 0o777, 0o644);
+        }
+
+        // Test updating existing fstab
+        let host_logs = host_dir.path().join("logs");
+        fs::create_dir_all(&host_logs)?;
+
+        let new_mapped_dirs = vec![
+            format!("{}:/container/data", host_data.display()).parse::<PathPair>()?, // Keep one existing
+            format!("{}:/var/log", host_logs.display()).parse::<PathPair>()?,        // Add new one
+        ];
+
+        // Update fstab again
+        MicroVm::update_rootfs_fstab(root_path, &new_mapped_dirs)?;
+
+        // Verify updated content
+        let updated_content = fs::read_to_string(&fstab_path)?;
+        assert!(updated_content.contains("virtiofs_0\t/container/data\tvirtiofs\tdefaults\t0\t0"));
+        assert!(updated_content.contains("virtiofs_1\t/var/log\tvirtiofs\tdefaults\t0\t0"));
+
+        // Verify new mount point was created
+        assert!(root_path.join("var/log").exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_rootfs_fstab_errors() -> anyhow::Result<()> {
+        let root_dir = TempDir::new()?;
+        let root_path = root_dir.path();
+
+        // Test with non-existent host paths
+        let mapped_dirs = vec!["/nonexistent/path:/container/data".parse::<PathPair>()?];
+
+        // Should fail validation before trying to update fstab
+        let result = MicroVmConfig::builder()
+            .root_path(root_path)
+            .ram_mib(1024)
+            .mapped_dirs(mapped_dirs)
+            .build()
+            .validate();
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            MonocoreError::InvalidMicroVMConfig(InvalidMicroVMConfigError::HostPathDoesNotExist(_))
+        ));
+
+        // Test with read-only rootfs
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            // Create a read-only rootfs
+            let readonly_dir = TempDir::new()?;
+            let readonly_path = readonly_dir.path();
+
+            // Make root directory read-only
+            let mut perms = fs::metadata(readonly_path)?.permissions();
+            perms.set_mode(0o444); // r--r--r--
+            fs::set_permissions(readonly_path, perms)?;
+
+            // Create test mapping with existing host path
+            let host_dir = TempDir::new()?;
+            let host_path = host_dir.path().join("test");
+            fs::create_dir_all(&host_path)?;
+
+            let mapped_dirs =
+                vec![format!("{}:/container/data", host_path.display()).parse::<PathPair>()?];
+
+            // Attempt to update fstab should fail
+            let result = MicroVm::update_rootfs_fstab(readonly_path, &mapped_dirs);
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), MonocoreError::Io(_)));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_guest_paths() -> anyhow::Result<()> {
+        // Test valid paths (no conflicts)
+        let valid_paths = vec![
+            "/app".parse::<PathPair>()?,
+            "/data".parse()?,
+            "/var/log".parse()?,
+            "/etc/config".parse()?,
+        ];
+        assert!(MicroVmConfig::validate_guest_paths(&valid_paths).is_ok());
+
+        // Test conflicting paths (direct match)
+        let conflicting_paths = vec![
+            "/app".parse()?,
+            "/data".parse()?,
+            "/app".parse()?, // Duplicate
+        ];
+        assert!(MicroVmConfig::validate_guest_paths(&conflicting_paths).is_err());
+
+        // Test conflicting paths (subset)
+        let subset_paths = vec![
+            "/app".parse()?,
+            "/app/data".parse()?, // Subset of /app
+            "/var/log".parse()?,
+        ];
+        assert!(MicroVmConfig::validate_guest_paths(&subset_paths).is_err());
+
+        // Test conflicting paths (parent)
+        let parent_paths = vec![
+            "/var/log".parse()?,
+            "/var".parse()?, // Parent of /var/log
+            "/etc".parse()?,
+        ];
+        assert!(MicroVmConfig::validate_guest_paths(&parent_paths).is_err());
+
+        // Test paths needing normalization
+        let unnormalized_paths = vec![
+            "/app/./data".parse()?,
+            "/var/log".parse()?,
+            "/etc//config".parse()?,
+        ];
+        assert!(MicroVmConfig::validate_guest_paths(&unnormalized_paths).is_ok());
+
+        // Test paths with normalization conflicts
+        let normalized_conflicts = vec![
+            "/app/./data".parse()?,
+            "/app/data/".parse()?, // Same as first path after normalization
+            "/var/log".parse()?,
+        ];
+        assert!(MicroVmConfig::validate_guest_paths(&normalized_conflicts).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_microvm_config_validation_with_guest_paths() -> anyhow::Result<()> {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new()?;
+        let host_dir1 = temp_dir.path().join("dir1");
+        let host_dir2 = temp_dir.path().join("dir2");
+        std::fs::create_dir_all(&host_dir1)?;
+        std::fs::create_dir_all(&host_dir2)?;
+
+        // Test valid configuration
+        let valid_config = MicroVmConfig::builder()
+            .root_path(temp_dir.path())
+            .ram_mib(1024)
+            .mapped_dirs([
+                format!("{}:/app", host_dir1.display()).parse()?,
+                format!("{}:/data", host_dir2.display()).parse()?,
+            ])
+            .build();
+
+        assert!(valid_config.validate().is_ok());
+
+        // Test configuration with conflicting guest paths
+        let invalid_config = MicroVmConfig::builder()
+            .root_path(temp_dir.path())
+            .ram_mib(1024)
+            .mapped_dirs([
+                format!("{}:/app/data", host_dir1.display()).parse()?,
+                format!("{}:/app", host_dir2.display()).parse()?,
+            ])
+            .build();
+
+        assert!(matches!(
+            invalid_config.validate(),
+            Err(MonocoreError::InvalidMicroVMConfig(
+                InvalidMicroVMConfigError::ConflictingGuestPaths(_, _)
+            ))
+        ));
+
+        Ok(())
     }
 }

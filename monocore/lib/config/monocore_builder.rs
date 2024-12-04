@@ -73,7 +73,7 @@ mod tests {
 
     #[test]
     fn test_monocore_builder_with_service() {
-        let service = Service::builder_default()
+        let service = Service::builder()
             .name("test-service")
             .command("./test")
             .build();
@@ -105,12 +105,12 @@ mod tests {
     #[test]
     fn test_monocore_builder_validation_failure() {
         // Create two services with the same name to trigger validation error
-        let service1 = Service::builder_default()
+        let service1 = Service::builder()
             .name("test-service")
             .command("./test")
             .build();
 
-        let service2 = Service::builder_default()
+        let service2 = Service::builder()
             .name("test-service") // Same name as service1
             .command("./test")
             .build();

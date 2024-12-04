@@ -83,7 +83,15 @@ impl Orchestrator {
             .join(service.get_name());
 
         // Get group and prepare configuration data
-        let group = self.config.get_group_for_service(service)?;
+        let group = self
+            .config
+            .get_group_for_service(service.get_name())?
+            .ok_or_else(|| {
+                MonocoreError::ConfigValidation(format!(
+                    "Service '{}' has no valid group configuration",
+                    service.get_name()
+                ))
+            })?;
         let group_name = group.get_name().to_string();
 
         // Serialize configuration before IP assignment

@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use super::{Monocore, Service};
-use crate::{MonocoreError, MonocoreResult};
+use crate::MonocoreResult;
 
 //--------------------------------------------------------------------------------------------------
 // Methods
@@ -15,9 +15,7 @@ impl Monocore {
     /// - Services and groups from both configs are combined
     /// - If a service exists in both configs, the newer version (from other) takes precedence
     /// - If a group exists in both configs, the newer version takes precedence
-    /// - Validates that the merged configuration maintains consistency and prevents impossible states
-    /// - Ensures service dependencies remain valid after the merge
-    /// - Prevents conflicts in resource allocation (ports, volumes, etc.)
+    /// - Validates that the merged configuration maintains consistency
     pub fn merge(&self, other: &Monocore) -> MonocoreResult<Monocore> {
         // Collect all service names for conflict checking
         let mut service_names: HashSet<String> = HashSet::new();
@@ -72,85 +70,10 @@ impl Monocore {
             groups: merged_groups,
         };
 
-        // Validate the merged configuration
-        Self::validate_merged_config(&merged)?;
+        // Validate the merged configuration using the standard validation
+        merged.validate()?;
 
         Ok(merged)
-    }
-
-    /// Performs additional validation specific to merged configurations
-    fn validate_merged_config(merged: &Monocore) -> MonocoreResult<()> {
-        // Track volume mappings to prevent conflicts
-        let mut volume_mappings: HashMap<String, HashSet<String>> = HashMap::new();
-
-        // Track port usage per group
-        let mut port_mappings: HashMap<Option<String>, HashMap<u16, String>> = HashMap::new();
-
-        for service in &merged.services {
-            // Check port conflicts within groups
-            if let Some(port) = service.get_port() {
-                let host_port = port.get_host();
-                let group_ports = port_mappings
-                    .entry(service.get_group().map(|g| g.to_string()))
-                    .or_default();
-
-                if let Some(existing_service) = group_ports.get(&host_port) {
-                    return Err(MonocoreError::ConfigMerge(format!(
-                        "Port {} is already in use by service '{}' in group '{}'",
-                        host_port,
-                        existing_service,
-                        service.get_group().unwrap_or("default")
-                    )));
-                }
-                group_ports.insert(host_port, service.get_name().to_string());
-            }
-
-            // Check volume conflicts
-            for volume in service.get_volumes() {
-                let host_path = volume.get_mount().get_host().to_string();
-                let entry = volume_mappings.entry(host_path.clone()).or_default();
-
-                if !entry.is_empty() && !entry.contains(service.get_name()) {
-                    return Err(MonocoreError::ConfigMerge(format!(
-                        "Volume path '{}' is mapped by multiple services",
-                        host_path
-                    )));
-                }
-                entry.insert(service.get_name().to_string());
-            }
-
-            // Validate service dependencies exist in merged config
-            for dep in service.get_depends_on() {
-                if !merged.services.iter().any(|s| s.get_name() == dep) {
-                    return Err(MonocoreError::ConfigMerge(format!(
-                        "Service '{}' depends on non-existent service '{}'",
-                        service.get_name(),
-                        dep
-                    )));
-                }
-            }
-
-            // Validate service group exists
-            if let Some(group) = service.get_group() {
-                if !merged.groups.iter().any(|g| g.get_name() == group) {
-                    return Err(MonocoreError::ConfigMerge(format!(
-                        "Service '{}' references non-existent group '{}'",
-                        service.get_name(),
-                        group
-                    )));
-                }
-            }
-        }
-
-        // Check for circular dependencies in merged config
-        if let Err(cycle) = merged.check_circular_dependencies() {
-            return Err(MonocoreError::ConfigMerge(format!(
-                "Merged configuration contains circular dependency: {}",
-                cycle
-            )));
-        }
-
-        Ok(())
     }
 
     /// Gets a list of services that were either added or modified in the merged configuration
@@ -191,27 +114,25 @@ impl Monocore {
             // Track which services we've looked at to avoid duplicates
             processed_services.insert(service_name);
 
-            // Try to find the service in the original config along with its group
-            match self
-                .get_service(service_name)
-                .map(|service| (service, self.get_group(new_service.get_group())))
-            {
-                // Service exists in original config
-                Some((old_service, old_group)) => {
-                    // Get the service's group from the new config
-                    let new_group = other.get_group(new_service.get_group());
+            // Try to find the service in the original config
+            if let Some(old_service) = self.get_service(service_name) {
+                // Get the groups from both configs if the service belongs to a group
+                let old_group = new_service
+                    .get_group()
+                    .and_then(|group_name| self.get_group(group_name));
+                let new_group = new_service
+                    .get_group()
+                    .and_then(|group_name| other.get_group(group_name));
 
-                    // Service is considered changed if either:
-                    // - The service definition itself changed
-                    // - The service's group changed
-                    if new_service != old_service || new_group != old_group {
-                        changed_services.push(new_service);
-                    }
-                }
-                // Service doesn't exist in original config - it's new
-                None => {
+                // Service is considered changed if either:
+                // - The service definition itself changed
+                // - The service's group changed
+                if new_service != old_service || old_group != new_group {
                     changed_services.push(new_service);
                 }
+            } else {
+                // Service doesn't exist in original config - it's new
+                changed_services.push(new_service);
             }
         }
     }
@@ -233,8 +154,8 @@ impl Monocore {
             // If the service belongs to a group
             if let Some(group_name) = service.get_group() {
                 // Get the group from both configs
-                let old_group = self.get_group(Some(group_name));
-                let new_group = other.get_group(Some(group_name));
+                let old_group = self.get_group(group_name);
+                let new_group = other.get_group(group_name);
 
                 // Service is affected if:
                 // - The group exists in the new config (new_group.is_some())
@@ -254,18 +175,18 @@ mod tests {
     use super::*;
     use crate::config::{
         monocore::{Group, Service},
-        EnvPair, GroupEnv, GroupVolume, PortPair,
+        EnvPair, GroupEnv, GroupVolume, PathPair, PortPair, VolumeMount,
     };
 
     #[test]
     fn test_monocore_merge_basic() {
         // Create two services with different names
-        let service1 = Service::builder_default()
+        let service1 = Service::builder()
             .name("service1")
             .command("./test1")
             .build();
 
-        let service2 = Service::builder_default()
+        let service2 = Service::builder()
             .name("service2")
             .command("./test2")
             .build();
@@ -293,13 +214,13 @@ mod tests {
     #[test]
     fn test_monocore_merge_service_update() {
         // Create original service
-        let service1 = Service::builder_default()
+        let service1 = Service::builder()
             .name("service1")
             .command("./test1")
             .build();
 
         // Create updated version of the same service
-        let service1_updated = Service::builder_default()
+        let service1_updated = Service::builder()
             .name("service1")
             .command("./test1_updated")
             .build();
@@ -320,9 +241,7 @@ mod tests {
         // Merge should succeed and use the updated service
         let merged = config1.merge(&config2).unwrap();
         assert_eq!(merged.services.len(), 1);
-        if let Service::Default { command, .. } = &merged.services[0] {
-            assert_eq!(command.as_ref().unwrap(), "./test1_updated");
-        }
+        assert_eq!(merged.services[0].get_command().unwrap(), "./test1_updated");
     }
 
     #[test]
@@ -331,14 +250,14 @@ mod tests {
         let group = Group::builder().name("test-group").build();
 
         // Create two services in the same group that use the same port
-        let service1 = Service::builder_default()
+        let service1 = Service::builder()
             .name("service1")
             .group("test-group")
             .port("8080:8080".parse::<PortPair>().unwrap())
             .command("./test1")
             .build();
 
-        let service2 = Service::builder_default()
+        let service2 = Service::builder()
             .name("service2")
             .group("test-group")
             .port("8080:8080".parse::<PortPair>().unwrap())
@@ -358,14 +277,13 @@ mod tests {
             groups: vec![group],
         };
 
-        // Merge should succeed but validation should fail
+        // Merge should fail with validation error
         let result = config1.merge(&config2);
-        println!("{:#?}", result);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("Port 8080 is already in use"));
+            .contains("Port 8080 is already in use by service"));
     }
 
     #[test]
@@ -375,14 +293,14 @@ mod tests {
         let group2 = Group::builder().name("group2").build();
 
         // Create services in different groups using the same port
-        let service1 = Service::builder_default()
+        let service1 = Service::builder()
             .name("service1")
             .group("group1")
             .port("8080:8080".parse::<PortPair>().unwrap())
             .command("./test1")
             .build();
 
-        let service2 = Service::builder_default()
+        let service2 = Service::builder()
             .name("service2")
             .group("group2")
             .port("8080:8080".parse::<PortPair>().unwrap())
@@ -451,7 +369,7 @@ mod tests {
 
         // Create updated version of the same group with different volume and env
         let group1_updated = Group::builder()
-            .name("group1".to_string())
+            .name("group1")
             .volumes(vec![GroupVolume::builder()
                 .name("vol1")
                 .path("/data-updated")
@@ -490,129 +408,123 @@ mod tests {
 
     #[test]
     fn test_monocore_merge_circular_dependency() {
-        // Start with a valid configuration containing service1
-        let service1 = Service::builder_default()
-            .name("service1")
-            .command("./test1")
-            .build();
-
-        let valid_config = Monocore::builder()
-            .services(vec![service1])
-            .groups(vec![])
-            .build()
-            .unwrap();
-
-        // Try to merge with a new config that would create a circular dependency
-        let service1_with_dep = Service::builder_default()
+        // Create services with circular dependency
+        let service1 = Service::builder()
             .name("service1")
             .command("./test1")
             .depends_on(vec!["service2".to_string()])
             .build();
 
-        let service2_with_dep = Service::builder_default()
+        let service2 = Service::builder()
             .name("service2")
             .command("./test2")
             .depends_on(vec!["service1".to_string()])
             .build();
 
-        let update_config = Monocore {
-            services: vec![service1_with_dep, service2_with_dep],
+        let config1 = Monocore {
+            services: vec![service1],
             groups: vec![],
         };
 
-        // The merge should fail because it would create a circular dependency
-        let result = valid_config.merge(&update_config);
+        let config2 = Monocore {
+            services: vec![service2],
+            groups: vec![],
+        };
+
+        // Merge should fail with validation error
+        let result = config1.merge(&config2);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("circular dependency"));
+            .contains("Circular dependency detected:"));
     }
 
     #[test]
-    fn test_monocore_merge_get_changed_services() -> anyhow::Result<()> {
-        // Create original group
+    fn test_monocore_merge_group_changes() {
+        // Create original group with a volume and env
         let group1 = Group::builder()
-            .name("group1".to_string())
+            .name("group1")
             .volumes(vec![GroupVolume::builder()
-                .name("vol1".to_string())
-                .path("/data".to_string())
+                .name("vol1")
+                .path("/data")
+                .build()])
+            .envs(vec![GroupEnv::builder()
+                .name("env1")
+                .envs(vec![EnvPair::new("KEY1", "value1")])
                 .build()])
             .build();
 
         // Create updated version of the group
         let group1_updated = Group::builder()
-            .name("group1".to_string())
+            .name("group1")
             .volumes(vec![GroupVolume::builder()
-                .name("vol1".to_string())
-                .path("/data-updated".to_string())
+                .name("vol1")
+                .path("/data-updated")
                 .build()])
             .build();
 
         // Create services
-        let service1 = Service::builder_default()
+        let service1 = Service::builder()
             .name("service1")
             .group("group1")
             .command("./test1")
             .build();
 
-        let service1_updated = Service::builder_default()
+        let service1_updated = Service::builder()
             .name("service1")
             .group("group1")
             .command("./test1-updated")
             .build();
 
-        let service2 = Service::builder_default()
+        let service2 = Service::builder()
             .name("service2")
             .group("group1")
             .command("./test2")
             .build();
 
-        let service3 = Service::builder_default()
+        let service3 = Service::builder()
             .name("service3")
             .group("group1")
             .command("./test3")
             .build();
 
-        let service4 = Service::builder_default()
+        let service4 = Service::builder()
             .name("service4")
             .command("./test4")
             .build();
 
-        let service5 = Service::builder_default()
-            .name("service5")
-            .command("./test5")
-            .build();
-
         // Create original config
         let config1 = Monocore::builder()
-            .services(vec![service1, service2, service4])
+            .services(vec![service1, service2])
             .groups(vec![group1])
-            .build()?;
+            .build()
+            .unwrap();
 
-        // Create updated config with modified service1 and new service2
+        // Create updated config
         let config2 = Monocore::builder()
-            .services(vec![service1_updated, service3, service5])
+            .services(vec![service1_updated, service3, service4])
             .groups(vec![group1_updated])
-            .build()?;
+            .build()
+            .unwrap();
 
         // Get changed services
         let changed_services = config1.get_changed_services(&config2);
 
-        println!("{:#?}", changed_services);
-
-        // Should contain all services that changed
+        // Should include:
+        // - service1 (explicitly updated)
+        // - service2 (affected by group change)
+        // - service3 (new service)
+        // - service4 (new service)
         assert_eq!(changed_services.len(), 4);
         assert!(changed_services.iter().any(|s| s.get_name() == "service1"));
         assert!(changed_services.iter().any(|s| s.get_name() == "service2"));
         assert!(changed_services.iter().any(|s| s.get_name() == "service3"));
-        assert!(changed_services.iter().any(|s| s.get_name() == "service5"));
-
-        Ok(())
+        assert!(changed_services.iter().any(|s| s.get_name() == "service4"));
     }
 
     #[test]
-    fn test_monocore_merge_get_changed_services_group_change() -> anyhow::Result<()> {
+    fn test_monocore_merge_get_changed_services_group_change() {
         // Create original group
         let group1 = Group::builder()
             .name("group1")
@@ -632,7 +544,7 @@ mod tests {
             .build();
 
         // Create service that doesn't change but belongs to the changing group
-        let service1 = Service::builder_default()
+        let service1 = Service::builder()
             .name("service1")
             .group("group1")
             .command("./test1")
@@ -642,12 +554,14 @@ mod tests {
         let config1 = Monocore::builder()
             .services(vec![service1.clone()])
             .groups(vec![group1])
-            .build()?;
+            .build()
+            .unwrap();
 
         let config2 = Monocore::builder()
             .services(vec![service1])
             .groups(vec![group1_updated])
-            .build()?;
+            .build()
+            .unwrap();
 
         // Get changed services
         let changed_services = config1.get_changed_services(&config2);
@@ -655,7 +569,328 @@ mod tests {
         // Should contain service1 because its group changed
         assert_eq!(changed_services.len(), 1);
         assert_eq!(changed_services[0].get_name(), "service1");
+    }
 
-        Ok(())
+    #[test]
+    fn test_monocore_merge_volume_conflicts_different_groups() {
+        // Create two groups
+        let group1 = Group::builder().name("group1").build();
+        let group2 = Group::builder().name("group2").build();
+
+        // Create services in different groups trying to use the same volume path
+        let service1 = Service::builder()
+            .name("service1")
+            .group("group1")
+            .volumes(vec!["/data:/app".parse::<PathPair>().unwrap()])
+            .command("./test1")
+            .build();
+
+        let service2 = Service::builder()
+            .name("service2")
+            .group("group2")
+            .volumes(vec!["/data:/other".parse::<PathPair>().unwrap()])
+            .command("./test2")
+            .build();
+
+        // Create configurations
+        let config1 = Monocore::builder()
+            .services(vec![service1])
+            .groups(vec![group1])
+            .build()
+            .unwrap();
+
+        let config2 = Monocore::builder()
+            .services(vec![service2])
+            .groups(vec![group2])
+            .build()
+            .unwrap();
+
+        // Merge should fail due to volume conflict between groups
+        let result = config1.merge(&config2);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("conflicts with path"));
+    }
+
+    #[test]
+    fn test_monocore_merge_volume_sharing_same_group() {
+        // Create a group
+        let group = Group::builder().name("shared-group").build();
+
+        // Create two services in the same group sharing a volume
+        let service1 = Service::builder()
+            .name("service1")
+            .group("shared-group")
+            .volumes(vec!["/data:/app".parse::<PathPair>().unwrap()])
+            .command("./test1")
+            .build();
+
+        let service2 = Service::builder()
+            .name("service2")
+            .group("shared-group")
+            .volumes(vec!["/database:/other".parse::<PathPair>().unwrap()])
+            .command("./test2")
+            .build();
+
+        // Create configurations
+        let config1 = Monocore::builder()
+            .services(vec![service1])
+            .groups(vec![group.clone()])
+            .build()
+            .unwrap();
+
+        let config2 = Monocore::builder()
+            .services(vec![service2])
+            .groups(vec![group])
+            .build()
+            .unwrap();
+
+        // Merge should succeed since services are in the same group
+        let result = config1.merge(&config2);
+        assert!(result.is_ok());
+        let merged = result.unwrap();
+        assert_eq!(merged.services.len(), 2);
+    }
+
+    #[test]
+    fn test_monocore_merge_volume_sharing_mixed() {
+        // Create two groups
+        let group1 = Group::builder().name("group1").build();
+        let group2 = Group::builder().name("group2").build();
+
+        // Create services with various volume configurations
+        let service1 = Service::builder()
+            .name("service1")
+            .group("group1")
+            .volumes(vec![
+                "/data1:/app".parse::<PathPair>().unwrap(),
+                "/shared:/shared".parse::<PathPair>().unwrap(),
+            ])
+            .command("./test1")
+            .build();
+
+        let service2 = Service::builder()
+            .name("service2")
+            .group("group1")
+            .volumes(vec![
+                "/data2:/app".parse::<PathPair>().unwrap(), // Unique to service2
+            ])
+            .command("./test2")
+            .build();
+
+        let service3 = Service::builder()
+            .name("service3")
+            .group("group2")
+            .volumes(vec![
+                "/data3:/app".parse::<PathPair>().unwrap(), // Unique to service3
+                "/shared:/shared".parse::<PathPair>().unwrap(), // Conflicts with service1
+            ])
+            .command("./test3")
+            .build();
+
+        // Create configurations
+        let config1 = Monocore::builder()
+            .services(vec![service1, service2])
+            .groups(vec![group1])
+            .build()
+            .unwrap();
+
+        let config2 = Monocore::builder()
+            .services(vec![service3])
+            .groups(vec![group2])
+            .build()
+            .unwrap();
+
+        // Merge should fail due to /shared volume conflict between groups
+        let result = config1.merge(&config2);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("conflicts with path"));
+    }
+
+    #[test]
+    fn test_monocore_merge_volume_conflicts_path_normalization() {
+        // Create two groups
+        let group1 = Group::builder().name("group1").build();
+        let group2 = Group::builder().name("group2").build();
+
+        // Create services in different groups using equivalent but differently formatted paths
+        let service1 = Service::builder()
+            .name("service1")
+            .group("group1")
+            .volumes(vec!["/data/app/".parse::<PathPair>().unwrap()])
+            .command("./test1")
+            .build();
+
+        let service2 = Service::builder()
+            .name("service2")
+            .group("group2")
+            .volumes(vec!["/data//app".parse::<PathPair>().unwrap()])
+            .command("./test2")
+            .build();
+
+        let service3 = Service::builder()
+            .name("service3")
+            .group("group2")
+            .volumes(vec!["/data/./app".parse::<PathPair>().unwrap()])
+            .command("./test3")
+            .build();
+
+        // Create configurations
+        let config1 = Monocore::builder()
+            .services(vec![service1])
+            .groups(vec![group1])
+            .build()
+            .unwrap();
+
+        let config2 = Monocore::builder()
+            .services(vec![service2])
+            .groups(vec![group2.clone()])
+            .build()
+            .unwrap();
+
+        let config3 = Monocore::builder()
+            .services(vec![service3])
+            .groups(vec![group2])
+            .build()
+            .unwrap();
+
+        // Test that /data/app/ and /data//app are treated as the same path
+        let result = config1.merge(&config2);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("conflicts with path"));
+
+        // Test that /data/./app is normalized to /data/app
+        let result = config1.merge(&config3);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("conflicts with path"));
+    }
+
+    #[test_log::test]
+    fn test_monocore_merge_volume_conflicts_path_validation() {
+        // Create groups with volume definitions
+        let group1 = Group::builder()
+            .name("group1")
+            .volumes(vec![GroupVolume::builder()
+                .name("vol1")
+                .path("/data")
+                .build()])
+            .build();
+
+        let group2 = Group::builder()
+            .name("group2")
+            .volumes(vec![GroupVolume::builder()
+                .name("vol2")
+                .path("/var/lib")
+                .build()])
+            .build();
+
+        // Test Case 1: Relative path in direct volume mount
+        let service1 = Service::builder()
+            .name("service1")
+            .group("group1")
+            .volumes(vec!["data/app:/app".parse::<PathPair>().unwrap()])
+            .command("./test1")
+            .build();
+
+        let config1 = Monocore::builder()
+            .services(vec![service1])
+            .groups(vec![group1.clone()])
+            .build_unchecked();
+
+        // Validate relative path rejection
+        let result = config1.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        tracing::debug!("Test Case 1 Error: {}", err);
+        assert!(err.contains("path validation error: Host mount paths must be absolute"));
+
+        // Test Case 2: Path traversal in direct volume mount
+        let service2 = Service::builder()
+            .name("service2")
+            .group("group2")
+            .volumes(vec!["/var/lib/../../../etc/passwd:/etc/passwd"
+                .parse::<PathPair>()
+                .unwrap()])
+            .command("./test2")
+            .build();
+
+        let config2 = Monocore::builder()
+            .services(vec![service2])
+            .groups(vec![group2.clone()])
+            .build_unchecked();
+
+        // Validate path traversal rejection
+        let result = config2.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        tracing::debug!("Test Case 2 Error: {}", err);
+        assert!(err.contains("path validation error: Invalid path: cannot traverse above root"));
+
+        // Test Case 3: Path traversal in group volume mount
+        let service3 = Service::builder()
+            .name("service3")
+            .group("group2")
+            .group_volumes(vec![VolumeMount::builder()
+                .name("vol2")
+                .mount(
+                    "/var/lib/../../../etc/shadow:/etc/shadow"
+                        .parse::<PathPair>()
+                        .unwrap(),
+                )
+                .build()])
+            .command("./test3")
+            .build();
+
+        let config3 = Monocore::builder()
+            .services(vec![service3])
+            .groups(vec![group2.clone()])
+            .build_unchecked();
+
+        // Validate group volume path traversal rejection
+        let result = config3.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("path validation error: Invalid path: cannot traverse above root"));
+
+        // Test Case 4: Valid absolute paths but with redundant components
+        let service4 = Service::builder()
+            .name("service4")
+            .group("group2")
+            .group_volumes(vec![VolumeMount::builder()
+                .name("vol2")
+                .mount("/var/./lib//app:/app".parse::<PathPair>().unwrap())
+                .build()])
+            .command("./test4")
+            .build();
+
+        let config4 = Monocore::builder()
+            .services(vec![service4])
+            .groups(vec![group2])
+            .build_unchecked();
+
+        // Validate path normalization works
+        let result = config4.validate();
+        assert!(result.is_ok(), "Failed with error: {:?}", result.err());
+
+        // Verify the normalized path is used in volume conflict detection
+        let service5 = Service::builder()
+            .name("service5")
+            .group("group1") // Different group
+            .volumes(vec!["/var/lib/app:/other".parse::<PathPair>().unwrap()])
+            .command("./test5")
+            .build();
+
+        let config5 = Monocore::builder()
+            .services(vec![service5])
+            .build_unchecked();
+
+        // Merging should fail due to normalized path conflict
+        let result = config4.merge(&config5);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("conflicts with path"));
     }
 }
