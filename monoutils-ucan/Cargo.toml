@@ -1,6 +1,7 @@
 [package]
 name = "monoutils-ucan"
 version = "0.1.0"
+description = "`monoutils-ucan` is a library for capabilities-based security using User Controlled Authorization Networks (UCANs)."
 license.workspace = true
 repository.workspace = true
 authors.workspace = true

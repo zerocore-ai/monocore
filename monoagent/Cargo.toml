@@ -1,6 +1,7 @@
 [package]
 name = "monoagent"
 version = "0.1.0"
+description = "`monoagent` is a collection of AI agents used by the monocore project."
 license.workspace = true
 repository.workspace = true
 authors.workspace = true

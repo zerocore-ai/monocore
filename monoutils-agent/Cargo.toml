@@ -1,6 +1,7 @@
 [package]
 name = "monoutils-agent"
 version = "0.1.0"
+description = "`monoutils-agent` is a simple utility library for building AI agents."
 license.workspace = true
 repository.workspace = true
 authors.workspace = true

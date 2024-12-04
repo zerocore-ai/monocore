@@ -1669,10 +1669,6 @@ name = "monoutils-ucan"
 version = "0.1.0"
 
 [[package]]
-name = "monovue"
-version = "0.1.0"
-
-[[package]]
 name = "multibase"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

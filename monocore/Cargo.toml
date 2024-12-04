@@ -1,6 +1,7 @@
 [package]
 name = "monocore"
 version = "0.1.0"
+description = "`monocore` is a secure MicroVM provisioning system for running untrusted code in isolated environments."
 license.workspace = true
 repository.workspace = true
 authors.workspace = true

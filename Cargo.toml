@@ -9,7 +9,6 @@ members = [
     "monoutils-raft",
     "monoutils-store",
     "monoutils-ucan",
-    "monovue",
 ]
 resolver = "2"
 
