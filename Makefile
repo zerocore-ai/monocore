@@ -63,6 +63,7 @@ install: build
 	install -d $(DESTDIR)$(PREFIX)/bin
 	sudo install -m 755 $(MONOCORE_RELEASE_BIN) $(DESTDIR)$(PREFIX)/bin/monocore
 	sudo install -m 755 $(MONOKRUN_RELEASE_BIN) $(DESTDIR)$(PREFIX)/bin/monokrun
+	# sudo ln -sf $(DESTDIR)$(PREFIX)/bin/monocore $(DESTDIR)$(PREFIX)/bin/mc
 
 # Clean build artifacts
 clean:
@@ -79,7 +80,7 @@ deps:
 help:
 	@echo "Available targets:"
 	@echo "  build    - Build monocore and monokrun binaries"
-	@echo "  install  - Install binaries to $(PREFIX)/bin"
+	@echo "  install  - Install binaries to $(PREFIX)/bin (includes 'mc' alias for monocore)"
 	@echo "  clean    - Remove build artifacts"
 	@echo "  deps     - Build and install dependencies"
 	@echo "  help     - Show this help message"

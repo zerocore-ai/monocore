@@ -28,6 +28,22 @@ repos:
         types: [rust]
         pass_filenames: false
 
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.8.1
+    hooks:
+      - id: ruff
+        name: ruff
+        description: Lint code with ruff and fix errors
+        args: ["--fix"]
+        files: ^sdk-python/
+        types: [python]
+
+      - id: ruff-format
+        name: ruff format
+        description: Format code with ruff
+        files: ^sdk-python/
+        types: [python]
+
   - repo: https://github.com/DevinR528/cargo-sort
     rev: v1.0.9
     hooks:

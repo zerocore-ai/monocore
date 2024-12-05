@@ -34,7 +34,7 @@ All while keeping your system safe through VM-level isolation.
 monocore serve
 
 # Your AI agent can now safely:
-curl -X POST http://localhost:3456/up -d @sandbox.toml  # Launch secure VMs
+curl -X POST http://localhost:3456/up -d @config.json   # Launch secure VMs
 curl http://localhost:3456/status                       # Monitor execution
 curl -X POST http://localhost:3456/down                 # Clean up when done
 ```
@@ -74,7 +74,7 @@ Develop and test locally with instant feedback, then deploy to production with c
    git clone https://github.com/appcypher/monocore
    cd monocore
    make build
-   sudo make install
+   make install
    ```
 
 2. **Start the sandbox server**
@@ -140,7 +140,7 @@ Develop and test locally with instant feedback, then deploy to production with c
    # Launch a sandbox
    curl -X POST http://localhost:3456/up \
      -H "Content-Type: application/json" \
-     -d @monocore.toml
+     -d @monocore.json
 
    # Check execution status
    curl http://localhost:3456/status | jq '.services[] | {name, status, metrics}'
