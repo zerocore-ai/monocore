@@ -80,6 +80,9 @@ error() {
 # Store the original working directory
 ORIGINAL_DIR="$(pwd)"
 
+# Ensure PATH includes common binary locations
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+
 # Set up variables
 BUILD_DIR="$ORIGINAL_DIR/build"
 LIBKRUNFW_REPO="https://github.com/appcypher/libkrunfw.git"
@@ -107,15 +110,15 @@ OS_TYPE="$(uname -s)"
 
 # Check if krunvm is installed on macOS, if applicable
 if [ "$OS_TYPE" = "Darwin" ]; then
-  if ! command -v krunvm &> /dev/null; then
+  if ! which krunvm >/dev/null 2>&1; then
     printf "${RED}krunvm command not found. Please install it using: brew tap slp/krun && brew install krunvm${RESET}\n"
     exit 1
   fi
 fi
 
-# After OS detection...
+# Check for patchelf on Linux
 if [ "$OS_TYPE" = "Linux" ]; then
-    if ! command -v patchelf &> /dev/null; then
+    if ! which patchelf >/dev/null 2>&1; then
         error "patchelf command not found. Please install it using your package manager."
         exit 1
     fi
@@ -294,7 +297,14 @@ build_libkrun() {
     export LIBRARY_PATH="$BUILD_DIR:$LIBRARY_PATH"
     export PATH="$HOME/.cargo/bin:$PATH"
 
-    make LIBRARY_PATH="$LIBRARY_PATH" PATH="$PATH"
+    case "$OS_TYPE" in
+        Darwin)
+            sudo make LIBRARY_PATH="$LIBRARY_PATH" PATH="$PATH"
+            ;;
+        *)
+            make LIBRARY_PATH="$LIBRARY_PATH" PATH="$PATH"
+            ;;
+    esac
     check_success "Failed to build libkrun"
 
     # Copy and rename the library to build directory and create symlink
