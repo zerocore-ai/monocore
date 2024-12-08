@@ -85,19 +85,26 @@ setup_posix_shell() {
 
     info "Setting up $shell_name configuration..."
 
-    # Create the file if it doesn't exist
-    touch "$shell_rc"
+    # Check if config file exists
+    if [ ! -f "$shell_rc" ]; then
+        info "Creating new config file: $shell_rc"
+        mkdir -p "$(dirname "$shell_rc")"
+        echo "# Created by monocore setup" > "$shell_rc"
+        echo >> "$shell_rc"
+    fi
 
     # PATH configuration
     if ! line_exists 'export PATH="$HOME/.local/bin:$PATH"' "$shell_rc" || [ "$FORCE" = true ]; then
         echo >> "$shell_rc"
         echo '# Added by setup_env.sh' >> "$shell_rc"
         echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$shell_rc"
+        info "Added PATH configuration to $shell_rc"
     fi
 
     # Library path configuration
     if ! line_exists "export $LIB_PATH_VAR=\"\$HOME/.local/lib:\$$LIB_PATH_VAR\"" "$shell_rc" || [ "$FORCE" = true ]; then
         echo "export $LIB_PATH_VAR=\"\$HOME/.local/lib:\$$LIB_PATH_VAR\"" >> "$shell_rc"
+        info "Added library path configuration to $shell_rc"
     fi
 }
 
@@ -107,47 +114,59 @@ setup_fish() {
 
     info "Setting up fish configuration..."
 
-    # Create config directory if it doesn't exist
-    mkdir -p "$(dirname "$fish_config")"
-    touch "$fish_config"
+    # Check if config directory and file exist
+    if [ ! -f "$fish_config" ]; then
+        info "Creating new fish config file: $fish_config"
+        mkdir -p "$(dirname "$fish_config")"
+        echo "# Created by monocore setup" > "$fish_config"
+        echo >> "$fish_config"
+    fi
 
     # PATH configuration
     if ! line_exists "set -gx PATH $HOME/.local/bin \$PATH" "$fish_config" || [ "$FORCE" = true ]; then
         echo >> "$fish_config"
         echo '# Added by setup_env.sh' >> "$fish_config"
         echo "set -gx PATH $HOME/.local/bin \$PATH" >> "$fish_config"
+        info "Added PATH configuration to $fish_config"
     fi
 
     # Library path configuration
     if ! line_exists "set -gx $LIB_PATH_VAR $HOME/.local/lib \$$LIB_PATH_VAR" "$fish_config" || [ "$FORCE" = true ]; then
         echo "set -gx $LIB_PATH_VAR $HOME/.local/lib \$$LIB_PATH_VAR" >> "$fish_config"
+        info "Added library path configuration to $fish_config"
     fi
+}
+
+# Add this function to check if a program exists
+check_shell() {
+    command -v "$1" >/dev/null 2>&1
 }
 
 # Main setup function
 setup_shell_env() {
     create_directories
 
-    # Detect current shell
-    current_shell="$(basename "$SHELL")"
+    info "Configuring detected shells..."
 
-    case "$current_shell" in
-        bash)
-            setup_posix_shell "$HOME/.bashrc" "bash"
-            ;;
-        zsh)
-            setup_posix_shell "$HOME/.zshrc" "zsh"
-            ;;
-        fish)
-            setup_fish
-            ;;
-        *)
-            # Default to .profile for sh and other POSIX shells
-            setup_posix_shell "$HOME/.profile" "sh"
-            ;;
-    esac
+    # Configure bash if installed
+    if check_shell bash; then
+        setup_posix_shell "$HOME/.bashrc" "bash"
+    fi
 
-    info "Environment setup complete!"
+    # Configure zsh if installed
+    if check_shell zsh; then
+        setup_posix_shell "$HOME/.zshrc" "zsh"
+    fi
+
+    # Configure fish if installed
+    if check_shell fish; then
+        setup_fish
+    fi
+
+    # Always configure .profile for POSIX shell compatibility
+    setup_posix_shell "$HOME/.profile" "sh"
+
+    info "Environment setup complete for detected shells!"
     info "Please restart your shell or source your shell's config file"
 }
 

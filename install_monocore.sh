@@ -139,9 +139,11 @@ download_files() {
 
     cd "$TEMP_DIR" || exit 1
 
-    # Download archive and checksum
-    curl -L -O "${BASE_URL}/${ARCHIVE_NAME}" || { error "Failed to download archive"; exit 1; }
-    curl -L -O "${BASE_URL}/${CHECKSUM_FILE}" || { error "Failed to download checksum"; exit 1; }
+    # Download archive with progress bar
+    curl -L -# -o "${ARCHIVE_NAME}" "${BASE_URL}/${ARCHIVE_NAME}" || { error "Failed to download archive"; exit 1; }
+
+    # Download checksum silently
+    curl -L -s -o "${CHECKSUM_FILE}" "${BASE_URL}/${CHECKSUM_FILE}" || { error "Failed to download checksum"; exit 1; }
 }
 
 # Verify checksum
@@ -149,7 +151,8 @@ verify_checksum() {
     info "Verifying checksum..."
     cd "$TEMP_DIR" || exit 1
 
-    if ! shasum -a 256 -c "$CHECKSUM_FILE" 2>/dev/null; then
+    # Redirect detailed output to /dev/null but keep the exit status
+    if ! (shasum -a 256 -c "$CHECKSUM_FILE" >/dev/null 2>&1); then
         error "Checksum verification failed"
         exit 1
     fi
@@ -169,6 +172,9 @@ install_files() {
     info "Installing binaries..."
     install -m 755 monocore "$BIN_DIR/" || { error "Failed to install monocore"; exit 1; }
     install -m 755 monokrun "$BIN_DIR/" || { error "Failed to install monokrun"; exit 1; }
+
+    # Create mc symlink
+    ln -sf "$BIN_DIR/monocore" "$BIN_DIR/mc" || { error "Failed to create mc symlink"; exit 1; }
 
     # Install libraries
     info "Installing libraries..."
@@ -248,9 +254,14 @@ setup_fish() {
     fi
 }
 
+# Add this function near the other utility functions
+check_shell() {
+    command -v "$1" >/dev3/null 2>&1
+}
+
 # Function to configure shell environment
 configure_shell_env() {
-    info "Configuring shell environment..."
+    info "Configuring detected shells..."
 
     # Determine library path variable based on OS
     local lib_path_var
@@ -260,26 +271,25 @@ configure_shell_env() {
         *)          warn "Unsupported OS for environment configuration"; return 1;;
     esac
 
-    # Detect current shell
-    current_shell="$(basename "$SHELL")"
+    # Configure bash if installed
+    if check_shell bash; then
+        setup_posix_shell "$HOME/.bashrc" "bash" "$lib_path_var"
+    fi
 
-    case "$current_shell" in
-        bash)
-            setup_posix_shell "$HOME/.bashrc" "bash" "$lib_path_var"
-            ;;
-        zsh)
-            setup_posix_shell "$HOME/.zshrc" "zsh" "$lib_path_var"
-            ;;
-        fish)
-            setup_fish "$lib_path_var"
-            ;;
-        *)
-            # Default to .profile for sh and other POSIX shells
-            setup_posix_shell "$HOME/.profile" "sh" "$lib_path_var"
-            ;;
-    esac
+    # Configure zsh if installed
+    if check_shell zsh; then
+        setup_posix_shell "$HOME/.zshrc" "zsh" "$lib_path_var"
+    fi
 
-    info "Shell environment configured. Please restart your shell or source your shell's config file"
+    # Configure fish if installed
+    if check_shell fish; then
+        setup_fish "$lib_path_var"
+    fi
+
+    # Always configure .profile for POSIX shell compatibility
+    setup_posix_shell "$HOME/.profile" "sh" "$lib_path_var"
+
+    info "All detected shell environments configured. Please restart your shell or source your shell's config file"
 }
 
 # Main installation process
