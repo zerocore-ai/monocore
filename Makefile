@@ -8,14 +8,23 @@ ifeq ($(ARCH),x86_64)
 	ARCH := x86_64
 endif
 
-PREFIX ?= /usr/local
+# Installation paths
+HOME_LIB := $(HOME)/.local/lib
+HOME_BIN := $(HOME)/.local/bin
+
+# Binary paths
 MONOCORE_RELEASE_BIN := target/release/monocore
 MONOKRUN_RELEASE_BIN := target/release/monokrun
 BUILD_DIR := build
 
-# Library paths
-DARWIN_LIB_PATH := /usr/local/lib
-LINUX_LIB_PATH := /usr/local/lib64
+# Get library paths and versions
+ifeq ($(OS),Darwin)
+	LIBKRUNFW_FILE := $(shell ls $(BUILD_DIR)/libkrunfw.*.dylib 2>/dev/null | head -n1)
+	LIBKRUN_FILE := $(shell ls $(BUILD_DIR)/libkrun.*.dylib 2>/dev/null | head -n1)
+else
+	LIBKRUNFW_FILE := $(shell ls $(BUILD_DIR)/libkrunfw.so.* 2>/dev/null | head -n1)
+	LIBKRUN_FILE := $(shell ls $(BUILD_DIR)/libkrun.so.* 2>/dev/null | head -n1)
+endif
 
 # Feature flags
 FEATURES ?=
@@ -31,15 +40,19 @@ all: build
 
 # Build the release binaries
 build: deps $(MONOCORE_RELEASE_BIN) $(MONOKRUN_RELEASE_BIN)
+	# Copy binaries to build directory
+	@cp $(MONOCORE_RELEASE_BIN) $(BUILD_DIR)/
+	@cp $(MONOKRUN_RELEASE_BIN) $(BUILD_DIR)/
+	@echo "Build artifacts copied to $(BUILD_DIR)/"
 
 $(MONOCORE_RELEASE_BIN): deps
 	@mkdir -p $(BUILD_DIR)
 	cd monocore
 ifeq ($(OS),Darwin)
-	cargo build --release --bin monocore $(FEATURES)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib" cargo build --release --bin monocore $(FEATURES)
 	codesign --entitlements monocore/monocore.entitlements --force -s - $@
 else
-	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" cargo build --release --bin monocore $(FEATURES)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib" cargo build --release --bin monocore $(FEATURES)
 ifdef OVERLAYFS
 	sudo setcap cap_sys_admin+ep $@
 endif
@@ -48,21 +61,38 @@ endif
 $(MONOKRUN_RELEASE_BIN): deps
 	cd monocore
 ifeq ($(OS),Darwin)
-	cargo build --release --bin monokrun $(FEATURES)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib" cargo build --release --bin monokrun $(FEATURES)
 	codesign --entitlements monocore/monocore.entitlements --force -s - $@
 else
-	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" cargo build --release --bin monokrun $(FEATURES)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib" cargo build --release --bin monokrun $(FEATURES)
 ifdef OVERLAYFS
 	sudo setcap cap_sys_admin+ep $@
 endif
 endif
 
-
-# Install the binaries
+# Install binaries and libraries
 install: build
-	install -d $(DESTDIR)$(PREFIX)/bin
-	sudo install -m 755 $(MONOCORE_RELEASE_BIN) $(DESTDIR)$(PREFIX)/bin/monocore
-	sudo install -m 755 $(MONOKRUN_RELEASE_BIN) $(DESTDIR)$(PREFIX)/bin/monokrun
+	# Create directories if they don't exist
+	install -d $(HOME_BIN)
+	install -d $(HOME_LIB)
+
+	# Install binaries
+	install -m 755 $(BUILD_DIR)/monocore $(HOME_BIN)/monocore
+	install -m 755 $(BUILD_DIR)/monokrun $(HOME_BIN)/monokrun
+
+	# Install libraries and create symlinks
+	@if [ -n "$(LIBKRUNFW_FILE)" ]; then \
+		install -m 755 $(LIBKRUNFW_FILE) $(HOME_LIB)/; \
+		cd $(HOME_LIB) && ln -sf $(notdir $(LIBKRUNFW_FILE)) libkrunfw.dylib; \
+	else \
+		echo "Warning: libkrunfw library not found in build directory"; \
+	fi
+	@if [ -n "$(LIBKRUN_FILE)" ]; then \
+		install -m 755 $(LIBKRUN_FILE) $(HOME_LIB)/; \
+		cd $(HOME_LIB) && ln -sf $(notdir $(LIBKRUN_FILE)) libkrun.dylib; \
+	else \
+		echo "Warning: libkrun library not found in build directory"; \
+	fi
 
 # Clean build artifacts
 clean:
@@ -71,15 +101,13 @@ clean:
 
 # Build dependencies (libkrunfw and libkrun)
 deps:
-	@if [ ! -f "$(DARWIN_LIB_PATH)/libkrun.dylib" ] && [ ! -f "$(LINUX_LIB_PATH)/libkrun.so" ]; then \
-		./build_libkrun.sh; \
-	fi
+	./build_libkrun.sh --no-clean
 
 # Help target
 help:
 	@echo "Available targets:"
 	@echo "  build    - Build monocore and monokrun binaries"
-	@echo "  install  - Install binaries to $(PREFIX)/bin"
+	@echo "  install  - Install binaries and libraries to $(HOME)/.local/{bin,lib}"
 	@echo "  clean    - Remove build artifacts"
 	@echo "  deps     - Build and install dependencies"
 	@echo "  help     - Show this help message"
