@@ -80,6 +80,9 @@ install: build
 	install -m 755 $(BUILD_DIR)/monocore $(HOME_BIN)/monocore
 	install -m 755 $(BUILD_DIR)/monokrun $(HOME_BIN)/monokrun
 
+	# Create mc symlink
+	ln -sf $(HOME_BIN)/monocore $(HOME_BIN)/mc
+
 	# Install libraries and create symlinks
 	@if [ -n "$(LIBKRUNFW_FILE)" ]; then \
 		install -m 755 $(LIBKRUNFW_FILE) $(HOME_LIB)/; \

@@ -124,19 +124,21 @@ tar -czvf "$BUILD_DIR/$PACKAGE_NAME.tar.gz" -C "$BUILD_DIR" "$PACKAGE_NAME"
 check_success "Failed to create tarball"
 
 info "Generating SHA256 checksum..."
+cd "$BUILD_DIR" || error "Failed to change to build directory"
+
 if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$BUILD_DIR/$PACKAGE_NAME.tar.gz" > "$BUILD_DIR/$PACKAGE_NAME.tar.gz.sha256"
+    sha256sum "$PACKAGE_NAME.tar.gz" | sed "s|$BUILD_DIR/||" > "$PACKAGE_NAME.tar.gz.sha256"
     check_success "Failed to generate SHA256 checksum"
 
     info "Verifying checksum..."
-    sha256sum -c "$BUILD_DIR/$PACKAGE_NAME.tar.gz.sha256"
+    sha256sum -c "$PACKAGE_NAME.tar.gz.sha256" >/dev/null 2>&1
     check_success "Checksum verification failed"
 else
-    shasum -a 256 "$BUILD_DIR/$PACKAGE_NAME.tar.gz" > "$BUILD_DIR/$PACKAGE_NAME.tar.gz.sha256"
+    shasum -a 256 "$PACKAGE_NAME.tar.gz" | sed "s|$BUILD_DIR/||" > "$PACKAGE_NAME.tar.gz.sha256"
     check_success "Failed to generate SHA256 checksum"
 
     info "Verifying checksum..."
-    shasum -a 256 -c "$BUILD_DIR/$PACKAGE_NAME.tar.gz.sha256"
+    shasum -a 256 -c "$PACKAGE_NAME.tar.gz.sha256" >/dev/null 2>&1
     check_success "Checksum verification failed"
 fi
 
