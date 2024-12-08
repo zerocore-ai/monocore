@@ -1,6 +1,7 @@
 [package]
 name = "monocore"
 version = "0.1.0"
+description = "`monocore` is a secure MicroVM provisioning system for running untrusted code in isolated environments."
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
@@ -57,7 +58,7 @@ typed-builder.workspace = true
 typed-path.workspace = true
 uuid.workspace = true
 xattr.workspace = true
-sysinfo = "0.32"
+sysinfo = "0.33"
 nix = { version = "0.29", features = ["mount", "user", "fs"] }
 tar = "0.4"
 flate2 = "1.0"

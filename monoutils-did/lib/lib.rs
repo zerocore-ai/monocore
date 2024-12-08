@@ -1,4 +1,4 @@
-//! `monoutils-did` is a library for working with DID-WebKey and DID-Key decentralized identifiers (DIDs).
+//! `monoutils-did` is a library for working with DID-Web-Key and DID-Key decentralized identifiers (DIDs) methods.
 
 #![warn(missing_docs)]
 #![allow(clippy::module_inception)]

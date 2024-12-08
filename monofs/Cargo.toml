@@ -1,6 +1,7 @@
 [package]
 name = "monofs"
 version = "0.1.0"
+description = "`monofs` is an immutable distributed file system."
 license.workspace = true
 repository.workspace = true
 authors.workspace = true

@@ -3,6 +3,13 @@ name: 🚀 Release Packages & Binaries
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      run_publish_release:
+        description: 'Publish release'
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: write
@@ -12,145 +19,30 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      release_tag: ${{ steps.release.outputs.release_tag }}
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      prs_created: ${{ steps.release.outputs.prs_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Setup release-please
         uses: googleapis/release-please-action@v4
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          default-branch: main
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  build-release-macos-arm64:
-    needs: release-please
-    runs-on: macos-latest
-    if: ${{ needs.release-please.outputs.release_created }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install libkrun dependencies
+      - name: Check release status
         run: |
-          brew update
-          brew tap slp/tap
-          brew install krunvm
-
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - name: Build libkrun
-        run: |
-          ./build_libkrun.sh --no-cleanup --force-build
-
-      - name: Build monocore
-        working-directory: monocore
-        run: |
-          sudo make build
-
-      - name: Rename binaries
-        run: |
-          mv monocore/target/release/monocore build/monocore-macos-arm64
-          mv monocore/target/release/monokrun build/monokrun-macos-arm64
-          for file in build/libkrun/libkrun*.dylib; do
-            mv "build/libkrun/$file" "build/$(echo "$file" | sed 's/libkrun/libkrun-macos-arm64/')"
-          done
-          for file in build/libkrunfw/libkrunfw*.dylib; do
-            mv "build/libkrunfw/$file" "build/$(echo "$file" | sed 's/libkrunfw/libkrunfw-macos-arm64/')"
-          done
-
-      - name: Cache libkrun
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            build/monocore-macos-arm64
-            build/monokrun-macos-arm64
-            build/libkrun-macos-arm64*.dylib
-            build/libkrunfw-macos-arm64*.dylib
-          key: macos-arm64-monocore-${{ needs.release-please.outputs.release_tag }}
-
-      - name: Build monoutils-store
-        working-directory: monoutils-store
-        run: |
-          cargo build --release -p monoutils-store
-
-      - name: Build monofs
-        working-directory: monofs
-        run: |
-          cargo build --release -p monofs
-
-  build-release-linux-x86_64:
-    needs: release-please
-    runs-on: ubuntu-latest
-    if: ${{ needs.release-please.outputs.release_created }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install libkrun dependencies
-        run: |
-          sudo apt-get update -qqy
-          sudo apt-get install -y jq libelf-dev build-essential flex bison libssl-dev libncurses5-dev python3-pip
-          pip3 install --user pyelftools
-
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - name: Build libkrun
-        run: |
-          ./build_libkrun.sh --no-cleanup --force-build
-
-      - name: Build monocore
-        working-directory: monocore
-        run: |
-          sudo make build
-
-      - name: Rename binaries
-        run: |
-          mv monocore/target/release/monocore build/monocore-linux-x86_64
-          mv monocore/target/release/monokrun build/monokrun-linux-x86_64
-          for file in build/libkrun/libkrun*.so*; do
-            mv "build/libkrun/$file" "build/$(echo "$file" | sed 's/libkrun/libkrun-linux-x86_64/')"
-          done
-          for file in build/libkrunfw/libkrunfw*.so*; do
-            mv "build/libkrunfw/$file" "build/$(echo "$file" | sed 's/libkrunfw/libkrunfw-linux-x86_64/')"
-          done
-
-      - name: Cache libkrun
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            build/monocore-linux-x86_64
-            build/monokrun-linux-x86_64
-            build/libkrun-linux-x86_64*.so*
-            build/libkrunfw-linux-x86_64*.so*
-          key: linux-x86_64-monocore-${{ needs.release-please.outputs.release_tag }}
-
-      - name: Build monoutils-store
-        working-directory: monoutils-store
-        run: |
-          cargo build --release -p monoutils-store
-
-      - name: Build monofs
-        working-directory: monofs
-        run: |
-          cargo build --release -p monofs
+          echo "Release created: ${{ steps.release.outputs.releases_created }}"
+          echo "PRs created: ${{ steps.release.outputs.prs_created }}"
+          echo "monocore created: ${{ steps.release.outputs.monocore--releases_created }}"
+          echo "monofs created: ${{ steps.release.outputs.monofs--releases_created }}"
+          echo "monoutils-store created: ${{ steps.release.outputs.monoutils-store--releases_created }}"
 
   publish-release:
     needs:
       - release-please
-      - build-release-macos-arm64
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: ${{ needs.release-please.outputs.releases_created == 'true' || github.event.inputs.run_publish_release }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -161,7 +53,7 @@ jobs:
         env:
           CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
         run: |
-          cargo publish -p monoutils-store || exit 1
+          cargo publish -p monoutils-store
 
       - name: Wait for crates.io index update
         run: |
@@ -173,55 +65,11 @@ jobs:
         env:
           CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
         run: |
-          cargo publish -p monofs || exit 1
+          cargo publish -p monofs
 
       - name: Publish monocore
         working-directory: monocore
         env:
           CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
         run: |
-          cargo publish -p monocore || exit 1
-
-  upload-release:
-    needs:
-      - release-please
-      - build-release-macos-arm64
-      - build-release-linux-x86_64
-      - publish-release
-    if: ${{ needs.release-please.outputs.release_created }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Restore macOS arm64 cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            build/monocore-macos-arm64
-            build/monokrun-macos-arm64
-            build/libkrun-macos-arm64*.dylib
-            build/libkrunfw-macos-arm64*.dylib
-          key: macos-arm64-monocore-${{ needs.release-please.outputs.release_tag }}
-
-      - name: Restore Linux x86_64 cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            build/monocore-linux-x86_64
-            build/monokrun-linux-x86_64
-            build/libkrun-linux-x86_64*.so*
-            build/libkrunfw-linux-x86_64*.so*
-          key: linux-x86_64-monocore-${{ needs.release-please.outputs.release_tag }}
-
-      - name: Upload release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            CHANGELOG.md
-            build/monocore-*
-            build/monokrun-*
-            build/libkrun-*
-            build/libkrunfw-*
-          tag_name: ${{ needs.release-please.outputs.release_tag }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          cargo publish -p monocore

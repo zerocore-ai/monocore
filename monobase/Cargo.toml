@@ -1,6 +1,7 @@
 [package]
 name = "monobase"
 version = "0.1.0"
+description = "`monobase` is a distributed, decentralized, secure multi-model database."
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
