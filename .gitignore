@@ -12,16 +12,10 @@ private
 .history
 .DS_Store
 
-# Build dirs
+# monocore
+monocore.toml
+ignore/
 build/
 monocore/build/
-
-# Helper files
-diff.txt
-commit-msg.md
-commit-msg.txt
-pr.md
-pr.txt
-
-# monocore.toml
-monocore.toml
+libkrunfw.*
+libkrun.*

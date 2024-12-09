@@ -16,8 +16,7 @@ BUILD_DIR := build
 BENCHES_DIR := ../target/release
 
 # Library paths
-DARWIN_LIB_PATH := /usr/local/lib
-LINUX_LIB_PATH := /usr/local/lib64
+LIB_DIR := $(realpath $(dir $(lastword $(MAKEFILE_LIST)))/../lib)
 
 # Phony targets
 .PHONY: all install clean example bench monokrun bin _run_bin monocore deps
@@ -31,10 +30,10 @@ monokrun: $(MONOKRUN_RELEASE_BIN)
 $(MONOCORE_RELEASE_BIN): deps
 	@mkdir -p $(BUILD_DIR)
 ifeq ($(OS),Darwin)
-	cargo build --release --bin monocore $(FEATURES)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib" cargo build --release --bin monocore $(FEATURES)
 	codesign --entitlements monocore/monocore.entitlements --force -s - $@
 else
-	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" cargo build --release --bin monocore $(FEATURES)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib" cargo build --release --bin monocore $(FEATURES)
 ifdef OVERLAYFS
 	sudo setcap cap_sys_admin+ep $@
 endif
@@ -42,10 +41,10 @@ endif
 
 $(MONOKRUN_RELEASE_BIN): deps
 ifeq ($(OS),Darwin)
-	cargo build --release --bin monokrun $(FEATURES)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib" cargo build --release --bin monokrun $(FEATURES)
 	codesign --entitlements monocore/monocore.entitlements --force -s - $@
 else
-	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" cargo build --release --bin monokrun $(FEATURES)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib" cargo build --release --bin monokrun $(FEATURES)
 ifdef OVERLAYFS
 	sudo setcap cap_sys_admin+ep $@
 endif
@@ -73,11 +72,11 @@ example: monokrun
 
 _run_example:
 ifeq ($(OS),Darwin)
-	cargo build --example $(EXAMPLE_NAME) --release
+	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib" cargo build --example $(EXAMPLE_NAME) --release
 	codesign --entitlements monocore.entitlements --force -s - $(EXAMPLES_DIR)/$(EXAMPLE_NAME)
-	DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$RUST_DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME) $(ARGS) || exit $$?
+	DYLD_LIBRARY_PATH=$(LIB_DIR):$$DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME) $(ARGS) || exit $$?
 else
-	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
+	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib" cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
 endif
 
 # Run benchmarks
@@ -102,16 +101,16 @@ bin: monokrun
 
 _run_bin:
 ifeq ($(OS),Darwin)
-	cargo build --bin $(BIN_NAME) --release
+	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib" cargo build --bin $(BIN_NAME) --release
 	codesign --entitlements monocore.entitlements --force -s - $(BENCHES_DIR)/$(BIN_NAME)
-	DYLD_LIBRARY_PATH=$(DARWIN_LIB_PATH):$$RUST_DYLD_LIBRARY_PATH $(BENCHES_DIR)/$(BIN_NAME) $(ARGS) || exit $$?
+	DYLD_LIBRARY_PATH=$(LIB_DIR):$$DYLD_LIBRARY_PATH $(BENCHES_DIR)/$(BIN_NAME) $(ARGS) || exit $$?
 else
-	RUSTFLAGS="-C link-args=-Wl,-rpath,$(LINUX_LIB_PATH)" LD_LIBRARY_PATH=$(LINUX_LIB_PATH):$$LD_LIBRARY_PATH cargo run --bin $(BIN_NAME) --release -- $(ARGS) || exit $$?
+	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib" cargo run --bin $(BIN_NAME) --release -- $(ARGS) || exit $$?
 endif
 
 # Build dependencies (libkrunfw and libkrun)
 deps:
-	@if [ ! -f "$(DARWIN_LIB_PATH)/libkrun.dylib" ] && [ ! -f "$(LINUX_LIB_PATH)/libkrun.so" ]; then \
+	@if [ ! -f "$(LIB_DIR)/libkrun.dylib" ] && [ ! -f "$(LIB_DIR)/libkrun.so" ]; then \
 		./build_libkrun.sh; \
 	fi
 
