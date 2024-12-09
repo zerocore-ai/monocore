@@ -2,43 +2,51 @@
 
 # build_libkrun.sh
 # ---------------
-# This script automates the building and installation of libkrun and libkrunfw libraries,
+# This script automates the building of libkrun and libkrunfw libraries,
 # which are essential components for running micro virtual machines.
 #
 # Usage:
 #   ./build_libkrun.sh [options]
 #
 # Options:
-#   --no-cleanup    Skip cleanup of build directories and VMs after completion
-#   --force-build   Force rebuild even if libraries are already installed
+#   --no-cleanup, --no-clean    Skip cleanup of build directories and VMs after completion
+#   --force-build, --force      Force rebuild even if libraries are already built
 #
 # Requirements:
 #   - git
 #   - make
 #   - Rust/Cargo (for libkrun)
-#   - Python (for libkrunfw)
+#   - Python with packages in ~/.local/lib/python3.*/site-packages (for libkrunfw)
 #   - On macOS: krunvm must be installed (brew tap slp/krun && brew install krunvm)
+#   - On Linux: patchelf must be installed
 #
 # The script performs the following tasks:
 #   1. Creates build directory if needed
 #   2. Clones libkrunfw from Github
 #   3. Clones libkrun from GitHub
-#   4. Builds and installs both libraries
-#   5. Creates non-versioned variants of libraries (needed for CI)
-#   6. Handles cleanup unless --no-cleanup is specified
+#   4. Builds both libraries in the build directory
+#   5. Creates non-versioned variants of libraries
+#   6. Handles cleanup (including VM deletion on macOS) unless --no-cleanup is specified
 #
-# Library Installation Paths:
+# Library Build Paths:
+#   Libraries are built and placed in the ./build directory:
 #   Linux:
-#     - /usr/local/lib64/libkrun.so
-#     - /usr/local/lib64/libkrunfw.so
+#     - ./build/libkrun.so.$ABI_VERSION (versioned)
+#     - ./build/libkrun.so (symlink to versioned)
+#     - ./build/libkrunfw.so.$ABI_VERSION (versioned)
+#     - ./build/libkrunfw.so (symlink to versioned)
 #   macOS:
-#     - /usr/local/lib/libkrun.dylib
-#     - /usr/local/lib/libkrunfw.dylib
+#     - ./build/libkrun.$ABI_VERSION.dylib (versioned)
+#     - ./build/libkrun.dylib (symlink to versioned)
+#     - ./build/libkrunfw.$ABI_VERSION.dylib (versioned)
+#     - ./build/libkrunfw.dylib (symlink to versioned)
+#   Note: $ABI_VERSION is determined from each library's Makefile
 #
 # Error Handling:
 #   - The script checks for errors after each critical operation
 #   - Exits with status code 1 on any failure
 #   - Performs cleanup on exit unless --no-cleanup is specified
+#   - On macOS, cleanup includes deleting libkrunfw-builder and libkrun-builder VMs
 #
 # Platform Support:
 #   - Linux: Full support
@@ -46,10 +54,10 @@
 #   - Other platforms are not supported
 #
 # Examples:
-#   # Standard build and install
+#   # Standard build
 #   ./build_libkrun.sh
 #
-#   # Build without cleaning up build directory
+#   # Build without cleaning up build directory and VMs
 #   ./build_libkrun.sh --no-cleanup
 #
 #   # Force rebuild even if libraries exist

@@ -256,7 +256,7 @@ setup_fish() {
 
 # Add this function near the other utility functions
 check_shell() {
-    command -v "$1" >/dev3/null 2>&1
+    command -v "$1" >/dev/null 2>&1
 }
 
 # Function to configure shell environment

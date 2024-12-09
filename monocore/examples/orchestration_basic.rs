@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
     println!("OCI directory: {}", oci_dir);
 
     // Path to supervisor binary - adjust this path as needed
-    let supervisor_path = "../target/release/monokrun";
+    let supervisor_path = "./target/release/monokrun";
 
     // Create orchestrator with log retention policy
     let mut orchestrator = Orchestrator::with_log_retention_policy(

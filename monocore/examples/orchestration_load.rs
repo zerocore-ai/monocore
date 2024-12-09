@@ -48,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
     utils::pull_docker_image(&oci_dir, "library/alpine:latest").await?;
     utils::merge_image_layers(&oci_dir, &rootfs_alpine_dir, "library/alpine:latest").await?;
 
-    let supervisor_path = "../target/release/monokrun";
+    let supervisor_path = "./target/release/monokrun";
 
     // Phase 1: Start initial services with first Orchestrator
     info!("Phase 1: Starting initial services with first Orchestrator");
