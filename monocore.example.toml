@@ -1,0 +1,22 @@
+# monocore.toml
+[[service]]
+name = "timer"
+base = "alpine:latest"
+ram = 128
+cpus = 1
+group = "demo"
+command = "sh"
+args = ["-c", "for i in $(seq 1 60); do echo \"$i seconds...\"; sleep 1; done"]
+
+[[service]]
+name = "counter"
+base = "python:3.11-slim"
+ram = 256
+cpus = 1
+group = "demo"
+command = "python"
+args = ["-c", "import time; count=0; [print(f'Count: {count+1}') or time.sleep(2) or (count:=count+1) for _ in range(100)]"]
+
+[[group]]
+name = "demo"
+local_only = true

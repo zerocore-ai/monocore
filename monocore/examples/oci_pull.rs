@@ -7,7 +7,7 @@
 //!
 //! To run the example:
 //! ```bash
-//! cargo run --example oci_pull
+//! make example oci_pull
 //! ```
 
 use monocore::{

@@ -6,8 +6,17 @@
   <h1 align="center">monocore</h1>
 
   <p>
+    <a href="https://discord.gg/T95Y3XnEAK">
+      <img src="https://img.shields.io/static/v1?label=Discord&message=join%20us!&color=mediumslateblue" alt="Discord">
+    </a>
     <a href="https://github.com/appcypher/monocore/actions?query=">
       <img src="https://github.com/appcypher/monocore/actions/workflows/tests_and_checks.yml/badge.svg" alt="Build Status">
+    </a>
+    <a href="https://crates.io/crates/monocore">
+      <img src="https://img.shields.io/crates/v/monocore?label=crates" alt="Monocore Crate">
+    </a>
+    <a href="https://docs.rs/monocore">
+      <img src="https://img.shields.io/static/v1?label=Docs&message=docs.rs&color=blue" alt="Monocore Docs">
     </a>
     <a href="https://github.com/appcypher/monocore/blob/main/LICENSE">
       <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License">
@@ -15,12 +24,10 @@
   </p>
 </div>
 
-> [!WARNING]
-> This project is in early development and is not yet ready for production use.
-
-Building AI agents that can write and execute code? You'll need a secure sandbox.
+Building AI agents that write and execute code? You'll need a secure sandbox.
 
 **monocore** provides instant, secure VMs for your AI agents to:
+
 - Generate charts and visualizations
 - Run data analysis scripts
 - Test generated code
@@ -29,25 +36,20 @@ Building AI agents that can write and execute code? You'll need a secure sandbox
 
 All while keeping your system safe through VM-level isolation.
 
-```sh
-# Start the sandbox orchestrator
-monocore serve
+> [!WARNING]
+> This project is in early development and is not yet ready for production use.
 
-# Your AI agent can now safely:
-curl -X POST http://localhost:3456/up -d @sandbox.toml  # Launch secure VMs
-curl http://localhost:3456/status                       # Monitor execution
-curl -X POST http://localhost:3456/down                 # Clean up when done
-```
-
-## Why monocore?
+## 🤔 Why monocore?
 
 When developing AI agents that execute code, you need a fast development cycle:
+
 - Docker containers? Limited isolation for untrusted code
 - Traditional VMs? Minutes to start up, heavy resource usage
 - Direct execution? Risky for your development machine
 - Cloud sandboxes? Great for production, but slow for rapid iteration
 
 monocore gives you:
+
 - 🔒 True VM-level isolation
 - ⚡ Millisecond startup times
 - 🎯 Simple REST API
@@ -57,96 +59,147 @@ monocore gives you:
 
 Develop and test locally with instant feedback, then deploy to production with confidence.
 
-## Getting Started
+## 🚀 Getting Started
+
+### Installation
+
+```sh
+curl -sSfL https://install.monocore.dev | sh
+```
+
+This will install both the `monocore` command and its alias `mc`.
 
 ### System Requirements
 
-#### Linux
+<details>
+<summary><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/> <b>Linux</b></summary>
+
 - KVM-enabled Linux kernel (check with `ls /dev/kvm`)
 - User must be in the `kvm` group (add with `sudo usermod -aG kvm $USER`)
+</details>
 
-#### macOS
+<details>
+<summary><img src="https://cdn.simpleicons.org/apple/999999" height="10"/> <b>macOS</b></summary>
+
+- Apple Silicon (ARM64) only
 - macOS 10.15 (Catalina) or later for Hypervisor.framework support
+</details>
 
-1. **Install monocore**
+<details>
+<summary><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Windows_logo_-_2021.svg/1024px-Windows_logo_-_2021.svg.png" height="10"/> <b>Windows</b></summary>
 
-   ```sh
-   git clone https://github.com/appcypher/monocore
-   cd monocore
-   make build
-   sudo make install
-   ```
+> Coming soon!
 
-2. **Start the sandbox server**
+</details>
 
-   ```sh
-   # Start the server on port 3456
-   monocore serve --port 3456
-   ```
+### Quick Start
 
-   Your AI agent now has a secure execution environment for its code execution needs!
-
-3. **Define your sandboxes**
+1. **Define your sandboxes**
 
    ```toml
    # monocore.toml
-
-   # Python sandbox for data visualization
    [[service]]
-   name = "python-sandbox"
-   base = "python:3.11-slim"
-   ram = 512
+   name = "timer"
+   base = "alpine:latest"
+   ram = 128
    cpus = 1
-   group = "sandboxes"
-   command = "python"
-   args = ["-c", "import matplotlib.pyplot as plt; plt.plot([1, 2, 3]); plt.savefig('chart.png')"]
-   env = [
-     { key = "PYTHONUNBUFFERED", value = "1" }
-   ]
+   group = "demo"
+   command = "sh"
+   args = ["-c", "for i in $(seq 1 60); do echo \"$i seconds...\"; sleep 1; done"]
 
-   # Node.js sandbox for code execution
    [[service]]
-   name = "node-sandbox"
-   base = "node:18-slim"
+   name = "counter"
+   base = "python:3.11-slim"
    ram = 256
    cpus = 1
-   group = "sandboxes"
-   command = "node"
-   args = ["-e", "console.log('Hello from secure sandbox!')"]
+   group = "demo"
+   command = "python"
+   args = ["-c", "import time; count=0; [print(f'Count: {count+1}') or time.sleep(2) or (count:=count+1) for _ in range(100)]"]
 
-   # Define security group
    [[group]]
-   name = "sandboxes"
-   local_only = true  # Restrict network access
+   name = "demo"
+   local_only = true
    ```
 
-4. **Manage your sandboxes**
+2. **Manage your sandboxes**
 
-   Using the CLI:
    ```sh
    # Pull sandbox images
-   monocore pull python:3.11-slim
-   monocore pull node:18-slim
+   mc pull alpine:latest
+   mc pull python:3.11-slim
 
    # Start sandboxes
-   monocore up -f monocore.toml
+   mc up -f monocore.toml
 
-   # Monitor sandbox execution
-   monocore status
+   # Check status - you'll see both services running
+   mc status
+
+   # Stop specific services
+   mc down --group demo
+
+   # Stop all services
+   mc down
+
+   # Remove services
+   mc remove timer counter
    ```
 
-   Or via the REST API:
-   ```sh
-   # Launch a sandbox
-   curl -X POST http://localhost:3456/up \
-     -H "Content-Type: application/json" \
-     -d @monocore.toml
+### CLI Reference
 
-   # Check execution status
-   curl http://localhost:3456/status | jq '.services[] | {name, status, metrics}'
-   ```
+```sh
+# General commands
+mc --help                    # Show help
+mc --version                 # Show version
 
-## Features in Action
+# Service management
+mc up -f monocore.toml      # Start services
+mc up --group mygroup       # Start specific group
+mc down                     # Stop all services
+mc down --group mygroup     # Stop specific group
+mc status                   # Show service status
+mc remove service-name      # Remove service
+
+# Image management
+mc pull image:tag           # Pull container image
+
+# Server mode
+mc serve
+```
+
+### REST API
+
+For programmatic control, monocore provides a REST API. Start the server (default port: 3456):
+
+```sh
+mc serve
+```
+
+Then interact with the API:
+
+```sh
+# Launch sandboxes
+curl -X POST http://localhost:3456/up \
+  -H "Content-Type: application/json" \
+  -d @monocore.example.json
+
+# Check status and metrics
+curl http://localhost:3456/status | jq
+
+# Stop all services
+curl -X POST http://localhost:3456/down
+
+# Stop specific group
+curl -X POST http://localhost:3456/down \
+  -H "Content-Type: application/json" \
+  -d '{"group": "app"}'
+
+# Remove services
+curl -X POST http://localhost:3456/remove \
+  -H "Content-Type: application/json" \
+  -d '{"services": ["timer"]}'
+```
+
+## 💡 Features in Action
 
 - **Secure Code Execution**: Run untrusted code in isolated environments
 - **Resource Limits**: Control CPU, memory, and execution time
@@ -155,11 +208,13 @@ Develop and test locally with instant feedback, then deploy to production with c
 - **Status Monitoring**: Track execution state and resource usage
 - **Simple Integration**: RESTful API for easy automation
 
-## Development
+## 💻 Development
 
 ### Prerequisites
 
-#### Linux Build Dependencies
+<details>
+<summary><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/> <b>Linux Build Dependencies</b></summary>
+
 ```sh
 # Ubuntu/Debian:
 sudo apt-get update
@@ -169,8 +224,21 @@ sudo apt-get install build-essential pkg-config libssl-dev flex bison bc libelf-
 sudo dnf install build-essential pkg-config libssl-dev flex bison bc libelf-dev python3-pyelftools patchelf
 ```
 
-#### macOS Build Dependencies
-- [Homebrew][brew_home]
+</details>
+
+<details>
+<summary><img src="https://cdn.simpleicons.org/apple/999999" height="10"/> <b>macOS Build Dependencies</b></summary>
+
+Make sure you have [Homebrew](https://brew.sh/) installed, then:
+
+```sh
+brew tap slp/krun
+brew install krunvm
+```
+
+</details>
+
+### Build
 
 ```sh
 # Build
@@ -178,14 +246,14 @@ make build
 make install
 ```
 
-## Documentation
+## 📚 Documentation
 
 - [Detailed Features](monocore/README.md#features)
 - [Architecture](monocore/README.md#architecture)
 - [API Examples](monocore/README.md#api-examples)
 - [Development Guide](monocore/README.md#development)
 
-## License
+## ⚖️ License
 
 This project is licensed under the [Apache License 2.0](./LICENSE).
 

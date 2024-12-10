@@ -6,8 +6,17 @@
   <h1>monocore</h1>
 
   <p>
+    <a href="https://discord.gg/T95Y3XnEAK">
+      <img src="https://img.shields.io/static/v1?label=Discord&message=join%20us!&color=mediumslateblue" alt="Discord">
+    </a>
     <a href="https://github.com/appcypher/monocore/actions?query=">
       <img src="https://github.com/appcypher/monocore/actions/workflows/tests_and_checks.yml/badge.svg" alt="Build Status">
+    </a>
+    <a href="https://crates.io/crates/monocore">
+      <img src="https://img.shields.io/crates/v/monocore?label=crates" alt="Monocore Crate">
+    </a>
+    <a href="https://docs.rs/monocore">
+      <img src="https://img.shields.io/static/v1?label=Docs&message=docs.rs&color=blue" alt="Monocore Docs">
     </a>
     <a href="https://github.com/appcypher/monocore/blob/main/LICENSE">
       <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License">
@@ -23,9 +32,8 @@
 ## Table of Contents
 
 - [Overview](#overview)
+- [Library Usage](#library-usage)
 - [Getting Started](#getting-started)
-  - [Installation](#installation)
-  - [Basic Usage](#basic-usage)
 - [Features](#features)
 - [Architecture](#architecture)
 - [Development](#development)
@@ -33,22 +41,121 @@
 
 ## Overview
 
-Monocore provides:
-- 🔒 Secure isolation through microVMs
-- 🏃 Efficient container-like experience
-- 📦 OCI-compatible image management
-- 🎯 Simple service orchestration
+When developing AI agents that execute code, you need a fast development cycle:
+
+- Docker containers? Limited isolation for untrusted code
+- Traditional VMs? Minutes to start up, heavy resource usage
+- Direct execution? Risky for your development machine
+- Cloud sandboxes? Great for production, but slow for rapid iteration
+
+monocore provides:
+- 🔒 True VM-level isolation
+- ⚡ Millisecond startup times
+- 🎯 Simple REST API
+- 📦 Works with standard container images
+- 🔧 Full resource control
+- 💻 Perfect for local development
+
+## Library Usage
+
+### Basic MicroVM
+```rust
+use monocore::vm::MicroVm;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Build the MicroVm
+    let vm = MicroVm::builder()
+        .root_path("/path/to/rootfs")  // Path to rootfs
+        .ram_mib(512)
+        .exec_path("/bin/true")  // Simple no-op command
+        .build()?;
+
+    // Start the MicroVm
+    tracing::info!("Starting MicroVm...");
+    vm.start()?;
+    Ok(())
+}
+```
+
+### Service Orchestration
+```rust
+use monocore::{
+    config::{Group, Monocore, Service},
+    orchestration::Orchestrator,
+};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Create a simple service
+    let service = Service::builder_default()
+        .name("app")
+        .base("alpine:latest")
+        .ram(512)
+        .group("main")  // Group name is required
+        .command("/bin/sleep")  // Example command
+        .args(["infinity"])     // Run indefinitely
+        .build();
+
+    // Create the main group
+    let main_group = Group::builder()
+        .name("main")
+        .build();
+
+    let config = Monocore::builder()
+        .services(vec![service])
+        .groups(vec![main_group])
+        .build()?;
+
+    // Create orchestrator with log retention
+    let mut orchestrator = Orchestrator::with_log_retention_policy(
+        "/path/to/oci_dir",
+        "/path/to/supervisor",
+        LogRetentionPolicy::with_max_age_weeks(1),
+    ).await?;
+
+    // Start the service
+    orchestrator.up(config).await?;
+
+    Ok(())
+}
+```
 
 ## Getting Started
 
 ### Installation
 
-**Prerequisites:**
-- Rust toolchain (1.75+)
-- Linux OS / macOS
-- libkrun (installed automatically)
+**Quick Install:**
+```bash
+curl -sSfL https://install.monocore.dev | sh
+```
 
-**Build and Install:**
+This will install both the `monocore` command and its alias `mc`.
+
+**System Requirements:**
+
+<details>
+<summary><b>Linux</b></summary>
+
+- KVM-enabled Linux kernel (check with `ls /dev/kvm`)
+- User must be in the `kvm` group (add with `sudo usermod -aG kvm $USER`)
+</details>
+
+<details>
+<summary><b>macOS</b></summary>
+
+- Apple Silicon (ARM64) only
+- macOS 10.15 (Catalina) or later for Hypervisor.framework support
+</details>
+
+<details>
+<summary><b>Windows</b></summary>
+
+> Coming soon!
+</details>
+
+
+**Manual Build:**
 ```bash
 # Clone the repository
 git clone https://github.com/appcypher/monocore.git
@@ -127,7 +234,7 @@ Example API usage:
 # Start services
 curl -X POST http://localhost:3456/up \
   -H "Content-Type: application/json" \
-  -d @monocore.toml
+  -d @monocore.json
 
 # Get service status
 curl http://localhost:3456/status
@@ -149,21 +256,29 @@ curl -X POST http://localhost:3456/remove \
 - Isolated microVM environments for each service
 - Resource constraints and limits enforcement
 - Network isolation between service groups
+- Perfect for running untrusted AI-generated code
+- Full system call isolation
 
 ### Efficient Runtime
 - Fast microVM provisioning and startup
+- Millisecond-level boot times
 - Minimal resource overhead
 - Optimized layer caching and sharing
+- Memory-efficient design
 
 ### OCI Integration
 - Pull images from any OCI-compliant registry
 - Smart layer management and deduplication
 - Local image caching for faster startups
+- Support for standard container images
+- Seamless Docker compatibility
 
 ### Service Orchestration
 - Dependency-aware service scheduling
 - Health monitoring and automatic recovery
 - Log rotation with configurable retention
+- Resource usage tracking
+- Group-based service management
 
 ## Architecture
 
@@ -207,84 +322,9 @@ graph TD
     log --> log_stdout["[service-name].stdout.log"]
 ```
 
-### API Examples
-
-**Basic MicroVM:**
-```rust
-use monocore::vm::MicroVm;
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let vm = MicroVm::builder()
-        .root_path("/path/to/rootfs")
-        .ram_mib(512)
-        .exec_path("/bin/echo")
-        .args(["Hello from microVM!"])
-        .build()?;
-
-    vm.start()?;
-    Ok(())
-}
-```
-
-**Service Orchestration:**
-```rust
-use monocore::{
-    config::{Group, Monocore, Service},
-    orchestration::Orchestrator,
-};
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let service = Service::builder_default()
-        .name("ai-agent")
-        .base("alpine:latest")
-        .ram(512)
-        .build();
-
-    let config = Monocore::builder()
-        .services(vec![service])
-        .groups(vec![Group::builder().name("agents").build()])
-        .build()?;
-
-    let mut orchestrator = Orchestrator::new("/path/to/home_dir", "/path/to/supervisor").await?;
-    orchestrator.up(config).await?;
-
-    Ok(())
-}
-```
-
 ## Development
 
-### Running Examples
-
-```bash
-# Basic MicroVM Examples
-make example microvm_shell     # Interactive shell in MicroVM
-make example microvm_nop       # Simple no-op MicroVM
-
-# Networking Examples
-make example microvm_curl [-- --local-only] [-- <target>]  # HTTP requests from MicroVM
-make example microvm_tcp -- --server                       # TCP server (port 3456)
-make example microvm_tcp                                   # TCP client
-make example microvm_udp -- --server                       # UDP server
-make example microvm_udp                                   # UDP client
-
-# OCI Image Examples
-make example oci_pull          # Pull images from Docker Hub
-make example oci_merge         # Merge image layers with OverlayFS
-
-# Orchestration Examples
-make example orchestration_basic   # Basic service management
-make example orchestration_load    # Service state persistence
-```
-
-### Development Tips
-
-- Use `RUST_BACKTRACE=1` for detailed error traces
-- On macOS, examples are automatically signed with entitlements
-- The build directory (`~/.monocore`) contains logs and service state
-- Check service logs in `~/.monocore/log/` for debugging
+For development setup and building from source, please visit the [root of the project repository](https://github.com/appcypher/monocore).
 
 ## License
 
