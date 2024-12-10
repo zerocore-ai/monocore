@@ -154,7 +154,7 @@ fn create_initial_config() -> anyhow::Result<Monocore> {
     let main_group = Group::builder().name("main").build();
 
     // Create initial services
-    let tail_service = Service::builder_default()
+    let tail_service = Service::builder()
         .name("tail-service")
         .base("library/alpine:latest")
         .ram(512)
@@ -164,7 +164,7 @@ fn create_initial_config() -> anyhow::Result<Monocore> {
         .depends_on(["sleep-service".to_string()])
         .build();
 
-    let sleep_service = Service::builder_default()
+    let sleep_service = Service::builder()
         .name("sleep-service")
         .base("library/alpine:latest")
         .ram(512)
@@ -188,7 +188,7 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
     let main_group = Group::builder().name("main").build();
 
     // Create modified tail service (changed args)
-    let tail_service = Service::builder_default()
+    let tail_service = Service::builder()
         .name("tail-service")
         .base("library/alpine:latest")
         .ram(512)
@@ -198,7 +198,7 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
         .build();
 
     // Keep sleep service unchanged
-    let sleep_service = Service::builder_default()
+    let sleep_service = Service::builder()
         .name("sleep-service")
         .base("library/alpine:latest")
         .ram(512)
@@ -208,7 +208,7 @@ fn create_updated_config() -> anyhow::Result<Monocore> {
         .build();
 
     // Add new echo service
-    let echo_service = Service::builder_default()
+    let echo_service = Service::builder()
         .name("echo-service")
         .base("library/alpine:latest")
         .ram(512)

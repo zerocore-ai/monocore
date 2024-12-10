@@ -9,6 +9,7 @@ use monocore::{
     utils::{self, OCI_SUBDIR, ROOTFS_SUBDIR},
     MonocoreError, MonocoreResult,
 };
+use serde::de::DeserializeOwned;
 use tokio::fs;
 use tracing::info;
 
@@ -42,9 +43,12 @@ async fn main() -> MonocoreResult<()> {
                 return Err(MonocoreError::ConfigNotFound(file.display().to_string()));
             }
 
-            // Read and parse config
-            let config_str = fs::read_to_string(&file).await?;
-            let mut config: Monocore = toml::from_str(&config_str)?;
+            // Parse the config file
+            let mut config: Monocore = parse_config_file(
+                &file,
+                file.extension().unwrap_or_default().to_str().unwrap(),
+            )
+            .await?;
 
             // Filter services by group if specified
             if let Some(group_name) = group {
@@ -56,7 +60,7 @@ async fn main() -> MonocoreResult<()> {
                     .collect::<Vec<_>>();
                 config = Monocore::builder()
                     .services(services)
-                    .groups(config.get_groups().clone())
+                    .groups(config.get_groups().to_vec())
                     .build()?;
             }
 
@@ -230,4 +234,21 @@ async fn main() -> MonocoreResult<()> {
     }
 
     Ok(())
+}
+
+//--------------------------------------------------------------------------------------------------
+// Function: *
+//--------------------------------------------------------------------------------------------------
+
+async fn parse_config_file<T: DeserializeOwned>(
+    file_path: &std::path::Path,
+    r#type: &str,
+) -> MonocoreResult<T> {
+    let content = fs::read_to_string(file_path).await?;
+
+    match r#type {
+        "json" => serde_json::from_str(&content).map_err(MonocoreError::SerdeJson),
+        "yaml" | "yml" => serde_yaml::from_str(&content).map_err(MonocoreError::SerdeYaml),
+        _ => toml::from_str(&content).map_err(MonocoreError::Toml),
+    }
 }

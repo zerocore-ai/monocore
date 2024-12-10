@@ -19,7 +19,7 @@ pub struct MicroVmConfigBuilder<RootPath, RamMib> {
     root_path: RootPath,
     num_vcpus: Option<u8>,
     ram_mib: RamMib,
-    virtiofs: Vec<PathPair>,
+    mapped_dirs: Vec<PathPair>,
     port_map: Vec<PortPair>,
     rlimits: Vec<LinuxRlimit>,
     workdir_path: Option<Utf8UnixPathBuf>,
@@ -50,7 +50,7 @@ pub struct MicroVmConfigBuilder<RootPath, RamMib> {
 ///     .root_path("/tmp")
 ///     .num_vcpus(2)
 ///     .ram_mib(1024)
-///     .virtiofs(["/guest/mount:/host/mount".parse()?])
+///     .mapped_dirs(["/home:/guest/mount".parse()?])
 ///     .port_map(["8080:80".parse()?])
 ///     .rlimits(["RLIMIT_NOFILE=1024:1024".parse()?])
 ///     .workdir_path("/workdir")
@@ -120,7 +120,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
             root_path: root_path.into(),
             num_vcpus: self.num_vcpus,
             ram_mib: self.ram_mib,
-            virtiofs: self.virtiofs,
+            mapped_dirs: self.mapped_dirs,
             port_map: self.port_map,
             rlimits: self.rlimits,
             workdir_path: self.workdir_path,
@@ -178,7 +178,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
             root_path: self.root_path,
             num_vcpus: self.num_vcpus,
             ram_mib,
-            virtiofs: self.virtiofs,
+            mapped_dirs: self.mapped_dirs,
             port_map: self.port_map,
             rlimits: self.rlimits,
             workdir_path: self.workdir_path,
@@ -191,10 +191,9 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
         }
     }
 
-    /// Sets the virtio-fs mounts for the MicroVm.
+    /// Sets the directory mappings for the MicroVm using virtio-fs.
     ///
-    /// Virtio-fs allows sharing directories between the host and guest systems.
-    /// The paths follow Docker's volume mapping convention using the format `host:guest`.
+    /// Each mapping follows Docker's volume mapping convention using the format `host:guest`.
     ///
     /// ## Examples
     ///
@@ -203,7 +202,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let config = MicroVmConfigBuilder::default()
-    ///     .virtiofs([
+    ///     .mapped_dirs([
     ///         // Share host's /data directory as /mnt/data in guest
     ///         "/data:/mnt/data".parse()?,
     ///         // Share current directory as /app in guest
@@ -220,8 +219,8 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// - Guest paths will be created if they don't exist
     /// - Changes in shared directories are immediately visible to both systems
     /// - Useful for development, configuration files, and data sharing
-    pub fn virtiofs(mut self, virtiofs: impl IntoIterator<Item = PathPair>) -> Self {
-        self.virtiofs = virtiofs.into_iter().collect();
+    pub fn mapped_dirs(mut self, mapped_dirs: impl IntoIterator<Item = PathPair>) -> Self {
+        self.mapped_dirs = mapped_dirs.into_iter().collect();
         self
     }
 
@@ -617,20 +616,30 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
         }
     }
 
-    /// Sets the virtio-fs mounts for the MicroVm.
+    /// Sets the directory mappings for the MicroVm using virtio-fs.
+    ///
+    /// Each mapping follows Docker's volume mapping convention using the format `host:guest`.
     ///
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::MicroVmBuilder;
+    /// use monocore::vm::MicroVmConfigBuilder;
     ///
     /// # fn main() -> anyhow::Result<()> {
-    /// MicroVmBuilder::default().virtiofs(["/guest/mount:/host/mount".parse()?]);
+    /// let config = MicroVmConfigBuilder::default()
+    ///     .mapped_dirs([
+    ///         // Share host's /data directory as /mnt/data in guest
+    ///         "/data:/mnt/data".parse()?,
+    ///         // Share current directory as /app in guest
+    ///         "./:/app".parse()?,
+    ///         // Use same path in both host and guest
+    ///         "/shared".parse()?
+    ///     ]);
     /// # Ok(())
     /// # }
     /// ```
-    pub fn virtiofs(mut self, virtiofs: impl IntoIterator<Item = PathPair>) -> Self {
-        self.inner = self.inner.virtiofs(virtiofs);
+    pub fn mapped_dirs(mut self, mapped_dirs: impl IntoIterator<Item = PathPair>) -> Self {
+        self.inner = self.inner.mapped_dirs(mapped_dirs);
         self
     }
 
@@ -830,7 +839,7 @@ impl MicroVmConfigBuilder<PathBuf, u32> {
             root_path: self.root_path,
             num_vcpus: self.num_vcpus.unwrap_or(DEFAULT_NUM_VCPUS),
             ram_mib: self.ram_mib,
-            virtiofs: self.virtiofs,
+            mapped_dirs: self.mapped_dirs,
             port_map: self.port_map,
             rlimits: self.rlimits,
             workdir_path: self.workdir_path,
@@ -886,7 +895,7 @@ impl MicroVmBuilder<PathBuf, u32> {
             root_path: self.inner.root_path,
             num_vcpus: self.inner.num_vcpus.unwrap_or(DEFAULT_NUM_VCPUS),
             ram_mib: self.inner.ram_mib,
-            virtiofs: self.inner.virtiofs,
+            mapped_dirs: self.inner.mapped_dirs,
             port_map: self.inner.port_map,
             rlimits: self.inner.rlimits,
             workdir_path: self.inner.workdir_path,
@@ -911,7 +920,7 @@ impl Default for MicroVmConfigBuilder<(), ()> {
             root_path: (),
             num_vcpus: Some(DEFAULT_NUM_VCPUS),
             ram_mib: (),
-            virtiofs: vec![],
+            mapped_dirs: vec![],
             port_map: vec![],
             rlimits: vec![],
             workdir_path: None,
@@ -954,7 +963,7 @@ mod tests {
             .root_path(root_path)
             .num_vcpus(2)
             .ram_mib(1024)
-            .virtiofs(["/guest/mount:/host/mount".parse()?])
+            .mapped_dirs(["/guest/mount:/host/mount".parse()?])
             .port_map(["8080:80".parse()?])
             .rlimits(["RLIMIT_NOFILE=1024:1024".parse()?])
             .workdir_path(workdir_path)
@@ -970,7 +979,7 @@ mod tests {
         assert_eq!(builder.inner.num_vcpus, Some(2));
         assert_eq!(builder.inner.ram_mib, 1024);
         assert_eq!(
-            builder.inner.virtiofs,
+            builder.inner.mapped_dirs,
             ["/guest/mount:/host/mount".parse()?]
         );
         assert_eq!(builder.inner.port_map, ["8080:80".parse()?]);
@@ -1012,7 +1021,7 @@ mod tests {
         // Check that other fields have default values
         assert_eq!(builder.inner.log_level, LogLevel::default());
         assert_eq!(builder.inner.num_vcpus, Some(DEFAULT_NUM_VCPUS));
-        assert!(builder.inner.virtiofs.is_empty());
+        assert!(builder.inner.mapped_dirs.is_empty());
         assert!(builder.inner.port_map.is_empty());
         assert!(builder.inner.rlimits.is_empty());
         assert_eq!(builder.inner.workdir_path, None);

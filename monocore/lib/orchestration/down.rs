@@ -79,7 +79,7 @@ impl Orchestrator {
         let services_to_stop: Vec<_> = services_to_stop.into_iter().collect();
 
         // Remove services from config in place
-        self.config.remove_services(Some(&services_to_stop));
+        self.config.remove_services(&services_to_stop);
 
         // Get groups that will have no running services after shutdown
         let mut empty_groups = HashSet::new();

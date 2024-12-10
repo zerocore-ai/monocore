@@ -1586,6 +1586,7 @@ dependencies = [
  "libc",
  "nix",
  "oci-spec",
+ "pretty-error-debug",
  "procspawn",
  "reqwest",
  "reqwest-middleware",
@@ -1593,6 +1594,7 @@ dependencies = [
  "scopeguard",
  "serde",
  "serde_json",
+ "serde_yaml",
  "sha2",
  "signal-hook",
  "structstruck",
@@ -1983,6 +1985,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "pretty-error-debug"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a8f3888f1de6a9d977610972eab0014b663a3907ec153d77200252ad22e4bb0"
+dependencies = [
+ "pretty-error-debug-derive",
+]
+
+[[package]]
+name = "pretty-error-debug-derive"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "788992637e9c73f809f7bdc647572785efb06cb7c860105a4e55e9c7d6935d39"
+dependencies = [
+ "quote",
+ "syn 2.0.87",
+]
+
+[[package]]
 name = "proc-macro-crate"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2249,9 +2270,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest-middleware"
-version = "0.4.0"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1ccd3b55e711f91a9885a2fa6fbbb2e39db1776420b062efc058c6410f7e5e3"
+checksum = "562ceb5a604d3f7c885a792d42c199fd8af239d0a51b2fa6a78aafa092452b04"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2264,9 +2285,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest-retry"
-version = "0.7.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29c73e4195a6bfbcb174b790d9b3407ab90646976c55de58a6515da25d851178"
+checksum = "a83df1aaec00176d0fabb65dea13f832d2a446ca99107afc17c5d2d4981221d0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2278,7 +2299,6 @@ dependencies = [
  "reqwest",
  "reqwest-middleware",
  "retry-policies",
- "thiserror 1.0.65",
  "tokio",
  "tracing",
  "wasm-timer",
@@ -2516,6 +2536,19 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
 ]
 
 [[package]]
@@ -3123,6 +3156,12 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "unsigned-varint"

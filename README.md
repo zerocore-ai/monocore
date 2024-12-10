@@ -124,10 +124,6 @@ This will install both the `monocore` command and its alias `mc`.
 2. **Manage your sandboxes**
 
    ```sh
-   # Pull sandbox images
-   mc pull alpine:latest
-   mc pull python:3.11-slim
-
    # Start sandboxes
    mc up -f monocore.toml
 

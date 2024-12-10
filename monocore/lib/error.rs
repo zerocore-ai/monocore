@@ -17,7 +17,7 @@ use crate::oci::distribution::DockerRegistryResponseError;
 pub type MonocoreResult<T> = Result<T, MonocoreError>;
 
 /// An error that occurred during a file system operation.
-#[derive(Debug, Error)]
+#[derive(pretty_error_debug::Debug, Error)]
 pub enum MonocoreError {
     /// An I/O error.
     #[error("io error: {0}")]
@@ -91,9 +91,21 @@ pub enum MonocoreError {
     #[error("serde json error: {0}")]
     SerdeJson(#[from] serde_json::Error),
 
+    /// An error that occurred when a Serde YAML error occurred.
+    #[error("serde yaml error: {0}")]
+    SerdeYaml(#[from] serde_yaml::Error),
+
+    /// An error that occurred when a TOML error occurred.
+    #[error("toml error: {0}")]
+    Toml(#[from] toml::de::Error),
+
     /// An error that occurred when a configuration validation error occurred.
     #[error("configuration validation error: {0}")]
     ConfigValidation(String),
+
+    /// An error that occurred when a configuration validation error occurred.
+    #[error("configuration validation errors: {0:?}")]
+    ConfigValidationErrors(Vec<String>),
 
     /// An error that occurs when trying to access group resources for a service that has no group
     #[error("service '{0}' belongs to no group")]
@@ -218,6 +230,14 @@ pub enum MonocoreError {
     /// An error that occurred when invalid command line arguments were provided
     #[error("{0}")]
     InvalidArgument(String),
+
+    /// An error that occurred when validating paths
+    #[error("path validation error: {0}")]
+    PathValidation(String),
+
+    /// An error that occurred when failed to parse configuration file
+    #[error("Failed to parse configuration file: {0}")]
+    ConfigParseError(String),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.
@@ -226,6 +246,10 @@ pub enum InvalidMicroVMConfigError {
     /// The root path does not exist.
     #[error("root path does not exist: {0}")]
     RootPathDoesNotExist(String),
+
+    /// A host path that should be mounted does not exist.
+    #[error("host path does not exist: {0}")]
+    HostPathDoesNotExist(String),
 
     /// The number of vCPUs is zero.
     #[error("number of vCPUs is zero")]
@@ -238,6 +262,10 @@ pub enum InvalidMicroVMConfigError {
     /// The command line contains invalid characters. Only printable ASCII characters (space through tilde) are allowed.
     #[error("command line contains invalid characters (only ASCII characters between space and tilde are allowed): {0}")]
     InvalidCommandLineString(String),
+
+    /// An error that occurs when conflicting guest paths are detected.
+    #[error("Conflicting guest paths: '{0}' and '{1}' overlap")]
+    ConflictingGuestPaths(String, String),
 }
 
 /// An error that can represent any error.
@@ -296,9 +324,3 @@ impl Display for AnyError {
 }
 
 impl Error for AnyError {}
-
-impl From<toml::de::Error> for MonocoreError {
-    fn from(err: toml::de::Error) -> Self {
-        MonocoreError::custom(err)
-    }
-}

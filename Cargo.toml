@@ -20,14 +20,14 @@ license = "Apache-2.0"
 edition = "2021"
 
 [workspace.dependencies]
-async-stream = "0.3.5"
+async-stream = "0.3"
 async-trait = "0.1"
 dirs = "5.0"
 hex = "0.4"
 libc = "0.2"
 axum = "0.7.9"
-bytes = "1.9.0"
-libipld = "0.16.0"
+bytes = "1.9"
+libipld = "0.16"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 structstruck = "0.4"
@@ -46,8 +46,8 @@ getset = "0.1"
 lazy_static = "1.5"
 procspawn = "1.0"
 reqwest = { version = "0.12", features = ["stream", "json"] }
-reqwest-middleware = "0.4"
-reqwest-retry = "0.7"
+reqwest-middleware = "0.3" # Cannot upgrade to 0.4 due to https://github.com/TrueLayer/reqwest-middleware/issues/204
+reqwest-retry = "0.6" # Cannot upgrade to 0.7 due to https://github.com/TrueLayer/reqwest-retry/issues/100
 monoutils-store = { version = "0.1.0", path = "./monoutils-store" }
 chrono = { version = "0.4", features = ["serde"] }
 criterion = "0.5"
@@ -56,3 +56,4 @@ typed-path = "0.10"
 toml = "0.8"
 typed-builder = "0.20"
 uuid = { version = "1.11", features = ["v4"] }
+pretty-error-debug = "0.3"

@@ -154,7 +154,7 @@ fn create_services_config() -> anyhow::Result<Monocore> {
     let main_group = Group::builder().name("main").build();
 
     // Create services that will keep running
-    let counter_service = Service::builder_default()
+    let counter_service = Service::builder()
         .name("counter")
         .base("library/alpine:latest")
         .group("main")
@@ -165,7 +165,7 @@ fn create_services_config() -> anyhow::Result<Monocore> {
         ])
         .build();
 
-    let date_service = Service::builder_default()
+    let date_service = Service::builder()
         .name("date-service")
         .base("library/alpine:latest")
         .group("main")
@@ -173,7 +173,7 @@ fn create_services_config() -> anyhow::Result<Monocore> {
         .args(["-c", "while true; do date; sleep 3; done"])
         .build();
 
-    let uptime_service = Service::builder_default()
+    let uptime_service = Service::builder()
         .name("uptime")
         .base("library/alpine:latest")
         .group("main")
