@@ -1,5 +1,7 @@
-//! If you are trying to run this example, please make sure to run `make example microvm_nop` from
-//! the `monocore` subdirectory
+//! To run this example:
+//! ```bash
+//! make example microvm_nop
+//! ```
 
 use monocore::{utils, vm::MicroVm};
 

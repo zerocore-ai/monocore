@@ -1,6 +1,3 @@
-//! If you are trying to run this example, please make sure to run `make example orchestration_load` from
-//! the `monocore` subdirectory.
-//!
 //! This example demonstrates the Orchestrator's ability to load and manage existing services:
 //! - Starting some initial services with one Orchestrator instance
 //! - Loading those running services into a new Orchestrator instance
@@ -48,12 +45,12 @@ async fn main() -> anyhow::Result<()> {
     utils::pull_docker_image(&oci_dir, "library/alpine:latest").await?;
     utils::merge_image_layers(&oci_dir, &rootfs_alpine_dir, "library/alpine:latest").await?;
 
-    let supervisor_path = "../target/release/monokrun";
+    let supervisor_path = format!("{}/../target/release/monokrun", env!("CARGO_MANIFEST_DIR"));
 
     // Phase 1: Start initial services with first Orchestrator
     info!("Phase 1: Starting initial services with first Orchestrator");
     {
-        let mut orchestrator = Orchestrator::new(&build_dir, supervisor_path).await?;
+        let mut orchestrator = Orchestrator::new(&build_dir, &supervisor_path).await?;
         let initial_config = create_services_config()?;
 
         orchestrator.up(initial_config).await?;

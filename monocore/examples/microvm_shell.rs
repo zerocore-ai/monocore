@@ -1,6 +1,3 @@
-//! If you are trying to run this example, please make sure to run `make example microvm_shell` from
-//! the `monocore` subdirectory.
-//!
 //! This example demonstrates running a basic shell inside a microvm with:
 //! - 2 virtual CPUs
 //! - 1024 MiB of RAM

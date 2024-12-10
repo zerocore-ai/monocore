@@ -1,6 +1,3 @@
-//! If you are trying to run this example, please make sure to run `make example microvm_curl` from
-//! the `monocore` subdirectory.
-//!
 //! This example demonstrates making HTTP requests from inside a microvm using curl with:
 //! - 1 virtual CPU
 //! - 1024 MiB of RAM
