@@ -242,6 +242,21 @@ make build
 make install
 ```
 
+### Release Process
+
+When a release-please PR is created, the following manual changes need to be made before merging:
+
+1. **Update Internal Dependencies**: In the root `Cargo.toml`, ensure that any internal crate dependencies use the new release version being created. For example:
+
+   ```toml
+   [dependencies]
+   monoutils-x = { version = "0.2.0", path = "monoutils-x" }  # Update this version
+   ```
+
+2. **Update Install Script Version**: In `install_monocore.sh`, update the version number to match the new release version.
+
+These changes are not automatically handled by release-please and must be made manually before merging the release PR.
+
 ## 📚 Documentation
 
 - [Detailed Features](monocore/README.md#features)
