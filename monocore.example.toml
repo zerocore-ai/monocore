@@ -1,0 +1,12 @@
+[[service]]
+type = "default"
+name = "timer"
+base = "alpine:3.19"
+group = "app"
+command = "date"
+cpus = 1
+ram = 128
+
+[[group]]
+name = "app"
+local_only = true
