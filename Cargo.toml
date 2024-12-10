@@ -48,7 +48,7 @@ procspawn = "1.0"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 reqwest-middleware = "0.3" # Cannot upgrade to 0.4 due to https://github.com/TrueLayer/reqwest-middleware/issues/204
 reqwest-retry = "0.6" # Cannot upgrade to 0.7 due to https://github.com/TrueLayer/reqwest-retry/issues/100
-monoutils-store = { version = "0.1.0", path = "./monoutils-store" }
+monoutils-store = { version = "0.2.0", path = "./monoutils-store" }
 chrono = { version = "0.4", features = ["serde"] }
 criterion = "0.5"
 test-log = "0.2"

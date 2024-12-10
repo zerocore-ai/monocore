@@ -8,10 +8,12 @@
     },
     "monofs": {
       "package-name": "monofs",
+      "skip-github-release": true,
       "release-type": "rust"
     },
     "monoutils-store": {
       "package-name": "monoutils-store",
+      "skip-github-release": true,
       "release-type": "rust"
     }
   },
