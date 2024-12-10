@@ -24,9 +24,6 @@
   </p>
 </div>
 
-> [!WARNING]
-> This project is in early development and is not yet ready for production use.
-
 Building AI agents that write and execute code? You'll need a secure sandbox.
 
 **monocore** provides instant, secure VMs for your AI agents to:
@@ -39,7 +36,10 @@ Building AI agents that write and execute code? You'll need a secure sandbox.
 
 All while keeping your system safe through VM-level isolation.
 
-## Why monocore?
+> [!WARNING]
+> This project is in early development and is not yet ready for production use.
+
+## 🤔 Why monocore?
 
 When developing AI agents that execute code, you need a fast development cycle:
 
@@ -59,7 +59,7 @@ monocore gives you:
 
 Develop and test locally with instant feedback, then deploy to production with confidence.
 
-## Getting Started
+## 🚀 Getting Started
 
 ### Installation
 
@@ -71,76 +71,77 @@ This will install both the `monocore` command and its alias `mc`.
 
 ### System Requirements
 
-#### Linux
+<details>
+<summary><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/> <b>Linux</b></summary>
 
 - KVM-enabled Linux kernel (check with `ls /dev/kvm`)
 - User must be in the `kvm` group (add with `sudo usermod -aG kvm $USER`)
+</details>
 
-#### macOS
+<details>
+<summary><img src="https://cdn.simpleicons.org/apple/999999" height="10"/> <b>macOS</b></summary>
 
+- Apple Silicon (ARM64) only
 - macOS 10.15 (Catalina) or later for Hypervisor.framework support
+</details>
+
+<details>
+<summary><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Windows_logo_-_2021.svg/1024px-Windows_logo_-_2021.svg.png" height="10"/> <b>Windows</b></summary>
+
+> Coming soon!
+
+</details>
 
 ### Quick Start
 
-1. **Start the sandbox server**
-
-   ```sh
-   # Start the server on port 3456
-   mc serve --port 3456
-   ```
-
-2. **Define your sandboxes**
+1. **Define your sandboxes**
 
    ```toml
    # monocore.toml
-
-   # Python sandbox for data visualization
    [[service]]
-   name = "python-sandbox"
-   base = "python:3.11-slim"
-   ram = 512
+   name = "timer"
+   base = "alpine:latest"
+   ram = 128
    cpus = 1
-   group = "sandboxes"
-   command = "python"
-   args = ["-c", "print('Hello from Python!')"]
+   group = "demo"
+   command = "sh"
+   args = ["-c", "for i in $(seq 1 60); do echo \"$i seconds...\"; sleep 1; done"]
 
-   # Node.js sandbox for code execution
    [[service]]
-   name = "node-sandbox"
-   base = "node:18-slim"
+   name = "counter"
+   base = "python:3.11-slim"
    ram = 256
    cpus = 1
-   group = "sandboxes"
-   command = "node"
-   args = ["-e", "console.log('Hello from Node!')"]
+   group = "demo"
+   command = "python"
+   args = ["-c", "import time; count=0; [print(f'Count: {count+1}') or time.sleep(2) or (count:=count+1) for _ in range(100)]"]
 
-   # Define security group
    [[group]]
-   name = "sandboxes"
-   local_only = true  # Restrict network access
+   name = "demo"
+   local_only = true
    ```
 
-3. **Manage your sandboxes**
+2. **Manage your sandboxes**
 
    ```sh
    # Pull sandbox images
+   mc pull alpine:latest
    mc pull python:3.11-slim
-   mc pull node:18-slim
 
    # Start sandboxes
    mc up -f monocore.toml
 
-   # Check status
+   # Check status - you'll see both services running
    mc status
 
    # Stop specific services
-   mc down --group sandboxes
+   mc down --group demo
 
    # Stop all services
    mc down
 
    # Remove services
-   mc remove python-sandbox node-sandbox
+   mc remove timer counter
    ```
 
 ### CLI Reference
@@ -162,12 +163,18 @@ mc remove service-name      # Remove service
 mc pull image:tag           # Pull container image
 
 # Server mode
-mc serve --port 3456        # Start API server
+mc serve
 ```
 
 ### REST API
 
-When running in server mode, monocore provides a REST API for programmatic control:
+For programmatic control, monocore provides a REST API. Start the server (default port: 3456):
+
+```sh
+mc serve
+```
+
+Then interact with the API:
 
 ```sh
 # Launch sandboxes
@@ -192,7 +199,7 @@ curl -X POST http://localhost:3456/remove \
   -d '{"services": ["timer"]}'
 ```
 
-## Features in Action
+## 💡 Features in Action
 
 - **Secure Code Execution**: Run untrusted code in isolated environments
 - **Resource Limits**: Control CPU, memory, and execution time
@@ -201,11 +208,12 @@ curl -X POST http://localhost:3456/remove \
 - **Status Monitoring**: Track execution state and resource usage
 - **Simple Integration**: RESTful API for easy automation
 
-## Development
+## 💻 Development
 
 ### Prerequisites
 
-#### Linux Build Dependencies
+<details>
+<summary><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/> <b>Linux Build Dependencies</b></summary>
 
 ```sh
 # Ubuntu/Debian:
@@ -216,9 +224,21 @@ sudo apt-get install build-essential pkg-config libssl-dev flex bison bc libelf-
 sudo dnf install build-essential pkg-config libssl-dev flex bison bc libelf-dev python3-pyelftools patchelf
 ```
 
-#### macOS Build Dependencies
+</details>
 
-- [Homebrew][brew_home]
+<details>
+<summary><img src="https://cdn.simpleicons.org/apple/999999" height="10"/> <b>macOS Build Dependencies</b></summary>
+
+Make sure you have [Homebrew](https://brew.sh/) installed, then:
+
+```sh
+brew tap slp/krun
+brew install krunvm
+```
+
+</details>
+
+### Build
 
 ```sh
 # Build
@@ -226,14 +246,14 @@ make build
 make install
 ```
 
-## Documentation
+## 📚 Documentation
 
 - [Detailed Features](monocore/README.md#features)
 - [Architecture](monocore/README.md#architecture)
 - [API Examples](monocore/README.md#api-examples)
 - [Development Guide](monocore/README.md#development)
 
-## License
+## ⚖️ License
 
 This project is licensed under the [Apache License 2.0](./LICENSE).
 
