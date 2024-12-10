@@ -1,5 +1,4 @@
-//! If you are trying to run this example, please make sure to run `make bench microvm_provision` from
-//! the `monocore` subdirectory
+//! To run the benchmark, execute `make bench microvm_provision`
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::{process::Command, time::Duration};

@@ -1,6 +1,3 @@
-//! If you are trying to run this example, please make sure to run `make example orchestration_basic` from
-//! the `monocore` subdirectory.
-//!
 //! This example demonstrates basic orchestration capabilities:
 //! - Creating and managing multiple services
 //! - Service updates and configuration changes
@@ -52,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
     println!("OCI directory: {}", oci_dir);
 
     // Path to supervisor binary - adjust this path as needed
-    let supervisor_path = "./target/release/monokrun";
+    let supervisor_path = format!("{}/../target/release/monokrun", env!("CARGO_MANIFEST_DIR"));
 
     // Create orchestrator with log retention policy
     let mut orchestrator = Orchestrator::with_log_retention_policy(

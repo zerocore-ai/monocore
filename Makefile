@@ -137,11 +137,11 @@ example: $(MONOKRUN_RELEASE_BIN).dev
 
 _run_example:
 ifeq ($(OS),Darwin)
-	cd monocore && cargo build --example $(EXAMPLE_NAME) --release
+	cargo build --example $(EXAMPLE_NAME) --release
 	codesign --entitlements monocore/monocore.entitlements --force -s - $(EXAMPLES_DIR)/$(EXAMPLE_NAME)
 	DYLD_LIBRARY_PATH=$(BUILD_DIR):$$DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME) $(ARGS) || exit $$?
 else
-	cd monocore && cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
+	cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
 endif
 
 # Run benchmarks
@@ -166,11 +166,11 @@ bin: $(MONOKRUN_RELEASE_BIN).dev
 
 _run_bin:
 ifeq ($(OS),Darwin)
-	cd monocore && cargo build --bin $(BIN_NAME) --release
+	cargo build --bin $(BIN_NAME) --release
 	codesign --entitlements monocore/monocore.entitlements --force -s - $(BENCHES_DIR)/$(BIN_NAME)
 	DYLD_LIBRARY_PATH=$(BUILD_DIR):$$DYLD_LIBRARY_PATH $(BENCHES_DIR)/$(BIN_NAME) $(ARGS) || exit $$?
 else
-	cd monocore && cargo run --bin $(BIN_NAME) --release -- $(ARGS) || exit $$?
+	cargo run --bin $(BIN_NAME) --release -- $(ARGS) || exit $$?
 endif
 
 # -----------------------------------------------------------------------------

@@ -8,7 +8,7 @@
 //!
 //! To run the example:
 //! ```bash
-//! cargo run --example overlayfs_merge
+//! make example oci_merge
 //! ```
 
 use monocore::{

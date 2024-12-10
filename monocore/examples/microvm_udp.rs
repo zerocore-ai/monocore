@@ -1,6 +1,3 @@
-//! If you are trying to run this example, please make sure to run `make example microvm_udp` from
-//! the `monocore` subdirectory.
-//!
 //! This example demonstrates UDP network connectivity between microvms using netcat (nc).
 //! It creates two microvms - one running as a server and another as a client.
 //!
