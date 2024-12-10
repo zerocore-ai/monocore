@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0](https://github.com/appcypher/monocore/compare/monocore-v0.1.0...monocore-v0.2.0) (2024-12-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** Removes service type variants (Default, HttpHandler, Precursor) in favor of a single unified Service struct. This change simplifies the configuration model while maintaining all functionality.
+
+### Code Refactoring
+
+* **config:** simplify service model and improve volume handling ([#69](https://github.com/appcypher/monocore/issues/69)) ([571219d](https://github.com/appcypher/monocore/commit/571219da112ff484e8d0f77162e6d8704dc99f5f))
+
 ## [0.1.0](https://github.com/appcypher/monocore/compare/monocore-v0.1.0...monocore-v0.1.0) (2024-12-03)
 
 

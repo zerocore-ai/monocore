@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/appcypher/monocore/compare/monoutils-store-v0.1.0...monoutils-store-v0.2.0) (2024-12-10)
+
+
+### Miscellaneous Chores
+
+* **monoutils-store:** Synchronize monocore-project versions
+
 ## [0.1.0](https://github.com/appcypher/monocore/compare/monoutils-store-v0.1.0...monoutils-store-v0.1.0) (2024-12-03)
 
 
