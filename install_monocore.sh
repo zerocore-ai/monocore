@@ -8,7 +8,7 @@
 #   ./install_monocore.sh [options]
 #
 # Options:
-#   --version       Specify version to install (default: 0.2.0)
+#   --version       Specify version to install (default: 0.2.1)
 #   --no-cleanup   Skip cleanup of temporary files after installation
 #
 # The script performs the following tasks:
@@ -43,7 +43,7 @@ error() {
 }
 
 # Default values
-VERSION="0.2.0"
+VERSION="0.2.1"
 NO_CLEANUP=false
 TEMP_DIR="/tmp/monocore-install"
 GITHUB_REPO="appcypher/monocore"
