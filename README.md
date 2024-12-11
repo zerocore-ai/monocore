@@ -28,11 +28,12 @@ Building AI agents that write and execute code? You'll need a secure sandbox.
 
 **monocore** provides instant, secure VMs for your AI agents to:
 
-- Generate charts and visualizations
+- Generate visualizations and charts
 - Run data analysis scripts
-- Test generated code
-- Execute system commands
-- Access development tools
+- Execute system commands safely
+- Create and test web applications
+- Run automated browser tasks
+- Perform complex calculations
 
 All while keeping your system safe through VM-level isolation.
 
@@ -99,117 +100,138 @@ This will install both the `monocore` command and its alias `mc`.
    ```toml
    # monocore.toml
    [[service]]
-   name = "timer"
-   base = "alpine:latest"
-   ram = 128
-   cpus = 1
-   group = "demo"
-   command = "sh"
-   args = ["-c", "for i in $(seq 1 60); do echo \"$i seconds...\"; sleep 1; done"]
+    name = "sh-counter"
+    base = "alpine:latest"
+    ram = 256
+    cpus = 1
+    group = "demo"
+    command = "/bin/sh"
+    args = ["-c", "for i in $(seq 1 20); do echo $i; sleep 2; done"]
 
-   [[service]]
-   name = "counter"
-   base = "python:3.11-slim"
-   ram = 256
-   cpus = 1
-   group = "demo"
-   command = "python"
-   args = ["-c", "import time; count=0; [print(f'Count: {count+1}') or time.sleep(2) or (count:=count+1) for _ in range(100)]"]
+    [[service]]
+    name = "python-counter"
+    base = "python:3.11-slim"
+    ram = 256
+    cpus = 1
+    group = "demo"
+    command = "/usr/local/bin/python3"
+    args = [
+        "-c",
+        "import time; count=0; [print(f'Count: {count+1}') or time.sleep(2) or (count:=count+1) for _ in range(20)]",
+    ]
 
-   [[group]]
-   name = "demo"
-   local_only = true
+    [[group]]
+    name = "demo"
+    local_only = true
    ```
 
 2. **Manage your sandboxes**
 
+   Start sandboxes:
+
    ```sh
-   # Start sandboxes
    mc up -f monocore.toml
+   ```
 
-   # Check status - you'll see both services running
+   Check status:
+
+   ```sh
    mc status
+   ```
 
-   # Stop specific services
+   Check logs:
+
+   ```sh
+   mc log sh-counter --no-pager -n 10
+   ```
+
+   Stop specific services:
+
+   ```sh
    mc down --group demo
+   ```
 
-   # Stop all services
+   Stop all services:
+
+   ```sh
    mc down
+   ```
 
-   # Remove services
+   Remove services:
+
+   ```sh
    mc remove timer counter
    ```
 
-### CLI Reference
+   For a complete list of commands and options, use:
 
-```sh
-# General commands
-mc --help                    # Show help
-mc --version                 # Show version
-
-# Service management
-mc up -f monocore.toml      # Start services
-mc up --group mygroup       # Start specific group
-mc down                     # Stop all services
-mc down --group mygroup     # Stop specific group
-mc status                   # Show service status
-mc remove service-name      # Remove service
-
-# Image management
-mc pull image:tag           # Pull container image
-
-# Server mode
-mc serve
-```
+   ```sh
+   mc --help
+   ```
 
 ### REST API
 
-For programmatic control, monocore provides a REST API. Start the server (default port: 3456):
+Start the server (default port: 3456):
 
 ```sh
 mc serve
 ```
 
-Then interact with the API:
+Launch sandboxes:
 
 ```sh
-# Launch sandboxes
 curl -X POST http://localhost:3456/up \
   -H "Content-Type: application/json" \
   -d @monocore.example.json
+```
 
-# Check status and metrics
+Check status and metrics:
+
+```sh
 curl http://localhost:3456/status | jq
+```
 
-# Stop all services
+Stop all services:
+
+```sh
 curl -X POST http://localhost:3456/down
+```
 
-# Stop specific group
+Stop specific group:
+
+```sh
 curl -X POST http://localhost:3456/down \
   -H "Content-Type: application/json" \
   -d '{"group": "app"}'
+```
 
-# Remove services
+Remove services:
+
+```sh
 curl -X POST http://localhost:3456/remove \
   -H "Content-Type: application/json" \
   -d '{"services": ["timer"]}'
 ```
 
-## 💡 Features in Action
+## Troubleshooting
 
-- **Secure Code Execution**: Run untrusted code in isolated environments
-- **Resource Limits**: Control CPU, memory, and execution time
-- **Network Control**: Restrict or allow network access per sandbox
-- **Environment Control**: Pass data and configuration safely
-- **Status Monitoring**: Track execution state and resource usage
-- **Simple Integration**: RESTful API for easy automation
+#### Service Won't Start
+
+- **macOS**: MicroVMs require at least 256 MiB of RAM to start properly. Setting lower values will cause silent failures.
+  ```toml
+  [[service]]
+  name = "my-service"
+  ram = 256  # Minimum recommended for macOS
+  ```
 
 ## 💻 Development
+
+For development, you'll need to build monocore from source.
 
 ### Prerequisites
 
 <details>
-<summary><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/> <b>Linux Build Dependencies</b></summary>
+<summary><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/> <b>Linux Requirements</b></summary>
 
 ```sh
 # Ubuntu/Debian:
@@ -223,7 +245,7 @@ sudo dnf install build-essential pkg-config libssl-dev flex bison bc libelf-dev 
 </details>
 
 <details>
-<summary><img src="https://cdn.simpleicons.org/apple/999999" height="10"/> <b>macOS Build Dependencies</b></summary>
+<summary><img src="https://cdn.simpleicons.org/apple/999999" height="10"/> <b>macOS Requirements</b></summary>
 
 Make sure you have [Homebrew](https://brew.sh/) installed, then:
 
@@ -234,10 +256,23 @@ brew install krunvm
 
 </details>
 
+### Setup
+
+1. Clone the repository:
+   ```sh
+   git clone https://github.com/appcypher/monocore.git
+   cd monocore
+   ```
+
+2. Install pre-commit hooks:
+   ```sh
+   pip install pre-commit
+   pre-commit install
+   ```
+
 ### Build
 
 ```sh
-# Build
 make build
 make install
 ```

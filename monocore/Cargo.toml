@@ -67,10 +67,13 @@ scopeguard = "1.2"
 tokio-stream = { version = "0.1.17", features = ["fs"] }
 pretty-error-debug.workspace = true
 serde_yaml = "0.9.34"
+async-stream.workspace = true
+pin-project = "1.1.7"
 
 [dev-dependencies]
 test-log.workspace = true
 criterion.workspace = true
+rand.workspace = true
 
 [features]
 default = []

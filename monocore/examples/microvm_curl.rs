@@ -62,15 +62,19 @@ async fn main() -> Result<()> {
     // Use specific directories for OCI and rootfs
     let build_dir = format!("{}/build", env!("CARGO_MANIFEST_DIR"));
     let oci_dir = format!("{}/oci", build_dir);
-    let rootfs_fedora_dir = format!("{}/rootfs/reference/library_fedora__latest", build_dir);
+
+    // Parse image reference
+    let image_ref = "library/fedora:latest";
+    let (_, _, rootfs_name) = utils::parse_image_ref(image_ref).unwrap();
+    let rootfs_dir = format!("{}/rootfs/reference/{}", build_dir, rootfs_name);
 
     // Pull and merge Fedora image
-    utils::pull_docker_image(&oci_dir, "library/fedora:latest").await?;
-    utils::merge_image_layers(&oci_dir, &rootfs_fedora_dir, "library/fedora:latest").await?;
+    utils::pull_docker_image(&oci_dir, image_ref).await?;
+    utils::merge_image_layers(&oci_dir, &rootfs_dir, image_ref).await?;
 
     // Build the MicroVm
     let vm = MicroVm::builder()
-        .root_path(format!("{}/merged", rootfs_fedora_dir))
+        .root_path(format!("{}/merged", rootfs_dir))
         .num_vcpus(1)
         .exec_path("/bin/curl")
         .args([args.target.as_str()])

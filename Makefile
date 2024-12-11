@@ -71,7 +71,7 @@ $(MONOCORE_RELEASE_BIN): deps
 	cd monocore
 ifeq ($(OS),Darwin)
 	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib" cargo build --release --bin monocore $(FEATURES)
-	codesign --entitlements monocore/monocore.entitlements --force -s - $@
+	codesign --entitlements monocore.entitlements --force -s - $@
 else
 	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib" cargo build --release --bin monocore $(FEATURES)
 ifdef OVERLAYFS
@@ -83,7 +83,7 @@ $(MONOKRUN_RELEASE_BIN): deps
 	cd monocore
 ifeq ($(OS),Darwin)
 	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib" cargo build --release --bin monokrun $(FEATURES)
-	codesign --entitlements monocore/monocore.entitlements --force -s - $@
+	codesign --entitlements monocore.entitlements --force -s - $@
 else
 	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib" cargo build --release --bin monokrun $(FEATURES)
 ifdef OVERLAYFS
@@ -120,7 +120,7 @@ install: build
 $(MONOKRUN_RELEASE_BIN).dev: deps
 	cd monocore && cargo build --release --bin monokrun $(FEATURES)
 ifeq ($(OS),Darwin)
-	codesign --entitlements monocore/monocore.entitlements --force -s - $(MONOKRUN_RELEASE_BIN)
+	codesign --entitlements monocore.entitlements --force -s - $(MONOKRUN_RELEASE_BIN)
 endif
 ifdef OVERLAYFS
 	sudo setcap cap_sys_admin+ep $(MONOKRUN_RELEASE_BIN)
@@ -138,7 +138,7 @@ example: $(MONOKRUN_RELEASE_BIN).dev
 _run_example:
 ifeq ($(OS),Darwin)
 	cargo build --example $(EXAMPLE_NAME) --release
-	codesign --entitlements monocore/monocore.entitlements --force -s - $(EXAMPLES_DIR)/$(EXAMPLE_NAME)
+	codesign --entitlements monocore.entitlements --force -s - $(EXAMPLES_DIR)/$(EXAMPLE_NAME)
 	DYLD_LIBRARY_PATH=$(BUILD_DIR):$$DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME) $(ARGS) || exit $$?
 else
 	cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
@@ -167,7 +167,7 @@ bin: $(MONOKRUN_RELEASE_BIN).dev
 _run_bin:
 ifeq ($(OS),Darwin)
 	cargo build --bin $(BIN_NAME) --release
-	codesign --entitlements monocore/monocore.entitlements --force -s - $(BENCHES_DIR)/$(BIN_NAME)
+	codesign --entitlements monocore.entitlements --force -s - $(BENCHES_DIR)/$(BIN_NAME)
 	DYLD_LIBRARY_PATH=$(BUILD_DIR):$$DYLD_LIBRARY_PATH $(BENCHES_DIR)/$(BIN_NAME) $(ARGS) || exit $$?
 else
 	cargo run --bin $(BIN_NAME) --release -- $(ARGS) || exit $$?

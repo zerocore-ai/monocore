@@ -39,11 +39,15 @@ async fn main() -> anyhow::Result<()> {
     let build_dir = format!("{}/build", env!("CARGO_MANIFEST_DIR"));
     let oci_dir = format!("{}/oci", build_dir);
     let rootfs_dir = format!("{}/rootfs", build_dir);
-    let rootfs_alpine_dir = format!("{}/reference/library_alpine__latest", rootfs_dir);
+
+    // Parse image reference
+    let image_ref = "library/alpine:latest";
+    let (_, _, rootfs_name) = utils::parse_image_ref(image_ref).unwrap();
+    let ref_rootfs_dir = format!("{}/reference/{}", rootfs_dir, rootfs_name);
 
     // Pull and merge Alpine image
-    utils::pull_docker_image(&oci_dir, "library/alpine:latest").await?;
-    utils::merge_image_layers(&oci_dir, &rootfs_alpine_dir, "library/alpine:latest").await?;
+    utils::pull_docker_image(&oci_dir, image_ref).await?;
+    utils::merge_image_layers(&oci_dir, &ref_rootfs_dir, image_ref).await?;
 
     let supervisor_path = format!("{}/../target/release/monokrun", env!("CARGO_MANIFEST_DIR"));
 
