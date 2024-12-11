@@ -171,25 +171,33 @@ make monocore && sudo make install
 ```toml
 # monocore.toml
 [[service]]
-name = "counter"
-base = "alpine:latest"
-ram = 512
-group = "main"
-command = "/usr/bin/count"
-
-[[service]]
-name = "date-service"
+name = "sh-counter"
 base = "alpine:latest"
 ram = 256
-group = "main"
-command = "/bin/date"
+cpus = 1
+group = "demo"
+command = "/bin/sh"
+args = ["-c", "for i in $(seq 1 10); do echo $i; sleep 2; done"]
+
+[[service]]
+name = "python-counter"
+base = "python:3.11-slim"
+ram = 256
+cpus = 1
+group = "demo"
+command = "/usr/local/bin/python3"
+args = [
+    "-c",
+    "import time; count=0; [print(f'Count: {count+1}') or time.sleep(2) or (count:=count+1) for _ in range(10)]",
+]
+
+[[group]]
+name = "demo"
+local_only = true
 ```
 
 2. Manage your services:
 ```bash
-# Pull required images
-monocore pull alpine:latest
-
 # Start services
 monocore up -f monocore.toml
 
@@ -216,6 +224,71 @@ For more CLI options:
 ```bash
 monocore --help
 ```
+
+### Configuration Schema
+
+The `monocore.toml` configuration file supports the following structure:
+
+```toml
+# Service Definition
+[[service]]
+name = "service-name"          # Required: Name of the service
+base = "image:tag"             # Optional: Base OCI image to use
+group = "group-name"           # Optional: Group this service belongs to
+command = "/path/to/binary"    # Optional: Command to run
+args = ["arg1", "arg2"]        # Optional: Arguments for the command
+cpus = 1                       # Optional: Number of vCPUs (default: 1)
+ram = 1024                     # Optional: RAM in MiB (default: 1024)
+workdir = "/app"               # Optional: Working directory
+port = "8080:80"               # Optional: Port mapping (host:guest)
+volumes = ["/host:/guest"]     # Optional: Volume mappings
+envs = ["KEY=value"]           # Optional: Environment variables
+depends_on = ["other-service"] # Optional: Service dependencies
+group_envs = ["prod"]          # Optional: Environment variables for the group
+group_volumes = [              # Optional: Volume mappings for the group
+  {
+    name = "shared-data",      # Required: Name of the volume
+    path = "/data:/data"       # Required: Path mapping (host:guest)
+  }
+]
+
+# Group Definition
+[[group]]
+name = "group-name"            # Required: Name of the group
+local_only = true              # Optional: Restrict connection to local network (default: true)
+
+# Group volume definition
+[[group.volume]]
+name = "shared-data"           # Required: Name of the volume
+path = "/data"                 # Required: Base path on host system
+
+# Group environment variables
+[[group.env]]
+name = "prod"                  # Required: Name of the environment group
+envs = ["API_KEY=value"]       # Optional: Environment variables
+```
+
+#### Volume Mappings
+Volumes can be specified in two formats:
+- Single path (`/data`): Uses the same path on both host and guest
+- Path pair (`/host:/guest`): Maps host path to a different guest path
+
+#### Port Mappings
+Ports can be specified in two formats:
+- Single port (`8080`): Uses the same port on both host and guest
+- Port pair (`8080:80`): Maps host port to a different guest port
+
+#### Service Groups
+Services can be organized into groups for:
+- Shared volume definitions
+- Common environment variables
+- Network isolation (when `local_only = true`)
+- Resource management
+
+#### Dependencies
+- Services can specify dependencies using `depends_on`
+- Maximum dependency chain length is 32
+- Services are started in dependency order
 
 ### REST API
 

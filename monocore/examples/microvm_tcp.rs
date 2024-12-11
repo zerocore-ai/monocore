@@ -66,18 +66,22 @@ async fn main() -> Result<()> {
     // Use specific directories for OCI and rootfs
     let build_dir = format!("{}/build", env!("CARGO_MANIFEST_DIR"));
     let oci_dir = format!("{}/oci", build_dir);
-    let rootfs_alpine_dir = format!("{}/rootfs/reference/library_alpine__latest", build_dir);
+
+    // Parse image reference
+    let image_ref = "library/alpine:latest";
+    let (_, _, rootfs_name) = utils::parse_image_ref(image_ref).unwrap();
+    let rootfs_dir = format!("{}/rootfs/reference/{}", build_dir, rootfs_name);
 
     // Pull and merge Alpine image
-    utils::pull_docker_image(&oci_dir, "library/alpine:latest").await?;
-    utils::merge_image_layers(&oci_dir, &rootfs_alpine_dir, "library/alpine:latest").await?;
+    utils::pull_docker_image(&oci_dir, image_ref).await?;
+    utils::merge_image_layers(&oci_dir, &rootfs_dir, image_ref).await?;
 
     // Build the MicroVm with different configurations based on server/client mode
     let vm = if args.server {
         tracing::info!("Server mode: Listening on {}:3456 (TCP)...", args.ip);
         MicroVm::builder()
             .log_level(LogLevel::Info)
-            .root_path(format!("{}/merged", rootfs_alpine_dir))
+            .root_path(format!("{}/merged", rootfs_dir))
             .port_map(["3456:3456".parse()?])
             .exec_path("/bin/busybox")
             .args([
@@ -99,7 +103,7 @@ async fn main() -> Result<()> {
         tracing::info!("Client mode: Connecting to {}:3456 (TCP)...", args.ip);
         MicroVm::builder()
             .log_level(LogLevel::Info)
-            .root_path(format!("{}/merged", rootfs_alpine_dir))
+            .root_path(format!("{}/merged", rootfs_dir))
             .exec_path("/bin/busybox")
             .args(["nc", "-w", "1", "127.0.0.1", "3456"])
             .assigned_ip(args.ip.parse()?)

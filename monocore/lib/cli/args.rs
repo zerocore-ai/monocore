@@ -73,6 +73,30 @@ pub enum MonocoreSubcommand {
     /// Show status of running services (CPU, memory, network, etc)
     Status {},
 
+    /// Display service logs
+    #[command(arg_required_else_help = true)]
+    Log {
+        /// Name of the service to show logs for
+        #[arg(required = true)]
+        service: String,
+
+        /// Number of lines to show (from the end)
+        #[arg(short = 'n')]
+        lines: Option<usize>,
+
+        /// Disable pager and print directly to stdout
+        #[arg(long)]
+        no_pager: bool,
+
+        /// Follow log output (like tail -f)
+        #[arg(short = 'f', long)]
+        follow: bool,
+
+        /// Home directory for monocore state (default: ~/.monocore)
+        #[arg(long, default_value = DEFAULT_MONOCORE_HOME.as_os_str())]
+        home_dir: PathBuf,
+    },
+
     /// Remove service files (rootfs and config)
     #[command(alias = "rm", arg_required_else_help = true)]
     Remove {

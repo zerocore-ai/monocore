@@ -1,6 +1,7 @@
-use std::env;
+use std::{env, io::Write};
 
 use clap::{CommandFactory, Parser};
+use futures::StreamExt;
 use monocore::{
     cli::{MonocoreArgs, MonocoreSubcommand},
     config::Monocore,
@@ -10,7 +11,7 @@ use monocore::{
     MonocoreError, MonocoreResult,
 };
 use serde::de::DeserializeOwned;
-use tokio::fs;
+use tokio::{fs, io::AsyncWriteExt, process::Command, signal::unix::SignalKind};
 use tracing::info;
 
 //--------------------------------------------------------------------------------------------------
@@ -225,6 +226,60 @@ async fn main() -> MonocoreResult<()> {
             axum::serve(listener, app)
                 .await
                 .map_err(MonocoreError::custom)?;
+        }
+
+        Some(MonocoreSubcommand::Log {
+            service,
+            lines,
+            no_pager,
+            follow,
+            home_dir,
+        }) => {
+            let current_exe = env::current_exe()?;
+            let supervisor_path = current_exe.parent().unwrap().join(SUPERVISOR_EXE);
+            let orchestrator = Orchestrator::load(&home_dir, &supervisor_path).await?;
+
+            let mut log_stream = orchestrator.view_logs(&service, lines, follow).await?;
+
+            if follow || no_pager {
+                // Set up Ctrl+C handler
+                let mut sigint = tokio::signal::unix::signal(SignalKind::interrupt())?;
+
+                // Print directly to stdout for follow mode or when no pager is requested
+                loop {
+                    tokio::select! {
+                        maybe_line = log_stream.next() => {
+                            match maybe_line {
+                                Some(line) => {
+                                    print!("{}", line?);
+                                    std::io::stdout().flush()?;
+                                }
+                                None => break,
+                            }
+                        }
+                        _ = sigint.recv() => {
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // Collect all content for pager mode
+                let mut content = String::new();
+                while let Some(line) = log_stream.next().await {
+                    content.push_str(&line?);
+                }
+
+                let mut less = Command::new("less")
+                    .arg("-R") // Handle ANSI color codes
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()?;
+
+                if let Some(mut stdin) = less.stdin.take() {
+                    stdin.write_all(content.as_bytes()).await?;
+                }
+
+                less.wait().await?;
+            }
         }
 
         None => {

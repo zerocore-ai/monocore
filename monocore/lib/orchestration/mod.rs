@@ -1,6 +1,7 @@
 //! The orchestration module of the monocore.
 
 mod down;
+mod log;
 mod log_policy;
 mod orchestrator;
 mod remove;
