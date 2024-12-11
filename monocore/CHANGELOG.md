@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/appcypher/monocore/compare/monocore-v0.2.0...monocore-v0.2.1) (2024-12-11)
+
+
+### Features
+
+* add log to cli and make examples work ([59d552a](https://github.com/appcypher/monocore/commit/59d552a3b4e2a07936d101c425a90421593212e9))
+
 ## [0.2.0](https://github.com/appcypher/monocore/compare/monocore-v0.1.0...monocore-v0.2.0) (2024-12-10)
 
 

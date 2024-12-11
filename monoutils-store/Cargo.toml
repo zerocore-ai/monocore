@@ -1,6 +1,6 @@
 [package]
 name = "monoutils-store"
-version = "0.2.0"
+version = "0.2.1"
 description = "`monoutils-store` is a library for working with IPLD content-addressed stores (CAS)."
 license.workspace = true
 repository.workspace = true
