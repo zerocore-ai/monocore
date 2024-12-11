@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/appcypher/monocore/compare/monocore-v0.2.1...monocore-v0.2.2) (2024-12-11)
+
+
+### Miscellaneous Chores
+
+* **monocore:** Synchronize monocore-project versions
+
 ## [0.2.1](https://github.com/appcypher/monocore/compare/monocore-v0.2.0...monocore-v0.2.1) (2024-12-11)
 
 
