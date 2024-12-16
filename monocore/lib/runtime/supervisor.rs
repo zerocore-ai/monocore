@@ -8,9 +8,11 @@ use std::{
     time::Duration,
 };
 
+use oci_spec::image::ImageConfiguration;
+use serde_json::from_str;
 use sysinfo::System;
 use tokio::{
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
     sync::{broadcast, Mutex},
@@ -23,11 +25,11 @@ use tracing::{error, info, warn};
 use crate::{
     config::{Group, Service},
     runtime::MicroVmStatus,
-    utils::{MONOCORE_LOG_DIR, MONOCORE_STATE_DIR},
+    utils::{self, LOG_SUBDIR, OCI_CONFIG_FILENAME, OCI_REPO_SUBDIR, OCI_SUBDIR, STATE_SUBDIR},
     MonocoreError, MonocoreResult,
 };
 
-use super::MicroVmState;
+use super::{log::RotatingLog, MicroVmState};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -38,6 +40,9 @@ use super::MicroVmState;
 pub struct Supervisor {
     /// The state of the micro VM process.
     state: Arc<Mutex<MicroVmState>>,
+
+    /// The home directory of monocore.
+    home_dir: PathBuf,
 
     /// The path to the state file of the micro VM process.
     runtime_state_path: PathBuf,
@@ -57,26 +62,29 @@ pub struct Supervisor {
 //--------------------------------------------------------------------------------------------------
 
 impl Supervisor {
-    const MAX_LOG_SIZE: u64 = 10 * 1024 * 1024; // 10MB max log size
-
     /// Creates a new Supervisor instance.
     pub async fn new(
+        home_dir: impl AsRef<Path>,
         service: Service,
         group: Group,
         group_ip: Option<Ipv4Addr>,
         rootfs_path: impl AsRef<Path>,
     ) -> MonocoreResult<Self> {
+        let home_dir = home_dir.as_ref().to_path_buf();
+        let state_dir = home_dir.join(STATE_SUBDIR);
+        let log_dir = home_dir.join(LOG_SUBDIR);
+
         // Generate unique IDs for the files
         let service_name = service.get_name();
 
         // Create paths with service name for better identification
         let runtime_state_path =
-            MONOCORE_STATE_DIR.join(format!("{}__{}.json", service_name, process::id()));
-        let stdout_log_path = MONOCORE_LOG_DIR.join(format!("{}.stdout.log", service_name));
-        let stderr_log_path = MONOCORE_LOG_DIR.join(format!("{}.stderr.log", service_name));
+            state_dir.join(format!("{}__{}.json", service_name, process::id()));
+        let stdout_log_path = log_dir.join(format!("{}.stdout.log", service_name));
+        let stderr_log_path = log_dir.join(format!("{}.stderr.log", service_name));
 
         // Create directories with proper permissions
-        for dir in [&*MONOCORE_STATE_DIR, &*MONOCORE_LOG_DIR] {
+        for dir in [&state_dir, &log_dir] {
             fs::create_dir_all(dir).await?;
             #[cfg(unix)]
             {
@@ -96,56 +104,12 @@ impl Supervisor {
                 group_ip,
                 rootfs_path,
             ))),
+            home_dir,
             runtime_state_path,
             stdout_log_path,
             stderr_log_path,
             shutdown_tx,
         })
-    }
-
-    /// Creates a log file with proper permissions and rotation
-    async fn create_log_file(path: &Path) -> MonocoreResult<File> {
-        // Create new log file with proper permissions
-        let file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .append(true)
-            .open(path)
-            .await?;
-
-        let mut perms = file.metadata().await?.permissions();
-        perms.set_mode(0o644); // rw-r--r--
-        file.set_permissions(perms).await?;
-
-        Ok(file)
-    }
-
-    /// Rotates the log file if it reaches a certain size
-    async fn rotate_log_if_needed(file: &File, path: &Path) -> MonocoreResult<()> {
-        let metadata = file.metadata().await?;
-        if metadata.len() > Self::MAX_LOG_SIZE {
-            // Ensure all data is written before rotation
-            file.sync_all().await?;
-
-            // Rotate old log file if it exists
-            let backup_path = path.with_extension(format!(
-                "{}.old",
-                path.extension().unwrap_or_default().to_str().unwrap_or("")
-            ));
-
-            // Remove old backup if it exists
-            if backup_path.exists() {
-                if let Err(e) = fs::remove_file(&backup_path).await {
-                    warn!("Failed to remove old backup log file: {}", e);
-                }
-            }
-
-            // Rename current log to backup
-            if let Err(e) = fs::rename(path, &backup_path).await {
-                warn!("Failed to rotate log file: {}", e);
-            }
-        }
-        Ok(())
     }
 
     /// Starts the supervised micro VM process.
@@ -165,8 +129,12 @@ impl Supervisor {
 
         // Get all the needed data under a single lock
         let (service_json, group_json, local_only_json, group_ip_json, rootfs_path) = {
-            let state = self.state.lock().await;
-            let service = state.get_service();
+            let mut state = self.state.lock().await;
+            let service = state.get_service_mut();
+
+            // Update service with OCI config defaults
+            self.update_service_with_oci_config(service).await?;
+
             let service_json = serde_json::to_string(service)?;
             let group_json = serde_json::to_string(state.get_group())?;
 
@@ -189,9 +157,9 @@ impl Supervisor {
                 "--run-microvm",
                 &service_json,
                 &group_json,
-                &local_only_json,
                 &group_ip_json,
                 &rootfs_path,
+                &local_only_json,
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -210,32 +178,17 @@ impl Supervisor {
         let stdout_path = self.stdout_log_path.clone();
         let service_name = self.state.lock().await.get_service().get_name().to_string();
         let stdout_handle = tokio::spawn(async move {
-            let mut file = match Self::create_log_file(&stdout_path).await {
-                Ok(f) => f,
+            println!("Starting stdout log rotation for {}", service_name); // TODO: Remove
+            let mut rotating_log = match RotatingLog::new(&stdout_path, None).await {
+                Ok(r) => r,
                 Err(e) => {
-                    error!("Failed to create stdout log file: {}", e);
+                    error!("Failed to create stdout rotating log: {}", e);
                     return;
                 }
             };
 
             let mut reader = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = reader.next_line().await {
-                // Check and rotate if needed
-                if let Err(e) = Self::rotate_log_if_needed(&file, &stdout_path).await {
-                    error!("Failed to rotate stdout log: {}", e);
-                }
-
-                // Reopen file if it was rotated
-                if !stdout_path.exists() {
-                    file = match Self::create_log_file(&stdout_path).await {
-                        Ok(f) => f,
-                        Err(e) => {
-                            error!("Failed to create new stdout log file after rotation: {}", e);
-                            return;
-                        }
-                    };
-                }
-
                 // Format the log entry with timestamp in standard log format
                 let now = chrono::Utc::now();
                 let formatted_line = format!(
@@ -245,11 +198,11 @@ impl Supervisor {
                     line
                 );
 
-                if let Err(e) = file.write_all(formatted_line.as_bytes()).await {
+                if let Err(e) = rotating_log.write_all(formatted_line.as_bytes()).await {
                     error!("Failed to write to stdout log: {}", e);
                 }
 
-                if let Err(e) = file.flush().await {
+                if let Err(e) = rotating_log.flush().await {
                     error!("Failed to flush stdout log: {}", e);
                 }
             }
@@ -260,32 +213,17 @@ impl Supervisor {
         let stderr_path = self.stderr_log_path.clone();
         let service_name = self.state.lock().await.get_service().get_name().to_string();
         let stderr_handle = tokio::spawn(async move {
-            let mut file = match Self::create_log_file(&stderr_path).await {
-                Ok(f) => f,
+            println!("Starting stderr log rotation for {}", service_name); // TODO: Remove
+            let mut rotating_log = match RotatingLog::new(&stderr_path, None).await {
+                Ok(r) => r,
                 Err(e) => {
-                    error!("Failed to create stderr log file: {}", e);
+                    error!("Failed to create stderr rotating log: {}", e);
                     return;
                 }
             };
 
             let mut reader = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = reader.next_line().await {
-                // Check and rotate if needed
-                if let Err(e) = Self::rotate_log_if_needed(&file, &stderr_path).await {
-                    error!("Failed to rotate stderr log: {}", e);
-                }
-
-                // Reopen file if it was rotated
-                if !stderr_path.exists() {
-                    file = match Self::create_log_file(&stderr_path).await {
-                        Ok(f) => f,
-                        Err(e) => {
-                            error!("Failed to create new stderr log file after rotation: {}", e);
-                            return;
-                        }
-                    };
-                }
-
                 // Format the log entry with timestamp in standard log format
                 let now = chrono::Utc::now();
                 let formatted_line = format!(
@@ -295,10 +233,11 @@ impl Supervisor {
                     line
                 );
 
-                if let Err(e) = file.write_all(formatted_line.as_bytes()).await {
+                if let Err(e) = rotating_log.write_all(formatted_line.as_bytes()).await {
                     error!("Failed to write to stderr log: {}", e);
                 }
-                if let Err(e) = file.flush().await {
+
+                if let Err(e) = rotating_log.flush().await {
                     error!("Failed to flush stderr log: {}", e);
                 }
             }
@@ -491,5 +430,104 @@ impl Supervisor {
         let contents = fs::read_to_string(&self.runtime_state_path).await?;
         let state = serde_json::from_str(&contents)?;
         Ok(state)
+    }
+
+    /// Updates service properties with defaults from OCI config.json if they are not specified.
+    /// The config.json file is expected to be in <home_dir>/oci/repo/<image_name>/.
+    async fn update_service_with_oci_config(&self, service: &mut Service) -> MonocoreResult<()> {
+        // Get base image name from service config
+        let base_image = match service.get_base() {
+            Some(base) => base,
+            None => return Ok(()), // No base image, nothing to do
+        };
+
+        // Parse image reference to get the repository tag directory name
+        let (_, _, repo_tag) = utils::parse_image_ref(base_image)?;
+
+        // Construct path to config.json
+        let config_path = self
+            .home_dir
+            .join(OCI_SUBDIR)
+            .join(OCI_REPO_SUBDIR)
+            .join(repo_tag)
+            .join(OCI_CONFIG_FILENAME);
+
+        // Read and parse config.json
+        let config_str = match fs::read_to_string(&config_path).await {
+            Ok(content) => content,
+            Err(e) => {
+                error!(
+                    "Failed to read OCI config.json at {}: {}",
+                    config_path.display(),
+                    e
+                );
+                return Ok(());
+            }
+        };
+
+        let config: ImageConfiguration = match from_str(&config_str) {
+            Ok(config) => config,
+            Err(e) => {
+                error!("Failed to parse OCI config.json: {}", e);
+                return Ok(());
+            }
+        };
+
+        // Get the config section which contains the defaults
+        let config = match config.config() {
+            Some(config) => config,
+            None => return Ok(()),
+        };
+
+        // Update workdir if not set
+        if service.get_workdir().is_none() {
+            if let Some(working_dir) = config.working_dir() {
+                service.set_workdir(working_dir.to_string());
+            }
+        }
+
+        // Update command and args if not set
+        if service.get_command().is_none() {
+            // First try entrypoint + cmd
+            if let Some(entrypoint) = config.entrypoint() {
+                if !entrypoint.is_empty() {
+                    // Use first item as command and rest as args
+                    let mut entrypoint = entrypoint.clone();
+                    if let Some(command) = entrypoint.first() {
+                        service.set_command(command.clone());
+                        // Add remaining entrypoint items as args
+                        let mut args = entrypoint.split_off(1);
+                        // Add cmd as additional args if present
+                        if let Some(cmd) = config.cmd() {
+                            args.extend(cmd.iter().cloned());
+                        }
+                        service.set_args(args);
+                    }
+                }
+            } else if let Some(cmd) = config.cmd() {
+                if !cmd.is_empty() {
+                    // Use first item as command and rest as args
+                    let mut cmd = cmd.clone();
+                    if let Some(command) = cmd.first() {
+                        service.set_command(command.clone());
+                        service.set_args(cmd.split_off(1));
+                    }
+                }
+            }
+        }
+
+        // Prepend config env to service envs
+        if let Some(env) = config.env() {
+            // Get existing service envs
+            let mut new_envs = env.clone();
+            new_envs.extend(service.get_envs().iter().map(|e| e.to_string()));
+            service.set_envs(new_envs);
+        }
+
+        // NOTE: We intentionally do not use exposed_ports from OCI config.
+        // In OCI/Docker, EXPOSE (which becomes exposed_ports in config.json) only documents which ports
+        // a container uses internally. It does not define port mappings between host and container.
+
+        Ok(())
     }
 }

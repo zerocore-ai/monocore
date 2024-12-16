@@ -29,6 +29,9 @@ pub const OCI_MANIFEST_FILENAME: &str = "manifest.json";
 /// The filename for the OCI image config JSON file
 pub const OCI_CONFIG_FILENAME: &str = "config.json";
 
+/// The filename for the supervisors log file
+pub const SUPERVISORS_LOG_FILENAME: &str = "supervisors.log";
+
 /// The rootfs sub directory where the rootfs and other related files associated with the microvm are stored.
 pub const ROOTFS_SUBDIR: &str = "rootfs";
 
@@ -46,23 +49,6 @@ pub const STATE_SUBDIR: &str = "run";
 
 /// The sub directory where runtime logs are stored.
 pub const LOG_SUBDIR: &str = "log";
-
-lazy_static::lazy_static! {
-    /// The path to the monocore OCI directory
-    pub static ref MONOCORE_OCI_DIR: PathBuf = monocore_home_path().join(OCI_SUBDIR);
-
-    /// The path to the monocore rootfs directory
-    pub static ref MONOCORE_ROOTFS_DIR: PathBuf = monocore_home_path().join(ROOTFS_SUBDIR);
-
-    /// The path to the monocore service directory
-    pub static ref MONOCORE_SERVICE_DIR: PathBuf = monocore_home_path().join(SERVICE_SUBDIR);
-
-    /// The path to the monocore state directory (e.g. for storing service state files)
-    pub static ref MONOCORE_STATE_DIR: PathBuf = monocore_home_path().join(STATE_SUBDIR);
-
-    /// The path to the monocore log directory (e.g. for storing service stdout/stderr logs)
-    pub static ref MONOCORE_LOG_DIR: PathBuf = monocore_home_path().join(LOG_SUBDIR);
-}
 
 //--------------------------------------------------------------------------------------------------
 // Functions

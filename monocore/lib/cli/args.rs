@@ -74,11 +74,10 @@ pub enum MonocoreSubcommand {
     Status {},
 
     /// Display service logs
-    #[command(arg_required_else_help = true)]
+    #[command(arg_required_else_help = false)]
     Log {
-        /// Name of the service to show logs for
-        #[arg(required = true)]
-        service: String,
+        /// Name of the service to show logs for. If not specified, shows supervisor logs
+        service: Option<String>,
 
         /// Number of lines to show (from the end)
         #[arg(short = 'n')]

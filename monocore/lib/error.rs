@@ -238,6 +238,14 @@ pub enum MonocoreError {
     /// An error that occurred when failed to parse configuration file
     #[error("Failed to parse configuration file: {0}")]
     ConfigParseError(String),
+
+    /// An error that occurred when a log file was not found
+    #[error("log not found: {0}")]
+    LogNotFound(String),
+
+    /// An error that occurred when a pager error occurred
+    #[error("pager error: {0}")]
+    PagerError(String),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

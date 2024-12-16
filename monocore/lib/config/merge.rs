@@ -180,15 +180,23 @@ mod tests {
 
     #[test]
     fn test_monocore_merge_basic() {
-        // Create two services with different names
+        // Create two services with different names and multiple ports
         let service1 = Service::builder()
             .name("service1")
             .command("./test1")
+            .ports(vec![
+                PortPair::with_same(8080),
+                PortPair::with_distinct(8081, 81),
+            ])
             .build();
 
         let service2 = Service::builder()
             .name("service2")
             .command("./test2")
+            .ports(vec![
+                PortPair::with_same(9090),
+                PortPair::with_distinct(9091, 91),
+            ])
             .build();
 
         // Create two valid configurations, each with one service
@@ -209,20 +217,49 @@ mod tests {
         assert_eq!(merged.services.len(), 2);
         assert!(merged.services.iter().any(|s| s.get_name() == "service1"));
         assert!(merged.services.iter().any(|s| s.get_name() == "service2"));
+
+        // Verify ports are preserved
+        let merged_service1 = merged
+            .services
+            .iter()
+            .find(|s| s.get_name() == "service1")
+            .unwrap();
+        assert_eq!(merged_service1.ports.len(), 2);
+        assert!(merged_service1.ports.contains(&PortPair::with_same(8080)));
+        assert!(merged_service1
+            .ports
+            .contains(&PortPair::with_distinct(8081, 81)));
+
+        let merged_service2 = merged
+            .services
+            .iter()
+            .find(|s| s.get_name() == "service2")
+            .unwrap();
+        assert_eq!(merged_service2.ports.len(), 2);
+        assert!(merged_service2.ports.contains(&PortPair::with_same(9090)));
+        assert!(merged_service2
+            .ports
+            .contains(&PortPair::with_distinct(9091, 91)));
     }
 
     #[test]
     fn test_monocore_merge_service_update() {
-        // Create original service
+        // Create original service with single port
         let service1 = Service::builder()
             .name("service1")
             .command("./test1")
+            .ports(vec![PortPair::with_same(8080)])
             .build();
 
-        // Create updated version of the same service
+        // Create updated version of the same service with multiple ports
         let service1_updated = Service::builder()
             .name("service1")
             .command("./test1_updated")
+            .ports(vec![
+                PortPair::with_same(8080),
+                PortPair::with_distinct(8081, 81),
+                PortPair::with_distinct(8082, 82),
+            ])
             .build();
 
         // Create configurations with original and updated services
@@ -242,6 +279,18 @@ mod tests {
         let merged = config1.merge(&config2).unwrap();
         assert_eq!(merged.services.len(), 1);
         assert_eq!(merged.services[0].get_command().unwrap(), "./test1_updated");
+
+        // Verify updated ports
+        assert_eq!(merged.services[0].ports.len(), 3);
+        assert!(merged.services[0]
+            .ports
+            .contains(&PortPair::with_same(8080)));
+        assert!(merged.services[0]
+            .ports
+            .contains(&PortPair::with_distinct(8081, 81)));
+        assert!(merged.services[0]
+            .ports
+            .contains(&PortPair::with_distinct(8082, 82)));
     }
 
     #[test]
@@ -249,18 +298,24 @@ mod tests {
         // Create a group
         let group = Group::builder().name("test-group").build();
 
-        // Create two services in the same group that use the same port
+        // Create two services in the same group that use conflicting ports
         let service1 = Service::builder()
             .name("service1")
             .group("test-group")
-            .port("8080:8080".parse::<PortPair>().unwrap())
+            .ports(vec![
+                PortPair::with_same(8080),
+                PortPair::with_distinct(8081, 81),
+            ])
             .command("./test1")
             .build();
 
         let service2 = Service::builder()
             .name("service2")
             .group("test-group")
-            .port("8080:8080".parse::<PortPair>().unwrap())
+            .ports(vec![
+                PortPair::with_same(8080),         // Conflicts with service1
+                PortPair::with_distinct(8082, 82), // This one is fine
+            ])
             .command("./test2")
             .build();
 
@@ -292,18 +347,24 @@ mod tests {
         let group1 = Group::builder().name("group1").build();
         let group2 = Group::builder().name("group2").build();
 
-        // Create services in different groups using the same port
+        // Create services in different groups using overlapping ports
         let service1 = Service::builder()
             .name("service1")
             .group("group1")
-            .port("8080:8080".parse::<PortPair>().unwrap())
+            .ports(vec![
+                PortPair::with_same(8080),
+                PortPair::with_distinct(8081, 81),
+            ])
             .command("./test1")
             .build();
 
         let service2 = Service::builder()
             .name("service2")
             .group("group2")
-            .port("8080:8080".parse::<PortPair>().unwrap())
+            .ports(vec![
+                PortPair::with_same(8080), // Same port is fine in different group
+                PortPair::with_distinct(8082, 82),
+            ])
             .command("./test2")
             .build();
 
@@ -326,6 +387,29 @@ mod tests {
         let merged = result.unwrap();
         assert_eq!(merged.services.len(), 2);
         assert_eq!(merged.groups.len(), 2);
+
+        // Verify all ports are preserved
+        let merged_service1 = merged
+            .services
+            .iter()
+            .find(|s| s.get_name() == "service1")
+            .unwrap();
+        assert_eq!(merged_service1.ports.len(), 2);
+        assert!(merged_service1.ports.contains(&PortPair::with_same(8080)));
+        assert!(merged_service1
+            .ports
+            .contains(&PortPair::with_distinct(8081, 81)));
+
+        let merged_service2 = merged
+            .services
+            .iter()
+            .find(|s| s.get_name() == "service2")
+            .unwrap();
+        assert_eq!(merged_service2.ports.len(), 2);
+        assert!(merged_service2.ports.contains(&PortPair::with_same(8080)));
+        assert!(merged_service2
+            .ports
+            .contains(&PortPair::with_distinct(8082, 82)));
     }
 
     #[test]

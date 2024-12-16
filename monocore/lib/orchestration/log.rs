@@ -6,7 +6,10 @@ use tokio::{
     time,
 };
 
-use crate::{utils::LOG_SUBDIR, MonocoreResult};
+use crate::{
+    utils::{LOG_SUBDIR, SUPERVISORS_LOG_FILENAME},
+    MonocoreResult,
+};
 
 use super::Orchestrator;
 
@@ -25,7 +28,7 @@ impl Orchestrator {
     /// * `follow` - Whether to continuously follow the log output
     pub async fn view_logs(
         &self,
-        service_name: &str,
+        service_name: Option<&str>,
         lines: Option<usize>,
         follow: bool,
     ) -> MonocoreResult<BoxedStream> {
@@ -34,30 +37,53 @@ impl Orchestrator {
 
         // Ensure log directory exists
         if !fs::try_exists(&log_dir).await? {
-            let msg = format!("No logs found for service '{}'", service_name);
+            let msg = "No logs found".to_string();
             return Ok(Box::pin(futures::stream::once(futures::future::ready(Ok(
                 msg,
             )))));
         }
 
-        let log_path = log_dir.join(format!("{}.stdout.log", service_name));
+        let log_path = if let Some(service_name) = service_name {
+            let log_path = log_dir.join(format!("{}.stdout.log", service_name));
 
-        // Check if log file exists
-        if !fs::try_exists(&log_path).await? {
-            let msg = format!("No logs found for service '{}'", service_name);
-            return Ok(Box::pin(futures::stream::once(futures::future::ready(Ok(
-                msg,
-            )))));
-        }
+            // Check if log file exists
+            if !fs::try_exists(&log_path).await? {
+                let msg = format!("No logs found for service '{}'", service_name);
+                return Ok(Box::pin(futures::stream::once(futures::future::ready(Ok(
+                    msg,
+                )))));
+            }
+
+            log_path
+        } else {
+            let log_path = log_dir.join(SUPERVISORS_LOG_FILENAME);
+
+            // Ensure supervisor log file exists
+            if !fs::try_exists(&log_path).await? {
+                let msg = "Supervisor logs not found".to_string();
+                return Ok(Box::pin(futures::stream::once(futures::future::ready(Ok(
+                    msg,
+                )))));
+            }
+
+            log_path
+        };
 
         // Read initial content
         let content = fs::read_to_string(&log_path).await?;
-        let initial_content = if let Some(n) = lines {
+        let content = if let Some(n) = lines {
             let lines: Vec<&str> = content.lines().collect();
             let start = if lines.len() > n { lines.len() - n } else { 0 };
             lines[start..].join("\n")
         } else {
             content
+        };
+
+        // Ensure content ends with newline
+        let initial_content = if content.ends_with('\n') {
+            content
+        } else {
+            content + "\n"
         };
 
         if !follow {

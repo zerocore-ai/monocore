@@ -8,11 +8,7 @@ use crate::{
     MonocoreError, MonocoreResult,
 };
 use std::{collections::HashSet, net::Ipv4Addr, process::Stdio};
-use tokio::{
-    fs,
-    io::{AsyncBufReadExt, BufReader},
-    process::{Child, Command},
-};
+use tokio::{fs, process::Command};
 
 //--------------------------------------------------------------------------------------------------
 // Methods
@@ -203,6 +199,7 @@ impl Orchestrator {
                 &group_json,
                 &group_ip_json,
                 service_rootfs.to_str().unwrap(),
+                self.home_dir.to_str().unwrap(),
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -221,69 +218,7 @@ impl Orchestrator {
             pid
         );
 
-        // Spawn tasks to handle stdout and stderr
-        let service_name = service.get_name().to_string();
-        self.spawn_output_handler(child, service_name);
-
         Ok(())
-    }
-
-    /// Sets up asynchronous handlers for process output streams, capturing stdout and stderr
-    /// from the supervised process and logging them appropriately.
-    fn spawn_output_handler(&self, mut child: Child, service_name: String) {
-        // Handle stdout
-        match child.stdout.take() {
-            Some(stdout) => {
-                let stdout_service_name = service_name.clone();
-                tokio::spawn(async move {
-                    let mut reader = BufReader::new(stdout).lines();
-                    while let Ok(Some(line)) = reader.next_line().await {
-                        tracing::info!("[{}/stdout] {}", stdout_service_name, line);
-                    }
-                });
-            }
-            None => {
-                tracing::warn!(
-                    "Failed to capture stdout for supervisor of service {}",
-                    service_name
-                );
-            }
-        }
-
-        // Handle stderr
-        match child.stderr.take() {
-            Some(stderr) => {
-                let stderr_service_name = service_name.clone();
-                tokio::spawn(async move {
-                    let mut reader = BufReader::new(stderr).lines();
-                    while let Ok(Some(line)) = reader.next_line().await {
-                        tracing::error!("[{}/stderr] {}", stderr_service_name, line);
-                    }
-                });
-            }
-            None => {
-                tracing::warn!(
-                    "Failed to capture stderr for supervisor of service {}",
-                    service_name
-                );
-            }
-        }
-
-        // Wait for the child process
-        tokio::spawn(async move {
-            match child.wait().await {
-                Ok(status) => {
-                    tracing::info!(
-                        "Service supervisor for {} exited with status: {}",
-                        service_name,
-                        status
-                    );
-                }
-                Err(e) => {
-                    tracing::error!("Failed to wait for service {}: {}", service_name, e);
-                }
-            }
-        });
     }
 
     /// Assigns an IP address to a group from the 127.0.0.x range.
