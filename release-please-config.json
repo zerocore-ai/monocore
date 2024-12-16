@@ -15,6 +15,11 @@
       "package-name": "monoutils-store",
       "skip-github-release": true,
       "release-type": "rust"
+    },
+    "sdk-python": {
+      "package-name": "sdk-python",
+      "skip-github-release": true,
+      "release-type": "python"
     }
   },
   "plugins": [

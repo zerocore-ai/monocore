@@ -1,0 +1,33 @@
+[project]
+name = "monocore"
+version = "0.2.0"
+description = "Instant, secure VMs for AI agent code execution. Run untrusted code, data analysis, and system commands with VM-level isolation - perfect for AI development."
+authors = [{ name = "Stephen Akinyemi", email = "appcypher@outlook.com" }]
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["ai", "sandbox", "security", "virtualization", "code-execution"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Security",
+    "Topic :: System :: Emulators",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "asyncio>=3.4.3",
+    "typing-extensions>=4.8.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8.1",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+lint.select = ["E", "F", "I", "B", "A"]
+lint.ignore = ["E501"]
