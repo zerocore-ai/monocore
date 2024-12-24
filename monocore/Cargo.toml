@@ -1,7 +1,7 @@
 [package]
 name = "monocore"
 version = "0.2.1"
-description = "`monocore` is a secure MicroVM provisioning system for running untrusted code in isolated environments."
+description = "`monocore` is a tool for managing lightweight virtual machines and images."
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
@@ -71,6 +71,9 @@ async-stream.workspace = true
 pin-project = "1.1.7"
 tracing-appender = "0.2.3"
 pin-project-lite = "0.2.15"
+semver = { version = "1.0.24", features = ["serde"] }
+bon = "3.3.0"
+ipnetwork = { version = "0.20.0", features = ["serde"] }
 
 [dev-dependencies]
 test-log.workspace = true

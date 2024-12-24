@@ -1,17 +1,7 @@
-//! The orchestration module of the monocore.
-
-mod down;
-mod log;
-mod log_policy;
-mod orchestrator;
-mod remove;
-mod status;
-mod up;
-mod utils;
+mod rotating;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use log_policy::*;
-pub use orchestrator::*;
+pub use rotating::*;

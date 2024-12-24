@@ -190,6 +190,7 @@ async fn do_rotation(file: File, path: PathBuf) -> io::Result<(File, PathBuf)> {
     if backup_path.exists() {
         remove_file(&backup_path).await?;
     }
+
     rename(&path, &backup_path).await?;
 
     let new_file = OpenOptions::new()
@@ -197,6 +198,7 @@ async fn do_rotation(file: File, path: PathBuf) -> io::Result<(File, PathBuf)> {
         .append(true)
         .open(&path)
         .await?;
+
     Ok((new_file, path))
 }
 

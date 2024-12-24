@@ -1,10 +1,9 @@
 [workspace]
 members = [
-    "monoagent",
     "monobase",
     "monocore",
     "monofs",
-    "monoutils-agent",
+    "monopacks",
     "monoutils-did",
     "monoutils-raft",
     "monoutils-store",
@@ -48,7 +47,7 @@ procspawn = "1.0"
 rand = "0.8"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 reqwest-middleware = "0.3"                                        # Cannot upgrade to 0.4 due to https://github.com/TrueLayer/reqwest-middleware/issues/204
-reqwest-retry = "0.6"                                             # Cannot upgrade to 0.7 due to https://github.com/TrueLayer/reqwest-retry/issues/100
+reqwest-retry = "0.6"                                             # Cannot upgrade to 0.7 due to https://github.com/TrueLayer/reqwest-middleware/issues/204
 monoutils-store = { version = "0.2", path = "./monoutils-store" }
 chrono = { version = "0.4", features = ["serde"] }
 criterion = "0.5"

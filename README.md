@@ -254,17 +254,25 @@ brew tap slp/krun
 brew install krunvm
 ```
 
+Create a case-sensitive volume for krunvm:
+
+```sh
+diskutil apfs addVolume disk3 "Case-sensitive APFS" krunvm
+```
+
 </details>
 
 ### Setup
 
 1. Clone the repository:
+
    ```sh
    git clone https://github.com/appcypher/monocore.git
    cd monocore
    ```
 
 2. Install pre-commit hooks:
+
    ```sh
    pip install pre-commit
    pre-commit install

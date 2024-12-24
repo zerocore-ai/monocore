@@ -100,6 +100,7 @@
 #![allow(clippy::module_inception)]
 
 mod error;
+mod log;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -108,10 +109,8 @@ mod error;
 pub mod cli;
 pub mod config;
 pub mod oci;
-pub mod orchestration;
-pub mod runtime;
-pub mod server;
 pub mod utils;
 pub mod vm;
 
 pub use error::*;
+pub use log::*;

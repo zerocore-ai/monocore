@@ -16,8 +16,6 @@ use crate::{
 
 use super::{ffi, LinuxRlimit, MicroVmBuilder, MicroVmConfigBuilder};
 
-use crate::config::validate::normalize_path;
-
 //--------------------------------------------------------------------------------------------------
 // Constants
 //--------------------------------------------------------------------------------------------------
@@ -557,8 +555,8 @@ impl MicroVmConfig {
         // Pre-normalize all paths once to avoid repeated normalization
         let normalized_paths: Vec<_> = mapped_dirs
             .iter()
-            .map(|dir| normalize_path(dir.get_guest().as_str(), true))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|dir| utils::normalize_path(dir.get_guest().as_str(), true))
+            .collect::<MonocoreResult<Vec<_>>>()?;
 
         // Compare each path with every other path only once
         // Using windows of size 2 would miss some comparisons since we need to check both directions
@@ -571,8 +569,8 @@ impl MicroVmConfig {
                 if utils::paths_overlap(path1, path2) {
                     return Err(MonocoreError::InvalidMicroVMConfig(
                         InvalidMicroVMConfigError::ConflictingGuestPaths(
-                            path1.clone(),
-                            path2.clone(),
+                            path1.to_string(),
+                            path2.to_string(),
                         ),
                     ));
                 }
