@@ -1,11 +1,9 @@
-//! OCI distribution traits and helpers.
-
-mod docker;
-mod traits;
+mod env;
+mod home;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use docker::*;
-pub use traits::*;
+pub use env::*;
+pub use home::*;

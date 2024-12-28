@@ -126,6 +126,11 @@ ifdef OVERLAYFS
 	sudo setcap cap_sys_admin+ep $(MONOKRUN_RELEASE_BIN)
 endif
 
+# Integration tests
+integration-test: build
+	@echo "Running integration tests..."
+	cd monocore/tests && make test
+
 # Run examples
 example: $(MONOKRUN_RELEASE_BIN).dev
 	@if [ -z "$(word 2,$(MAKECMDGOALS))" ]; then \
@@ -181,7 +186,7 @@ clean:
 	cd monocore && cargo clean && rm -rf build
 
 deps:
-	./build_libkrun.sh --no-clean
+	./scripts/build_libkrun.sh --no-clean
 
 # Catch-all target to allow example names and arguments
 %:

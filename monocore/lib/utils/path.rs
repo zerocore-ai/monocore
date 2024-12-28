@@ -2,66 +2,63 @@ use std::path::PathBuf;
 
 use typed_path::{Utf8UnixComponent, Utf8UnixPathBuf};
 
-use crate::{config::DEFAULT_MONOCORE_HOME, MonocoreError, MonocoreResult};
+use crate::{config::{DEFAULT_MONOCORE_ENV, DEFAULT_MONOCORE_HOME}, MonocoreError, MonocoreResult};
 
-use super::MONOCORE_HOME_ENV_VAR;
+use super::{MONOCORE_ENV_VAR, MONOCORE_HOME_ENV_VAR};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
 //--------------------------------------------------------------------------------------------------
 
-/// The sub directory where monocore artifacts, configs, etc are stored.
-pub const MONOCORE_SUBDIR: &str = ".monocore";
+/// The directory name for monocore's project-specific data
+pub const MONOCORE_ENV_DIR: &str = ".menv";
 
-/// The OCI sub directory where the OCI image layers, index, configurations, etc are stored.
-pub const OCI_SUBDIR: &str = "oci";
+/// The directory name for monocore's global data
+pub const MONOCORE_HOME_DIR: &str = ".monocore";
 
-/// The sub directory where monocore OCI image layers are cached.
-pub const OCI_LAYER_SUBDIR: &str = "layer";
+/// The directory where project filesystems are stored
+pub const FILESYSTEMS_SUBDIR: &str = "filesystems";
 
-/// The sub directory where monocore OCI image index, configurations, etc. are cached.
-pub const OCI_REPO_SUBDIR: &str = "repo";
-
-/// The filename for the OCI image index JSON file
-pub const OCI_INDEX_FILENAME: &str = "index.json";
-
-/// The filename for the OCI image manifest JSON file
-pub const OCI_MANIFEST_FILENAME: &str = "manifest.json";
-
-/// The filename for the OCI image config JSON file
-pub const OCI_CONFIG_FILENAME: &str = "config.json";
-
-/// The filename for the supervisors log file
-pub const SUPERVISORS_LOG_FILENAME: &str = "supervisors.log";
-
-/// The rootfs sub directory where the rootfs and other related files associated with the microvm are stored.
-pub const ROOTFS_SUBDIR: &str = "rootfs";
-
-/// The reference sub directory where the reference rootfs is stored.
-pub const REFERENCE_SUBDIR: &str = "reference";
-
-/// The services sub directory where the services (rootfs) are stored.
-pub const SERVICE_SUBDIR: &str = "service";
-
-/// The merged sub directory where the merged rootfs is stored.
-pub const MERGED_SUBDIR: &str = "merged";
-
-/// The sub directory where runtime state is stored.
-pub const STATE_SUBDIR: &str = "run";
-
-/// The sub directory where runtime logs are stored.
+/// The directory where project logs are stored
 pub const LOG_SUBDIR: &str = "log";
+
+/// The directory where global image layers are stored
+pub const LAYERS_SUBDIR: &str = "layers";
+
+/// The directory where monocore's installed binaries are stored
+pub const BIN_SUBDIR: &str = "bin";
+
+/// The filename for the project state database
+pub const STATE_DB_FILENAME: &str = "state.db";
+
+/// The filename for the global OCI database
+pub const OCI_DB_FILENAME: &str = "oci.db";
+
+/// The filename for the supervisor's log file
+pub const SUPERVISOR_LOG_FILENAME: &str = "supervisor.log";
+
+/// The suffix for sandbox log files
+pub const LOG_SUFFIX: &str = ".log";
 
 //--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------
 
-/// Returns the path where all monocore artifacts, configs, etc are stored.
+/// Returns the path where all global monocore data is stored.
 pub fn monocore_home_path() -> PathBuf {
     if let Ok(monocore_home) = std::env::var(MONOCORE_HOME_ENV_VAR) {
         PathBuf::from(monocore_home)
     } else {
         DEFAULT_MONOCORE_HOME.to_owned()
+    }
+}
+
+/// Returns the path where all monocore project data is stored.
+pub fn monocore_env_path() -> PathBuf {
+    if let Ok(monocore_env) = std::env::var(MONOCORE_ENV_VAR) {
+        PathBuf::from(monocore_env)
+    } else {
+        DEFAULT_MONOCORE_ENV.to_owned()
     }
 }
 
@@ -216,8 +213,6 @@ mod tests {
         assert!(!paths_overlap("/data/app1", "/data/app2"));
         assert!(!paths_overlap("/data/app/logs", "/data/web/logs"));
     }
-
-
 
     #[test]
     fn test_normalize_path() {

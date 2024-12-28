@@ -11,7 +11,7 @@
   </p>
 </div>
 
-**`monofs`** is a powerful, distributed filesystem designed for distributed workloads. It provides a simple and intuitive API for managing files and directories in a content-addressed storage system.
+**`monofs`** is a powerful, distributed filesystem designed for distributed workloads based largely on the [WNFS](https://github.com/wnfs-wg/rs-wnfs) public filesystem. It provides a simple and intuitive API for managing files and directories in a content-addressed storage system.
 
 > [!WARNING]
 > This project is in early development and is not yet ready for production use.
@@ -133,7 +133,3 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](../CONTRIBUTING.md)
 ## License
 
 This project is licensed under the [Apache License 2.0](../LICENSE).
-
-## Acknowledgements
-
-monofs draws inspiration from the [WNFS (Webnative File System)](https://github.com/wnfs-wg/rs-wnfs) project.

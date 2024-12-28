@@ -272,6 +272,8 @@ where
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// TODO: Add support for tombstones.
     pub async fn remove(
         &mut self,
         path: impl AsRef<str>,

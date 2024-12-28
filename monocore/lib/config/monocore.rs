@@ -597,8 +597,7 @@ builds:
     volumes:
       - "/host/path:/container/path"
     ports:
-      - host: 8080
-        container: 80
+      - "8080:80"
     envs:
       - "ENV_VAR=value"
     groups:
@@ -628,8 +627,7 @@ sandboxes:
     volumes:
       - "/host/path:/container/path"
     ports:
-      - host: 8080
-        container: 80
+      - "8080:80"
     envs:
       - "SANDBOX_ENV=sandbox_value"
     groups:

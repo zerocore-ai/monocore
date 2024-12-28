@@ -1,23 +1,9 @@
-use std::{env, io::Write};
-
 use clap::{CommandFactory, Parser};
-use futures::StreamExt;
 use monocore::{
     cli::{MonocoreArgs, MonocoreSubcommand},
-    config::Monocore,
-    utils::{self, OCI_SUBDIR},
-    MonocoreError, MonocoreResult,
+    management, MonocoreResult,
 };
-use serde::de::DeserializeOwned;
-use tokio::{fs, io::AsyncWriteExt, process::Command, signal::unix::SignalKind};
 use tracing::info;
-
-//--------------------------------------------------------------------------------------------------
-// Constants
-//--------------------------------------------------------------------------------------------------
-
-/// The name of the supervisor executable
-const SUPERVISOR_EXE: &str = "monokrun";
 
 //--------------------------------------------------------------------------------------------------
 // Function: main
@@ -27,13 +13,17 @@ const SUPERVISOR_EXE: &str = "monokrun";
 async fn main() -> MonocoreResult<()> {
     // Parse command line arguments
     let args = MonocoreArgs::parse();
-
     match args.subcommand {
-        Some(_) => (),
-        None => (),
+        Some(MonocoreSubcommand::Init { path }) => {
+            info!("Initializing monocore project...");
+            management::init_env(path).await?;
+            info!("Successfully initialized monocore project");
+        }
+        Some(_) => (), // TODO: implement other subcommands
+        None => {
+            MonocoreArgs::command().print_help()?;
+        }
     }
-
-    MonocoreArgs::command().print_help()?;
 
     Ok(())
 }
