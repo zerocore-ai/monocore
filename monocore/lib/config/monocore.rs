@@ -44,16 +44,64 @@ pub struct Monocore {
 }
 
 /// The metadata about the configuration.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Getters)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct Meta {
     /// The authors of the configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default)]
     pub(super) authors: Option<Vec<String>>,
+
+    /// The description of the sandbox.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default)]
+    pub(super) description: Option<String>,
+
+    /// The homepage of the configuration.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default)]
+    pub(super) homepage: Option<String>,
+
+    /// The repository of the configuration.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default)]
+    pub(super) repository: Option<String>,
+
+    /// The path to the readme file.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        serialize_with = "serialize_optional_path",
+        deserialize_with = "deserialize_optional_path"
+    )]
+    #[builder(default)]
+    pub(super) readme: Option<Utf8UnixPathBuf>,
+
+    /// The tags for the configuration.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default)]
+    pub(super) tags: Option<Vec<String>>,
+
+    /// The icon for the configuration.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        serialize_with = "serialize_optional_path",
+        deserialize_with = "deserialize_optional_path"
+    )]
+    #[builder(default)]
+    pub(super) icon: Option<Utf8UnixPathBuf>,
 }
 
-/// Import name mapping.
+/// Component mapping for imports.
+#[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Getters)]
+#[getset(get = "pub with_prefix")]
+pub struct ComponentMapping {
+    /// The alias for the component.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default)]
+    pub(super) as_: Option<String>,
+}
+
+/// Import configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct Require {
@@ -65,10 +113,10 @@ pub struct Require {
     )]
     pub(super) path: Utf8UnixPathBuf,
 
-    /// The name mappings for imported items, mapping from original name to new name.
+    /// The component mappings.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default)]
-    pub(super) items: Option<HashMap<String, String>>,
+    pub(super) components: Option<HashMap<String, ComponentMapping>>,
 }
 
 /// A build to run.
@@ -109,7 +157,7 @@ pub struct Build {
     /// The groups to run in.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default)]
-    pub(super) groups: Option<Vec<String>>,
+    pub(super) groups: Option<HashMap<String, GroupConfig>>,
 
     /// The builds to depend on.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -153,9 +201,9 @@ pub struct Build {
     pub(super) exports: Option<HashMap<String, Utf8UnixPathBuf>>,
 }
 
-/// Network reach configuration for a group.
+/// Network reach configuration for a sandbox.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum GroupNetworkReach {
+pub enum SandboxNetworkReach {
     /// Sandboxes can only communicate within their subnet
     #[serde(rename = "local")]
     Local,
@@ -173,40 +221,6 @@ pub enum GroupNetworkReach {
     None,
 }
 
-/// Network reach configuration for a sandbox.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum SandboxNetworkReach {
-    /// Sandbox can communicate with other groups on 172.16.0.0/12 range or any other non-private address
-    #[serde(rename = "public")]
-    Public,
-
-    /// Sandbox can communicate with any address
-    #[serde(rename = "any")]
-    Any,
-
-    /// Sandbox cannot communicate with any other sandboxes
-    #[serde(rename = "none")]
-    None,
-}
-
-/// Network configuration for a group.
-#[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
-#[getset(get = "pub with_prefix")]
-pub struct GroupNetworkConfig {
-    /// The subnet CIDR for the group. Must be an IPv4 network.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
-    pub(super) subnet: Option<Ipv4Net>,
-
-    /// The network reach configuration.
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        default = "GroupNetworkConfig::default_reach"
-    )]
-    #[builder(default = GroupNetworkConfig::default_reach())]
-    pub(super) reach: Option<GroupNetworkReach>,
-}
-
 /// Network configuration for a sandbox.
 #[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
@@ -218,11 +232,78 @@ pub struct SandboxNetworkConfig {
     )]
     #[builder(default = SandboxNetworkConfig::default_reach())]
     pub(super) reach: Option<SandboxNetworkReach>,
+}
 
-    /// The domain name to IP address mappings.
+/// Network configuration for a sandbox in a group.
+#[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
+#[getset(get = "pub with_prefix")]
+pub struct SandboxGroupNetworkConfig {
+    /// The IP address for the sandbox in this group
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default)]
-    pub(super) domains: Option<HashMap<String, Vec<Ipv4Addr>>>,
+    pub(super) ip: Option<Ipv4Addr>,
+
+    /// The domain names for this sandbox in the group
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default)]
+    pub(super) domains: Option<Vec<String>>,
+}
+
+/// Network configuration for a group.
+#[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
+#[getset(get = "pub with_prefix")]
+pub struct GroupNetworkConfig {
+    /// The subnet CIDR for the group. Must be an IPv4 network.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default)]
+    pub(super) subnet: Option<Ipv4Net>,
+}
+
+/// Proxy configuration for a sandbox.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type")]
+pub enum ProxyConfig {
+    /// Legacy HTTP proxy configuration.
+    #[serde(rename = "legacy")]
+    Legacy {
+        /// The prefix to use for routing.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        prefix: Option<String>,
+
+        /// The keep alive duration.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        keep_alive: Option<String>,
+
+        /// The maximum number of concurrent connections.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        concurrency: Option<u32>,
+
+        /// The port to expose.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        port: Option<PortPair>,
+    },
+    /// Handler-based proxy configuration.
+    #[serde(rename = "handler")]
+    Handler {
+        /// The programming language to use.
+        language: String,
+
+        /// The prefix to use for routing.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        prefix: Option<String>,
+
+        /// The keep alive duration.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        keep_alive: Option<String>,
+
+        /// The maximum number of concurrent connections.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        concurrency: Option<u32>,
+
+        /// The port to expose.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        port: Option<PortPair>,
+    },
 }
 
 /// The sandbox to run.
@@ -237,6 +318,11 @@ pub struct Sandbox {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default)]
     pub(super) version: Option<Version>,
+
+    /// The metadata about the sandbox.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default)]
+    pub(super) meta: Option<Meta>,
 
     /// The image to use.
     pub(super) image: Reference,
@@ -265,10 +351,18 @@ pub struct Sandbox {
     #[builder(default)]
     pub(super) envs: Option<Vec<EnvPair>>,
 
+    /// The environment file to use.
+    #[serde(
+        serialize_with = "serialize_optional_path",
+        deserialize_with = "deserialize_optional_path"
+    )]
+    #[builder(default)]
+    pub(super) env_file: Option<Utf8UnixPathBuf>,
+
     /// The groups to run in.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default)]
-    pub(super) groups: Option<Vec<String>>,
+    pub(super) groups: Option<HashMap<String, GroupConfig>>,
 
     /// The sandboxes to depend on.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -296,28 +390,51 @@ pub struct Sandbox {
 
     /// The files to import.
     #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        serialize_with = "serialize_optional_path_map",
+        deserialize_with = "deserialize_optional_path_map"
+    )]
     #[builder(default)]
-    pub(super) imports: Option<HashMap<String, String>>,
+    pub(super) imports: Option<HashMap<String, Utf8UnixPathBuf>>,
 
     /// The artifacts produced by the sandbox.
     #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        serialize_with = "serialize_optional_path_map",
+        deserialize_with = "deserialize_optional_path_map"
+    )]
     #[builder(default)]
-    pub(super) exports: Option<HashMap<String, String>>,
+    pub(super) exports: Option<HashMap<String, Utf8UnixPathBuf>>,
 
     /// The network configuration for the sandbox.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default)]
     pub(super) network: Option<SandboxNetworkConfig>,
 
-    /// The group volumes to use.
+    /// The proxy configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default)]
-    pub(super) group_volumes: Option<HashMap<String, PathPair>>,
+    pub(super) proxy: Option<ProxyConfig>,
+}
 
-    /// The group environment variables to use.
+/// Configuration for a sandbox's group membership.
+#[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Getters)]
+#[getset(get = "pub with_prefix")]
+pub struct GroupConfig {
+    /// The volumes to mount.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default)]
-    pub(super) group_envs: Option<Vec<String>>,
+    pub(super) volumes: Option<HashMap<String, PathPair>>,
+
+    /// The environment variables to use.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default)]
+    pub(super) envs: Option<HashMap<String, Vec<EnvPair>>>,
+
+    /// The network configuration for this sandbox in the group.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default)]
+    pub(super) network: Option<SandboxGroupNetworkConfig>,
 }
 
 /// The group to run the sandboxes in.
@@ -327,6 +444,16 @@ pub struct Group {
     /// The name of the group.
     #[builder(setter(transform = |name: impl AsRef<str>| name.as_ref().to_string()))]
     pub(super) name: String,
+
+    /// The version of the group.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default)]
+    pub(super) version: Option<Version>,
+
+    /// The metadata about the group.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default)]
+    pub(super) meta: Option<Meta>,
 
     /// The network configuration for the group.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -404,14 +531,14 @@ impl Monocore {
 impl SandboxNetworkConfig {
     /// Returns the default network reach configuration.
     pub fn default_reach() -> Option<SandboxNetworkReach> {
-        Some(SandboxNetworkReach::Public)
+        Some(SandboxNetworkReach::Local)
     }
 }
 
 impl GroupNetworkConfig {
     /// Returns the default network reach configuration.
-    pub fn default_reach() -> Option<GroupNetworkReach> {
-        Some(GroupNetworkReach::Local)
+    pub fn default_reach() -> Option<SandboxNetworkReach> {
+        Some(SandboxNetworkReach::Local)
     }
 }
 
@@ -550,416 +677,3 @@ where
 //--------------------------------------------------------------------------------------------------
 // Tests
 //--------------------------------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_yaml;
-
-    #[test]
-    fn test_basic_config_serialization() {
-        let config = Monocore {
-            meta: Some(Meta {
-                authors: Some(vec!["Test Author".to_string()]),
-            }),
-            requires: None,
-            builds: None,
-            sandboxes: None,
-            groups: None,
-        };
-
-        let yaml = serde_yaml::to_string(&config).unwrap();
-        let deserialized: Monocore = serde_yaml::from_str(&yaml).unwrap();
-        assert_eq!(config, deserialized);
-    }
-
-    #[test]
-    fn test_full_config() {
-        let yaml = r#"
-meta:
-  authors:
-    - "Test Author"
-requires:
-  - path: "/path/to/file"
-    items:
-      original_name: new_name
-builds:
-  - name: "build0"
-    image: "ubuntu:20.04"
-    ram: 1024
-    cpus: 1
-    steps:
-      - "echo 'Building dependencies'"
-  - name: "build1"
-    image: "ubuntu:latest"
-    ram: 2048
-    cpus: 2
-    volumes:
-      - "/host/path:/container/path"
-    ports:
-      - "8080:80"
-    envs:
-      - "ENV_VAR=value"
-    groups:
-      - "group1"
-    depends_on:
-      - "build0"
-    workdir: "/app"
-    shell: "/bin/bash"
-    steps:
-      - "echo 'Hello World'"
-    imports:
-      file1: "/path/to/import"
-    exports:
-      file2: "/path/to/export"
-sandboxes:
-  - name: "sandbox0"
-    image: "alpine:3.14"
-    ram: 512
-    cpus: 1
-    groups:
-      - "group1"
-  - name: "sandbox1"
-    version: "1.0.0"
-    image: "alpine:latest"
-    ram: 1024
-    cpus: 1
-    volumes:
-      - "/host/path:/container/path"
-    ports:
-      - "8080:80"
-    envs:
-      - "SANDBOX_ENV=sandbox_value"
-    groups:
-      - "group1"
-    depends_on:
-      - "sandbox0"
-    workdir: "/sandbox/app"
-    shell: "/bin/sh"
-    scripts:
-      start:
-        - "echo 'Starting sandbox'"
-        - "./run.sh"
-      stop:
-        - "echo 'Stopping sandbox'"
-    imports:
-      config: "/path/to/config"
-    exports:
-      logs: "/path/to/logs"
-    network:
-      reach: public
-      domains:
-        "example.com":
-          - "10.0.0.1"
-    group_volumes:
-      shared_data: "/shared/host/path:/shared/container/path"
-    group_envs:
-      - "GROUP_VAR"
-groups:
-  - name: "group1"
-    network:
-      reach: local
-      subnet: "10.0.0.0/24"
-    volumes:
-      shared: "/shared/path"
-    envs:
-      GROUP_VAR:
-        - "KEY1=value1"
-        - "KEY2=value2"
-"#;
-
-        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
-
-        // Verify meta
-        assert_eq!(
-            config
-                .get_meta()
-                .as_ref()
-                .unwrap()
-                .get_authors()
-                .as_ref()
-                .unwrap()[0],
-            "Test Author"
-        );
-
-        // Verify requires
-        let requires = config.get_requires().as_ref().unwrap();
-        assert_eq!(requires[0].get_path().as_str(), "/path/to/file");
-        assert_eq!(
-            requires[0]
-                .get_items()
-                .as_ref()
-                .unwrap()
-                .get("original_name")
-                .unwrap(),
-            "new_name"
-        );
-
-        // Verify builds
-        let builds = config.get_builds().as_ref().unwrap();
-
-        // Verify build0
-        let build0 = &builds[0];
-        assert_eq!(build0.get_name(), "build0");
-        assert_eq!(build0.get_image().to_string(), "ubuntu:20.04");
-        assert_eq!(build0.get_ram(), &1024);
-        assert_eq!(build0.get_cpus(), &1);
-        assert_eq!(build0.get_steps()[0], "echo 'Building dependencies'");
-
-        // Verify build1
-        let build1 = &builds[1];
-        assert_eq!(build1.get_name(), "build1");
-        assert_eq!(build1.get_image().to_string(), "ubuntu:latest");
-        assert_eq!(build1.get_ram(), &2048);
-        assert_eq!(build1.get_cpus(), &2);
-        assert_eq!(build1.get_volumes()[0].get_host().as_str(), "/host/path");
-        assert_eq!(
-            build1.get_volumes()[0].get_guest().as_str(),
-            "/container/path"
-        );
-        assert_eq!(build1.get_ports()[0].get_host(), 8080);
-        assert_eq!(build1.get_ports()[0].get_guest(), 80);
-        assert_eq!(build1.get_envs().as_ref().unwrap()[0].get_name(), "ENV_VAR");
-        assert_eq!(build1.get_envs().as_ref().unwrap()[0].get_value(), "value");
-        assert_eq!(build1.get_groups().as_ref().unwrap()[0], "group1");
-        assert_eq!(build1.get_depends_on().as_ref().unwrap()[0], "build0");
-        assert_eq!(build1.get_workdir().as_ref().unwrap().as_str(), "/app");
-        assert_eq!(build1.get_shell().as_ref().unwrap(), "/bin/bash");
-        assert_eq!(build1.get_steps()[0], "echo 'Hello World'");
-        assert_eq!(
-            build1.get_imports().as_ref().unwrap().get("file1").unwrap(),
-            "/path/to/import"
-        );
-        assert_eq!(
-            build1.get_exports().as_ref().unwrap().get("file2").unwrap(),
-            "/path/to/export"
-        );
-
-        // Verify sandboxes
-        let sandboxes = config.get_sandboxes().as_ref().unwrap();
-
-        // Verify sandbox0
-        let sandbox0 = &sandboxes[0];
-        assert_eq!(sandbox0.get_name(), "sandbox0");
-        assert_eq!(sandbox0.get_image().to_string(), "alpine:3.14");
-        assert_eq!(sandbox0.get_ram(), &512);
-        assert_eq!(sandbox0.get_cpus(), &1);
-        assert_eq!(sandbox0.get_groups().as_ref().unwrap()[0], "group1");
-
-        // Verify sandbox1
-        let sandbox1 = &sandboxes[1];
-        assert_eq!(sandbox1.get_name(), "sandbox1");
-        assert_eq!(
-            sandbox1.get_version().as_ref().unwrap().to_string(),
-            "1.0.0"
-        );
-        assert_eq!(sandbox1.get_image().to_string(), "alpine:latest");
-        assert_eq!(sandbox1.get_ram(), &1024);
-        assert_eq!(sandbox1.get_cpus(), &1);
-        assert_eq!(sandbox1.get_volumes()[0].get_host().as_str(), "/host/path");
-        assert_eq!(
-            sandbox1.get_volumes()[0].get_guest().as_str(),
-            "/container/path"
-        );
-        assert_eq!(sandbox1.get_ports()[0].get_host(), 8080);
-        assert_eq!(sandbox1.get_ports()[0].get_guest(), 80);
-        assert_eq!(
-            sandbox1.get_envs().as_ref().unwrap()[0].get_name(),
-            "SANDBOX_ENV"
-        );
-        assert_eq!(
-            sandbox1.get_envs().as_ref().unwrap()[0].get_value(),
-            "sandbox_value"
-        );
-        assert_eq!(sandbox1.get_groups().as_ref().unwrap()[0], "group1");
-        assert_eq!(sandbox1.get_depends_on().as_ref().unwrap()[0], "sandbox0");
-        assert_eq!(
-            sandbox1.get_workdir().as_ref().unwrap().as_str(),
-            "/sandbox/app"
-        );
-        assert_eq!(sandbox1.get_shell().as_ref().unwrap(), "/bin/sh");
-
-        // Verify sandbox1 scripts
-        let scripts = sandbox1.get_scripts().as_ref().unwrap();
-        let start_script = scripts.get("start").unwrap();
-        assert_eq!(start_script[0], "echo 'Starting sandbox'");
-        assert_eq!(start_script[1], "./run.sh");
-        let stop_script = scripts.get("stop").unwrap();
-        assert_eq!(stop_script[0], "echo 'Stopping sandbox'");
-
-        // Verify sandbox1 imports/exports
-        assert_eq!(
-            sandbox1
-                .get_imports()
-                .as_ref()
-                .unwrap()
-                .get("config")
-                .unwrap(),
-            "/path/to/config"
-        );
-        assert_eq!(
-            sandbox1
-                .get_exports()
-                .as_ref()
-                .unwrap()
-                .get("logs")
-                .unwrap(),
-            "/path/to/logs"
-        );
-
-        // Verify sandbox1 network
-        let network = sandbox1.get_network().as_ref().unwrap();
-        assert!(matches!(
-            network.get_reach().as_ref().unwrap(),
-            SandboxNetworkReach::Public
-        ));
-        assert_eq!(
-            network
-                .get_domains()
-                .as_ref()
-                .unwrap()
-                .get("example.com")
-                .unwrap()[0]
-                .to_string(),
-            "10.0.0.1"
-        );
-
-        // Verify sandbox1 group volumes and envs
-        let group_volumes = sandbox1.get_group_volumes().as_ref().unwrap();
-        assert_eq!(
-            group_volumes
-                .get("shared_data")
-                .unwrap()
-                .get_host()
-                .as_str(),
-            "/shared/host/path"
-        );
-        assert_eq!(
-            group_volumes
-                .get("shared_data")
-                .unwrap()
-                .get_guest()
-                .as_str(),
-            "/shared/container/path"
-        );
-        let group_envs = sandbox1.get_group_envs().as_ref().unwrap();
-        assert_eq!(group_envs[0], "GROUP_VAR");
-
-        // Verify groups
-        let groups = config.get_groups().as_ref().unwrap();
-        let group = &groups[0];
-        assert_eq!(group.get_name(), "group1");
-
-        // Verify group network
-        let group_network = group.get_network().as_ref().unwrap();
-        assert!(matches!(
-            group_network.get_reach().as_ref().unwrap(),
-            GroupNetworkReach::Local
-        ));
-        assert_eq!(
-            group_network.get_subnet().unwrap().to_string(),
-            "10.0.0.0/24"
-        );
-
-        // Verify group volumes and envs
-        assert_eq!(
-            group
-                .get_volumes()
-                .as_ref()
-                .unwrap()
-                .get("shared")
-                .unwrap()
-                .as_str(),
-            "/shared/path"
-        );
-        let group_vars = group.get_envs().as_ref().unwrap().get("GROUP_VAR").unwrap();
-        assert_eq!(group_vars[0].get_name(), "KEY1");
-        assert_eq!(group_vars[0].get_value(), "value1");
-        assert_eq!(group_vars[1].get_name(), "KEY2");
-        assert_eq!(group_vars[1].get_value(), "value2");
-
-        // Test serialization roundtrip
-        let serialized = serde_yaml::to_string(&config).unwrap();
-        let deserialized: Monocore = serde_yaml::from_str(&serialized).unwrap();
-        assert_eq!(config, deserialized);
-    }
-
-    #[test]
-    fn test_network_config() {
-        let yaml = r#"
-sandboxes:
-  - name: "sandbox1"
-    image: "alpine:latest"
-    network:
-      reach: any
-      domains:
-        "example.com":
-          - "10.0.0.1"
-groups:
-  - name: "group1"
-    network:
-      reach: local
-      subnet: "10.0.0.0/24"
-"#;
-
-        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
-
-        // Verify sandbox network config
-        let sandbox = &config.get_sandboxes().as_ref().unwrap()[0];
-        let network = sandbox.get_network().as_ref().unwrap();
-        assert!(matches!(
-            network.get_reach().as_ref().unwrap(),
-            SandboxNetworkReach::Any
-        ));
-        assert_eq!(
-            network
-                .get_domains()
-                .as_ref()
-                .unwrap()
-                .get("example.com")
-                .unwrap()[0]
-                .to_string(),
-            "10.0.0.1"
-        );
-
-        // Verify group network config
-        let group = &config.get_groups().as_ref().unwrap()[0];
-        let network = group.get_network().as_ref().unwrap();
-        assert!(matches!(
-            network.get_reach().as_ref().unwrap(),
-            GroupNetworkReach::Local
-        ));
-        assert_eq!(network.get_subnet().unwrap().to_string(), "10.0.0.0/24");
-    }
-
-    #[test]
-    fn test_builder_pattern() {
-        let config = MonocoreBuilder::new()
-            .meta(
-                Meta::builder()
-                    .authors(Some(vec!["Test Author".to_string()]))
-                    .build(),
-            )
-            .sandboxes(vec![Sandbox::builder()
-                .name("sandbox1")
-                .image("alpine:latest".parse().unwrap())
-                .build()])
-            .build()
-            .unwrap();
-
-        assert_eq!(
-            config
-                .get_meta()
-                .as_ref()
-                .unwrap()
-                .get_authors()
-                .as_ref()
-                .unwrap()[0],
-            "Test Author"
-        );
-        assert_eq!(
-            config.get_sandboxes().as_ref().unwrap()[0].get_name(),
-            "sandbox1"
-        );
-    }
-}

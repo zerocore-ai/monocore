@@ -4,25 +4,25 @@ use std::path::Path;
 use tokio::{fs, io::AsyncWriteExt};
 use typed_path::Utf8UnixPathBuf;
 
-use crate::utils::path::{LOG_SUBDIR, MONOCORE_ENV_DIR, STATE_DB_FILENAME};
+use crate::utils::path::{LOG_SUBDIR, MONOCORE_ENV_DIR, ACTIVE_DB_FILENAME};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
 //--------------------------------------------------------------------------------------------------
 
-const STATE_DB_SCHEMA: &str = r#"
+const ACTIVE_DB_SCHEMA: &str = r#"
 -- Create sandboxes table
 CREATE TABLE IF NOT EXISTS sandboxes (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     pid INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    modified_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     status TEXT NOT NULL,
     rootfs_path TEXT NOT NULL,
     group_id INTEGER,
     group_ip TEXT,
     config TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    modified_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(group_id) REFERENCES groups(id)
 );
 
@@ -46,7 +46,9 @@ CREATE TABLE IF NOT EXISTS groups (
     name TEXT NOT NULL,
     subnet TEXT NOT NULL,
     reach TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    config TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    modified_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 );
 
 -- Create indexes
@@ -56,21 +58,15 @@ CREATE INDEX IF NOT EXISTS idx_sandbox_metrics_sandbox_id_timestamp ON sandbox_m
 CREATE INDEX IF NOT EXISTS idx_groups_name ON groups(name);
 "#;
 
-const DEFAULT_CONFIG: &str = r#"# Project metadata
-meta:
-  authors: []
-
-# Sandbox configurations
+const DEFAULT_CONFIG: &str = r#"# Sandbox configurations
 sandboxes: []
-
-# Group configurations
-groups: []
 "#;
 
 //--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------
 
+// TODO: init should add .menv to .gitignore or create it if it doesn't exist
 /// Initialize a new monocore environment at the specified path
 pub async fn init_env(path: Option<Utf8UnixPathBuf>) -> MonocoreResult<()> {
     // Get the target path, defaulting to current directory if none specified
@@ -107,7 +103,7 @@ async fn create_env_dirs(base_path: &Utf8UnixPathBuf) -> MonocoreResult<()> {
 
 /// Initialize the state database with schema
 async fn init_state_db(base_path: &Utf8UnixPathBuf) -> MonocoreResult<()> {
-    let db_path = base_path.join(MONOCORE_ENV_DIR).join(STATE_DB_FILENAME);
+    let db_path = base_path.join(MONOCORE_ENV_DIR).join(ACTIVE_DB_FILENAME);
     let db_path_std = Path::new(db_path.as_str());
 
     // Only initialize if database doesn't exist
@@ -127,7 +123,7 @@ async fn init_state_db(base_path: &Utf8UnixPathBuf) -> MonocoreResult<()> {
             .await?;
 
         // Initialize schema
-        sqlx::query(STATE_DB_SCHEMA).execute(&pool).await?;
+        sqlx::query(ACTIVE_DB_SCHEMA).execute(&pool).await?;
     }
 
     Ok(())
@@ -147,9 +143,9 @@ async fn create_default_config(base_path: &Utf8UnixPathBuf) -> MonocoreResult<()
     Ok(())
 }
 
-/// Get a connection pool to the state database
-pub async fn get_state_db_pool(base_path: &Utf8UnixPathBuf) -> MonocoreResult<Pool<Sqlite>> {
-    let db_path = base_path.join(MONOCORE_ENV_DIR).join(STATE_DB_FILENAME);
+/// Get a connection pool to the active database
+pub async fn get_active_db_pool(base_path: &Utf8UnixPathBuf) -> MonocoreResult<Pool<Sqlite>> {
+    let db_path = base_path.join(MONOCORE_ENV_DIR).join(ACTIVE_DB_FILENAME);
 
     let pool = SqlitePoolOptions::new()
         .max_connections(5)

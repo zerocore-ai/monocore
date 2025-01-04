@@ -100,14 +100,6 @@ pub enum MonocoreSubcommand {
         /// Network configuration
         #[arg(long)]
         network: Option<String>,
-
-        /// Group volume mappings
-        #[arg(long)]
-        group_volumes: Vec<String>,
-
-        /// Group environment variables
-        #[arg(long)]
-        group_envs: Vec<String>,
     },
 
     /// Remove a build, sandbox, or group component from the project
@@ -304,22 +296,21 @@ pub enum MonocoreSubcommand {
         /// Network configuration
         #[arg(long)]
         network: Option<String>,
-
-        /// Group volume mappings
-        #[arg(long)]
-        group_volumes: Vec<String>,
-
-        /// Group environment variables
-        #[arg(long)]
-        group_envs: Vec<String>,
     },
 
     /// Install a script from an image
     #[command(name = "install")]
     Install {
-        /// Image to install from
+        /// Whether to install from an image
         #[arg(short, long)]
-        image: String,
+        image: bool,
+
+        /// Whether to install from an image group
+        #[arg(long)]
+        image_group: bool,
+
+        /// Name of the image or image group
+        name: String,
 
         /// Script to install
         #[arg(long)]
@@ -336,10 +327,45 @@ pub enum MonocoreSubcommand {
         #[arg(long)]
         script: Option<String>,
 
-        /// Image to uninstall from
+        /// Whether to uninstall from an image
         #[arg(short, long)]
-        image: Option<String>,
+        image: bool,
+
+        /// Whether to uninstall from an image group
+        #[arg(long)]
+        image_group: bool,
+
+        /// Name of the image or image group
+        name: String,
     },
+
+    /// Analyze source directory and automatically create environment
+    #[command(name = "auto")]
+    Auto {
+        /// Run the project after creating components
+        #[arg(long)]
+        run: bool,
+
+        /// Source file path
+        #[arg(short, long)]
+        file: Option<Utf8UnixPathBuf>,
+
+        /// Source code string
+        #[arg(short, long)]
+        code: Option<String>,
+
+        /// Programming language for the source code
+        #[arg(long)]
+        lang: Option<String>,
+
+        /// Output path for generated files
+        #[arg(long)]
+        output: Option<Utf8UnixPathBuf>,
+    },
+
+    /// Start or stop project sandboxes based on configuration
+    #[command(name = "apply")]
+    Apply,
 
     /// Start project sandboxes
     #[command(name = "up")]
@@ -421,13 +447,20 @@ pub enum MonocoreSubcommand {
     /// Pull an image
     #[command(name = "pull")]
     Pull {
-        /// Image to pull
+        /// Whether to pull an image
         #[arg(short, long)]
-        image: String,
+        image: bool,
+
+        /// Whether to pull an image group
+        #[arg(long)]
+        image_group: bool,
+
+        /// Name of the image or image group
+        name: String,
     },
 
     /// Push an image
-    #[command(name = "push", alias = "publish")]
+    #[command(name = "push")]
     Push {
         /// Image to push
         #[arg(short, long)]
@@ -455,6 +488,18 @@ pub enum MonocoreSubcommand {
 
         /// Name of component to deploy
         name: Option<String>,
+    },
+
+    /// Start a monocore proxy server for orchestrating sandboxes
+    #[command(name = "serve")]
+    Serve {
+        /// Port to listen on
+        #[arg(long)]
+        port: Option<u16>,
+
+        /// Daemon control
+        #[arg(long)]
+        daemon: Option<String>,
     },
 
     /// Version of monocore

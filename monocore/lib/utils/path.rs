@@ -28,8 +28,8 @@ pub const LAYERS_SUBDIR: &str = "layers";
 /// The directory where monocore's installed binaries are stored
 pub const BIN_SUBDIR: &str = "bin";
 
-/// The filename for the project state database
-pub const STATE_DB_FILENAME: &str = "state.db";
+/// The filename for the project active database
+pub const ACTIVE_DB_FILENAME: &str = "active.db";
 
 /// The filename for the global OCI database
 pub const OCI_DB_FILENAME: &str = "oci.db";
