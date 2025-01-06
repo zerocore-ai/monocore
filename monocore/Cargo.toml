@@ -19,13 +19,9 @@ path = "bin/monocore.rs"
 name = "monokrun"
 path = "bin/monokrun.rs"
 
-[[bench]]
-name = "microvm_provision"
-harness = false
-
 [[test]]
 name = "integration_cli"
-path = "tests/cli/init.rs"
+path = "tests/cli/mod.rs"
 harness = true
 
 [dependencies]

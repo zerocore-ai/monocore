@@ -4,10 +4,6 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
-// Enable procspawn test support
-#[cfg(test)]
-procspawn::enable_test_support!();
-
 //--------------------------------------------------------------------------------------------------
 // Function: Helper
 //--------------------------------------------------------------------------------------------------

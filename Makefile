@@ -43,7 +43,7 @@ endif
 # -----------------------------------------------------------------------------
 # Phony Targets Declaration
 # -----------------------------------------------------------------------------
-.PHONY: all build install clean deps example bench bin _run_example _run_bench _run_bin help
+.PHONY: all build install clean deps example bench bin _run_example _run_bench _run_bin help uninstall
 
 # -----------------------------------------------------------------------------
 # Main Targets
@@ -67,7 +67,6 @@ ifeq ($(OS),Darwin)
 else
 	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib,-rpath,\$$ORIGIN" cargo build --release --bin monocore $(FEATURES)
 endif
-endif
 
 $(MONOKRUN_RELEASE_BIN): deps
 	cd monocore
@@ -76,7 +75,6 @@ ifeq ($(OS),Darwin)
 	codesign --entitlements monocore.entitlements --force -s - $@
 else
 	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib,-rpath,\$$ORIGIN" cargo build --release --bin monokrun $(FEATURES)
-endif
 endif
 
 # -----------------------------------------------------------------------------
@@ -139,6 +137,19 @@ clean:
 	rm -rf $(BUILD_DIR)
 	cd monocore && cargo clean && rm -rf build
 
+uninstall:
+	rm -f $(HOME_BIN)/monocore
+	rm -f $(HOME_BIN)/monokrun
+	rm -f $(HOME_BIN)/mc
+	rm -f $(HOME_LIB)/libkrunfw.dylib
+	rm -f $(HOME_LIB)/libkrun.dylib
+	@if [ -n "$(LIBKRUNFW_FILE)" ]; then \
+		rm -f $(HOME_LIB)/$(notdir $(LIBKRUNFW_FILE)); \
+	fi
+	@if [ -n "$(LIBKRUN_FILE)" ]; then \
+		rm -f $(HOME_LIB)/$(notdir $(LIBKRUN_FILE)); \
+	fi
+
 deps:
 	./scripts/build_libkrun.sh --no-clean
 
@@ -156,6 +167,7 @@ help:
 	@echo "Main Targets:"
 	@echo "  make build                   - Build monocore and monokrun binaries"
 	@echo "  make install                 - Install binaries and libraries to ~/.local/{bin,lib}"
+	@echo "  make uninstall               - Remove all installed components"
 	@echo "  make clean                   - Remove build artifacts"
 	@echo "  make deps                    - Build and install dependencies"
 	@echo

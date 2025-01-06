@@ -73,145 +73,37 @@ This will install both the `monocore` command and its alias `mc`.
 ### System Requirements
 
 <details>
-<summary><span><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/></span> <b>Linux</b></summary>
+<summary><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/> <b>Linux</b></summary>
 
 - KVM-enabled Linux kernel (check with `ls /dev/kvm`)
 - User must be in the `kvm` group (add with `sudo usermod -aG kvm $USER`)
 </details>
 
 <details>
-<summary><span><img src="https://cdn.simpleicons.org/apple/999999" height="10"/></span> <b>macOS</b></summary>
+<summary><img src="https://cdn.simpleicons.org/apple/999999" height="10"/> <b>macOS</b></summary>
 
 - Apple Silicon (ARM64) only
 - macOS 10.15 (Catalina) or later for Hypervisor.framework support
 </details>
 
 <details>
-<summary><span><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Windows_logo_-_2021.svg/1024px-Windows_logo_-_2021.svg.png" height="10"/></span> <b>Windows</b></summary>
+<summary><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Windows_logo_-_2021.svg/1024px-Windows_logo_-_2021.svg.png" height="10"/> <b>Windows</b></summary>
 
-> Coming soon!
+> Local installation is not yet supported but you can use the SDK or REST API to interact with monocore remotely.
 
 </details>
 
 ### Quick Start
 
-1. **Define your sandboxes**
+TODO
 
-   ```toml
-   # monocore.toml
-   [[service]]
-   name = "sh-counter"
-   base = "alpine:latest"
-   ram = 256
-   cpus = 1
-   group = "demo"
-   command = "/bin/sh"
-   args = ["-c", "for i in $(seq 1 20); do echo $i; sleep 2; done"]
+### SDK
 
-   [[service]]
-   name = "python-counter"
-   base = "python:3.11-slim"
-   ram = 256
-   cpus = 1
-   group = "demo"
-   command = "/usr/local/bin/python3"
-   args = [
-      "-c",
-      "import time; count=0; [print(f'Count: {count+1}') or time.sleep(2) or (count:=count+1) for _ in range(20)]",
-   ]
-
-   [[group]]
-   name = "demo"
-   local_only = true
-   ```
-
-2. **Manage your sandboxes**
-
-   Start sandboxes:
-
-   ```sh
-   mc up -f monocore.toml
-   ```
-
-   Check status:
-
-   ```sh
-   mc status
-   ```
-
-   Check logs:
-
-   ```sh
-   mc log sh-counter --no-pager -n 10
-   ```
-
-   Stop specific services:
-
-   ```sh
-   mc down --group demo
-   ```
-
-   Stop all services:
-
-   ```sh
-   mc down
-   ```
-
-   Remove services:
-
-   ```sh
-   mc remove timer counter
-   ```
-
-   For a complete list of commands and options, use:
-
-   ```sh
-   mc --help
-   ```
+TODO
 
 ### REST API
 
-Start the server (default port: 3456):
-
-```sh
-mc serve
-```
-
-Launch sandboxes:
-
-```sh
-curl -X POST http://localhost:3456/up \
-  -H "Content-Type: application/json" \
-  -d @monocore.example.json
-```
-
-Check status and metrics:
-
-```sh
-curl http://localhost:3456/status | jq
-```
-
-Stop all services:
-
-```sh
-curl -X POST http://localhost:3456/down
-```
-
-Stop specific group:
-
-```sh
-curl -X POST http://localhost:3456/down \
-  -H "Content-Type: application/json" \
-  -d '{"group": "app"}'
-```
-
-Remove services:
-
-```sh
-curl -X POST http://localhost:3456/remove \
-  -H "Content-Type: application/json" \
-  -d '{"services": ["timer"]}'
-```
+TODO
 
 ## Troubleshooting
 
@@ -226,13 +118,12 @@ curl -X POST http://localhost:3456/remove \
 
 ## 💻 Development
 
-> [!IMPORTANT]
-> Run `make build` before running tests or examples. This builds required libraries like `libkrun`.
+For development, you'll need to build monocore from source.
 
 ### Prerequisites
 
 <details>
-<summary><span><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/></span> <b>Linux Requirements</b></summary>
+<summary><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/> <b>Linux Requirements</b></summary>
 
 ```sh
 # Ubuntu/Debian:
@@ -246,7 +137,7 @@ sudo dnf install build-essential pkg-config libssl-dev flex bison bc libelf-dev 
 </details>
 
 <details>
-<summary><span><img src="https://cdn.simpleicons.org/apple/999999" height="10"/></span> <b>macOS Requirements</b></summary>
+<summary><img src="https://cdn.simpleicons.org/apple/999999" height="10"/> <b>macOS Requirements</b></summary>
 
 Make sure you have [Homebrew](https://brew.sh/) installed, then:
 
@@ -262,23 +153,6 @@ diskutil apfs addVolume disk3 "Case-sensitive APFS" krunvm
 ```
 
 </details>
-
-### Building and Testing
-
-Before running any tests or development tasks, you must first build the required libraries:
-
-```sh
-make build
-```
-
-This command builds essential components like `libkrunfw` and `libkrun` that are required for:
-
-- Running tests (`cargo test`)
-- Running examples (`make example <name>`)
-- Local development and debugging
-
-> [!IMPORTANT]
-> Always run `make build` after pulling new changes or if you encounter missing library errors.
 
 ### Setup
 
@@ -296,12 +170,50 @@ This command builds essential components like `libkrunfw` and `libkrun` that are
    pre-commit install
    ```
 
-### Build
+### Build and Install
 
-```sh
-make build
-make install
-```
+- Build the binaries and libraries:
+
+  ```sh
+  make build
+  ```
+
+- Install the binaries and libraries:
+
+  ```sh
+  make install
+  ```
+
+- Uninstall the binaries and libraries:
+
+  ```sh
+  make uninstall
+  ```
+
+### Testing
+
+> [!IMPORTANT]
+> Run `make install` before running tests if you haven't already.
+> This ensures that the `libkrun` libraries are available to the tests even though they don't
+> always need them.
+
+- Run unit tests:
+
+  ```sh
+  cargo test --lib
+  ```
+
+- Run integration tests:
+
+  ```sh
+  cargo test --test '*'
+  ```
+
+- Run all tests:
+
+  ```sh
+  cargo test
+  ```
 
 ### Release Process
 
