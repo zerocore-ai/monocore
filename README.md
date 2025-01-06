@@ -73,21 +73,21 @@ This will install both the `monocore` command and its alias `mc`.
 ### System Requirements
 
 <details>
-<summary><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/> <b>Linux</b></summary>
+<summary><span><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/></span> <b>Linux</b></summary>
 
 - KVM-enabled Linux kernel (check with `ls /dev/kvm`)
 - User must be in the `kvm` group (add with `sudo usermod -aG kvm $USER`)
 </details>
 
 <details>
-<summary><img src="https://cdn.simpleicons.org/apple/999999" height="10"/> <b>macOS</b></summary>
+<summary><span><img src="https://cdn.simpleicons.org/apple/999999" height="10"/></span> <b>macOS</b></summary>
 
 - Apple Silicon (ARM64) only
 - macOS 10.15 (Catalina) or later for Hypervisor.framework support
 </details>
 
 <details>
-<summary><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Windows_logo_-_2021.svg/1024px-Windows_logo_-_2021.svg.png" height="10"/> <b>Windows</b></summary>
+<summary><span><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Windows_logo_-_2021.svg/1024px-Windows_logo_-_2021.svg.png" height="10"/></span> <b>Windows</b></summary>
 
 > Coming soon!
 
@@ -226,12 +226,13 @@ curl -X POST http://localhost:3456/remove \
 
 ## 💻 Development
 
-For development, you'll need to build monocore from source.
+> [!IMPORTANT]
+> Run `make build` before running tests or examples. This builds required libraries like `libkrun`.
 
 ### Prerequisites
 
 <details>
-<summary><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/> <b>Linux Requirements</b></summary>
+<summary><span><img src="https://cdn.simpleicons.org/linux/FFCC00" height="10"/></span> <b>Linux Requirements</b></summary>
 
 ```sh
 # Ubuntu/Debian:
@@ -245,7 +246,7 @@ sudo dnf install build-essential pkg-config libssl-dev flex bison bc libelf-dev 
 </details>
 
 <details>
-<summary><img src="https://cdn.simpleicons.org/apple/999999" height="10"/> <b>macOS Requirements</b></summary>
+<summary><span><img src="https://cdn.simpleicons.org/apple/999999" height="10"/></span> <b>macOS Requirements</b></summary>
 
 Make sure you have [Homebrew](https://brew.sh/) installed, then:
 
@@ -261,6 +262,23 @@ diskutil apfs addVolume disk3 "Case-sensitive APFS" krunvm
 ```
 
 </details>
+
+### Building and Testing
+
+Before running any tests or development tasks, you must first build the required libraries:
+
+```sh
+make build
+```
+
+This command builds essential components like `libkrunfw` and `libkrun` that are required for:
+
+- Running tests (`cargo test`)
+- Running examples (`make example <name>`)
+- Local development and debugging
+
+> [!IMPORTANT]
+> Always run `make build` after pulling new changes or if you encounter missing library errors.
 
 ### Setup
 

@@ -75,8 +75,8 @@ pub async fn init_env(path: Option<Utf8UnixPathBuf>) -> MonocoreResult<()> {
     // Create .menv directory structure
     create_env_dirs(&target_path).await?;
 
-    // Initialize state database
-    init_state_db(&target_path).await?;
+    // Initialize active database
+    init_active_db(&target_path).await?;
 
     // Create default config file if it doesn't exist
     create_default_config(&target_path).await?;
@@ -101,8 +101,8 @@ async fn create_env_dirs(base_path: &Utf8UnixPathBuf) -> MonocoreResult<()> {
     Ok(())
 }
 
-/// Initialize the state database with schema
-async fn init_state_db(base_path: &Utf8UnixPathBuf) -> MonocoreResult<()> {
+/// Initialize the active database with schema
+async fn init_active_db(base_path: &Utf8UnixPathBuf) -> MonocoreResult<()> {
     let db_path = base_path.join(MONOCORE_ENV_DIR).join(ACTIVE_DB_FILENAME);
     let db_path_std = Path::new(db_path.as_str());
 

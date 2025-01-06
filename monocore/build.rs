@@ -17,12 +17,14 @@ fn main() {
 
     // Add system paths as fallback
     println!("cargo:rustc-link-search=native=/usr/local/lib");
+
+    // Add user-specific library as fallback
     println!(
         "cargo:rustc-link-search=native={}/.local/lib",
         env::var("HOME").unwrap()
     );
 
-    // Link against library
+    // Link against libkrun library
     println!("cargo:rustc-link-lib=dylib=krun");
 
     // Force rebuild if the library changes
@@ -30,6 +32,7 @@ fn main() {
         "cargo:rerun-if-changed={}",
         build_dir.join("libkrun.dylib").display()
     );
+
     println!(
         "cargo:rerun-if-changed={}",
         build_dir.join("libkrun.so").display()
