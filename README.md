@@ -194,6 +194,7 @@ diskutil apfs addVolume disk3 "Case-sensitive APFS" krunvm
 
 > [!IMPORTANT]
 > Run `make install` before running tests if you haven't already.
+>
 > This ensures that the `libkrun` libraries are available to the tests even though they don't
 > always need them.
 
