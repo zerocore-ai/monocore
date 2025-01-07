@@ -170,11 +170,13 @@ where
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("foo", false).await?;
     /// dir.find_or_create("bar.txt", true).await?;
+    /// dir.find_or_create("baz/qux.txt", true).await?;
     ///
     /// let entries = dir.list()?;
-    /// assert_eq!(entries.len(), 2);
+    /// assert_eq!(entries.len(), 3);
     /// assert!(entries.contains(&"foo".parse()?));
     /// assert!(entries.contains(&"bar.txt".parse()?));
+    /// assert!(entries.contains(&"baz".parse()?));
     /// # Ok(())
     /// # }
     /// ```
@@ -273,7 +275,7 @@ where
     /// # }
     /// ```
     ///
-    /// TODO: Add support for tombstones.
+    /// TODO: Add support for tombstone files.
     pub async fn remove(
         &mut self,
         path: impl AsRef<str>,
@@ -304,6 +306,100 @@ where
         let entity = parent_dir.remove_entry(&filename)?;
 
         Ok((filename, entity))
+    }
+
+    /// Renames (moves) an entity from one path to another.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> FsResult<()> {
+    /// let mut dir = Dir::new(MemoryStore::default());
+    ///
+    /// // Create a file
+    /// dir.find_or_create("old/file.txt", true).await?;
+    /// dir.find_or_create("new", false).await?;
+    ///
+    /// // Rename the file
+    /// dir.rename("old/file.txt", "new/file.txt").await?;
+    ///
+    /// assert!(dir.find("old/file.txt").await?.is_none());
+    /// assert!(dir.find("new/file.txt").await?.is_some());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn rename(
+        &mut self,
+        old_path: impl AsRef<str>,
+        new_path: impl AsRef<str>,
+    ) -> FsResult<()> {
+        let old_path = Utf8UnixPath::new(old_path.as_ref());
+        let new_path = Utf8UnixPath::new(new_path.as_ref());
+
+        if old_path.has_root() || new_path.has_root() {
+            return Err(FsError::PathHasRoot(old_path.to_string()));
+        }
+
+        // Get the parent directories and filenames for both paths
+        let (old_parent, old_filename) = path::split_last(old_path)?;
+        let (new_parent, new_filename) = path::split_last(new_path)?;
+
+        // First check if target exists to fail fast
+        let target_exists = if let Some(parent_path) = new_parent {
+            match find::find_dir(self, parent_path).await? {
+                find::FindResult::Found { dir } => dir.has_entry(&new_filename).await?,
+                _ => return Err(FsError::PathNotFound(new_path.to_string())),
+            }
+        } else {
+            self.has_entry(&new_filename).await?
+        };
+
+        if target_exists {
+            return Err(FsError::PathExists(new_path.to_string()));
+        }
+
+        // Get the source entity
+        let source_entity = if let Some(parent_path) = old_parent {
+            match find::find_dir_mut(self, parent_path).await? {
+                find::FindResult::Found { dir } => dir.remove_entry(&old_filename)?,
+                _ => return Err(FsError::PathNotFound(old_path.to_string())),
+            }
+        } else {
+            self.remove_entry(&old_filename)?
+        };
+
+        // Store source_entity for potential rollback
+        let source_entity_backup = source_entity.clone();
+
+        // Get the target directory and try to put the entity there
+        let result = if let Some(parent_path) = new_parent {
+            match find::find_dir_mut(self, parent_path).await? {
+                find::FindResult::Found { dir } => dir.put_entry(new_filename, source_entity),
+                _ => Err(FsError::PathNotFound(new_path.to_string())),
+            }
+        } else {
+            self.put_entry(new_filename, source_entity)
+        };
+
+        // If putting the entity in the target location fails, try to restore it to its original location
+        if let Err(e) = result {
+            if let Some(parent_path) = old_parent {
+                if let find::FindResult::Found { dir } =
+                    find::find_dir_mut(self, parent_path).await?
+                {
+                    dir.put_entry(old_filename, source_entity_backup)?;
+                }
+            } else {
+                self.put_entry(old_filename, source_entity_backup)?;
+            }
+            return Err(e);
+        }
+
+        Ok(())
     }
 }
 
@@ -591,6 +687,139 @@ mod tests {
             Some(Entity::File(_))
         ));
         assert!(root.find("documents/personal").await?.is_none());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_ops_rename() -> FsResult<()> {
+        let mut dir = Dir::new(MemoryStore::default());
+
+        // Test 1: Basic file rename to new location
+        dir.find_or_create("source/file.txt", true).await?;
+        dir.find_or_create("target", false).await?;
+        dir.rename("source/file.txt", "target/newfile.txt").await?;
+        assert!(dir.find("source/file.txt").await?.is_none());
+        assert!(matches!(
+            dir.find("target/newfile.txt").await?,
+            Some(Entity::File(_))
+        ));
+
+        // Test 2: Rename within same directory (just name change)
+        dir.find_or_create("samedir/original.txt", true).await?;
+        dir.rename("samedir/original.txt", "samedir/renamed.txt")
+            .await?;
+        assert!(dir.find("samedir/original.txt").await?.is_none());
+        assert!(matches!(
+            dir.find("samedir/renamed.txt").await?,
+            Some(Entity::File(_))
+        ));
+
+        // Test 3: Directory rename with nested content and verify content preservation
+        dir.find_or_create("olddir/subdir/file1.txt", true).await?;
+        dir.find_or_create("olddir/subdir/file2.txt", true).await?;
+
+        // Add some content to verify it's preserved
+        if let Some(Entity::File(file)) = dir.find_mut("olddir/subdir/file1.txt").await? {
+            let content = "test content".as_bytes();
+            let content_cid = file.get_store().put_raw_block(content).await?;
+            file.set_content(Some(content_cid));
+            file.store().await?;
+        }
+
+        dir.rename("olddir", "newdir").await?;
+
+        // Verify structure and content preservation
+        assert!(dir.find("olddir").await?.is_none());
+        assert!(matches!(dir.find("newdir").await?, Some(Entity::Dir(_))));
+        assert!(matches!(
+            dir.find("newdir/subdir/file1.txt").await?,
+            Some(Entity::File(_))
+        ));
+        assert!(matches!(
+            dir.find("newdir/subdir/file2.txt").await?,
+            Some(Entity::File(_))
+        ));
+
+        // Verify content was preserved
+        if let Some(Entity::File(file)) = dir.find("newdir/subdir/file1.txt").await? {
+            let content_cid = file.get_content().expect("File should have content");
+            let content = file.get_store().get_raw_block(content_cid).await?;
+            assert_eq!(content, "test content".as_bytes());
+        }
+
+        // Test 4: Rename across different directory depths
+        dir.find_or_create("shallow/file.txt", true).await?;
+        dir.find_or_create("deep/path/to/dir", false).await?;
+        dir.rename("shallow/file.txt", "deep/path/to/dir/file.txt")
+            .await?;
+        assert!(dir.find("shallow/file.txt").await?.is_none());
+        assert!(matches!(
+            dir.find("deep/path/to/dir/file.txt").await?,
+            Some(Entity::File(_))
+        ));
+
+        // Test 5: Rename with special characters in filename
+        dir.find_or_create("special/file-with-dashes.txt", true)
+            .await?;
+        dir.rename(
+            "special/file-with-dashes.txt",
+            "special/file with spaces.txt",
+        )
+        .await?;
+        assert!(matches!(
+            dir.find("special/file with spaces.txt").await?,
+            Some(Entity::File(_))
+        ));
+
+        // Test 6: Verify error cases
+        // Test 6.1: Rename to existing path
+        dir.find_or_create("file1.txt", true).await?;
+        dir.find_or_create("file2.txt", true).await?;
+        assert!(dir.rename("file1.txt", "file2.txt").await.is_err());
+        assert!(dir.find("file1.txt").await?.is_some()); // Original file should still exist
+        assert!(dir.find("file2.txt").await?.is_some());
+
+        // Test 6.2: Rename non-existent source
+        assert!(dir.rename("nonexistent.txt", "newfile.txt").await.is_err());
+
+        // Test 6.3: Rename to non-existent target directory
+        assert!(dir
+            .rename("file1.txt", "nonexistent/newfile.txt")
+            .await
+            .is_err());
+        assert!(dir.find("file1.txt").await?.is_some()); // Original file should still exist
+
+        // Test 6.4: Rename with root paths
+        assert!(dir.rename("/file1.txt", "newfile.txt").await.is_err());
+        assert!(dir.rename("file1.txt", "/newfile.txt").await.is_err());
+
+        // Test 7: Store state verification
+        // Create a complex rename scenario and verify store state
+        dir.find_or_create("state_test/source/file.txt", true)
+            .await?;
+        // Create target directory first
+        dir.find_or_create("state_test/target", false).await?;
+
+        if let Some(Entity::File(file)) = dir.find_mut("state_test/source/file.txt").await? {
+            let content = "store state test".as_bytes();
+            let content_cid = file.get_store().put_raw_block(content).await?;
+            file.set_content(Some(content_cid));
+            file.store().await?;
+        }
+
+        dir.rename(
+            "state_test/source/file.txt",
+            "state_test/target/renamed.txt",
+        )
+        .await?;
+
+        // Verify store state after rename
+        if let Some(Entity::File(file)) = dir.find("state_test/target/renamed.txt").await? {
+            let content_cid = file.get_content().expect("File should have content");
+            let content = file.get_store().get_raw_block(content_cid).await?;
+            assert_eq!(content, "store state test".as_bytes());
+        }
 
         Ok(())
     }

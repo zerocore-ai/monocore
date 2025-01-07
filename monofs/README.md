@@ -11,7 +11,7 @@
   </p>
 </div>
 
-**`monofs`** is a powerful, distributed filesystem designed for distributed workloads based largely on the [WNFS](https://github.com/wnfs-wg/rs-wnfs) public filesystem. It provides a simple and intuitive API for managing files and directories in a content-addressed storage system.
+**`monofs`** is a content-addressed filesystem designed for distributed applications. It is based largely on the [WNFS](https://github.com/wnfs-wg/rs-wnfs) public filesystem. It provides a simple and intuitive API for managing files and directories in a content-addressed storage system.
 
 > [!WARNING]
 > This project is in early development and is not yet ready for production use.
@@ -26,11 +26,15 @@
 - Asynchronous API for efficient I/O operations
 - Versioning support for tracking file and directory history
 
-## Usage
+## 🚀 Getting Started
 
-Here are some examples of how to use the `monofs` API:
+### Quick Start
 
-### Working with Files
+TODO: Demo of running multiple servers on different paths syncing up with each other.
+
+### API
+
+#### Working with Files
 
 ```rust
 use monofs::filesystem::{File, FileInputStream, FileOutputStream};
@@ -50,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
     output_stream.shutdown().await?;
 
     // Read content from the file
-    let input_stream = FileInputStream::new(&file).await?;
+    let mut input_stream = FileInputStream::new(&file).await?;
     let mut buffer = Vec::new();
     input_stream.read_to_end(&mut buffer).await?;
 
@@ -64,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-### Working with Directories
+#### Working with Directories
 
 ```rust
 use monofs::filesystem::{Dir, File, FsResult};
@@ -96,7 +100,7 @@ async fn main() -> FsResult<()> {
 }
 ```
 
-## API Overview
+#### API Overview
 
 - `File`: Represents a file in the filesystem
 - `Dir`: Represents a directory in the filesystem

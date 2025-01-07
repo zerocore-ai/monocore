@@ -95,15 +95,15 @@ This will install both the `monocore` command and its alias `mc`.
 
 ### Quick Start
 
-TODO
+TODO: CLI: demo video of using the CLI.
 
 ### SDK
 
-TODO
+TODO: Python SDK
 
 ### REST API
 
-TODO
+TODO: Web UI and Curl examples
 
 ## Troubleshooting
 
