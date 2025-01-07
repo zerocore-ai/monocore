@@ -4,7 +4,7 @@ use std::path::Path;
 use tokio::{fs, io::AsyncWriteExt};
 use typed_path::Utf8UnixPathBuf;
 
-use crate::utils::path::{LOG_SUBDIR, MONOCORE_ENV_DIR, ACTIVE_DB_FILENAME};
+use crate::utils::path::{ACTIVE_DB_FILENAME, LOG_SUBDIR, MONOCORE_ENV_DIR};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
@@ -26,6 +26,17 @@ CREATE TABLE IF NOT EXISTS sandboxes (
     FOREIGN KEY(group_id) REFERENCES groups(id)
 );
 
+-- Create groups table
+CREATE TABLE IF NOT EXISTS groups (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    subnet TEXT NOT NULL,
+    reach TEXT NOT NULL,
+    config TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    modified_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create sandbox_metrics table
 CREATE TABLE IF NOT EXISTS sandbox_metrics (
     id INTEGER PRIMARY KEY,
@@ -40,16 +51,6 @@ CREATE TABLE IF NOT EXISTS sandbox_metrics (
     FOREIGN KEY(sandbox_id) REFERENCES sandboxes(id)
 );
 
--- Create groups table
-CREATE TABLE IF NOT EXISTS groups (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    subnet TEXT NOT NULL,
-    reach TEXT NOT NULL,
-    config TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    modified_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-);
 
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_sandboxes_name ON sandboxes(name);
