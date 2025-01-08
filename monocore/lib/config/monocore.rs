@@ -134,8 +134,8 @@ pub struct Service {
     pub(super) depends_on: Vec<String>,
 
     /// The port to expose.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub(super) port: Option<PortPair>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub(super) ports: Vec<PortPair>,
 
     /// The working directory to use.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -330,12 +330,20 @@ impl Service {
         &self.depends_on
     }
 
-    /// Gets the port of the service.
+    /// Gets the mapped ports of the service.
     ///
     /// ## Returns
-    /// The port of the service, or None if the service is not exposed.
-    pub fn get_port(&self) -> Option<&PortPair> {
-        self.port.as_ref()
+    /// The ports of the service.
+    pub fn get_ports(&self) -> &[PortPair] {
+        &self.ports
+    }
+
+    /// Sets the mapped ports of the service.
+    ///
+    /// ## Arguments
+    /// * `ports` - A vector of port mappings to set
+    pub fn set_ports(&mut self, ports: Vec<PortPair>) {
+        self.ports = ports;
     }
 
     /// Gets the working directory of the service.
@@ -516,6 +524,31 @@ impl Service {
 
         Ok(volume_mounts)
     }
+
+    /// Sets the working directory of the service.
+    pub fn set_workdir(&mut self, workdir: String) {
+        self.workdir = Some(workdir);
+    }
+
+    /// Sets the command of the service.
+    pub fn set_command(&mut self, command: String) {
+        self.command = Some(command);
+    }
+
+    /// Sets the arguments of the service.
+    pub fn set_args(&mut self, args: Vec<String>) {
+        self.args = args;
+    }
+
+    /// Sets the environment variables of the service.
+    pub fn set_envs(&mut self, envs: Vec<String>) {
+        self.envs = envs.into_iter().filter_map(|e| e.parse().ok()).collect();
+    }
+
+    /// Gets all environment variables of the service.
+    pub fn get_envs(&self) -> &[EnvPair] {
+        &self.envs
+    }
 }
 
 impl Group {
@@ -552,7 +585,7 @@ mod tests {
         volumes = [
             "/var/lib/postgresql/data:/"
         ]
-        port = "5432:5432"
+        ports = ["5432:5432"]
 
         [[service]]
         name = "server"
@@ -566,7 +599,7 @@ mod tests {
         group = "app_grp"
         group_envs = ["app_grp_env"]
         depends_on = ["database"]
-        port = "3000:3000"
+        ports = ["3000:3000"]
         command = "/app/bin/mcp-server"
 
         [[service.group_volumes]]
@@ -596,7 +629,7 @@ mod tests {
                     .name("database")
                     .base("postgres:16.1")
                     .volumes(vec!["/var/lib/postgresql/data:/".parse::<PathPair>()?])
-                    .port("5432:5432".parse::<PortPair>()?)
+                    .ports(vec!["5432:5432".parse::<PortPair>()?])
                     .build(),
                 Service::builder()
                     .name("server")
@@ -606,7 +639,7 @@ mod tests {
                     .group("app_grp")
                     .group_envs(vec!["app_grp_env".to_string()])
                     .depends_on(vec!["database".to_string()])
-                    .port("3000:3000".parse::<PortPair>()?)
+                    .ports(vec!["3000:3000".parse::<PortPair>()?])
                     .command("/app/bin/mcp-server")
                     .group_volumes(vec![VolumeMount::builder()
                         .name("app_grp_vol")
@@ -641,7 +674,7 @@ mod tests {
                     "name": "database",
                     "base": "postgres:16.1",
                     "volumes": ["/var/lib/postgresql/data:/"],
-                    "port": "5432:5432"
+                    "ports": ["5432:5432"]
                 },
                 {
                     "name": "server",
@@ -651,7 +684,7 @@ mod tests {
                     "group": "app_grp",
                     "group_envs": ["app_grp_env"],
                     "depends_on": ["database"],
-                    "port": "3000:3000",
+                    "ports": ["3000:3000"],
                     "command": "/app/bin/mcp-server",
                     "group_volumes": [
                         {
@@ -689,7 +722,7 @@ mod tests {
                     .name("database")
                     .base("postgres:16.1")
                     .volumes(vec!["/var/lib/postgresql/data:/".parse::<PathPair>()?])
-                    .port("5432:5432".parse::<PortPair>()?)
+                    .ports(vec!["5432:5432".parse::<PortPair>()?])
                     .build(),
                 Service::builder()
                     .name("server")
@@ -699,7 +732,7 @@ mod tests {
                     .group("app_grp")
                     .group_envs(vec!["app_grp_env".to_string()])
                     .depends_on(vec!["database".to_string()])
-                    .port("3000:3000".parse::<PortPair>()?)
+                    .ports(vec!["3000:3000".parse::<PortPair>()?])
                     .command("/app/bin/mcp-server")
                     .group_volumes(vec![VolumeMount::builder()
                         .name("app_grp_vol")

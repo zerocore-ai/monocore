@@ -14,7 +14,7 @@ use tokio::{
 use crate::{
     config::{Monocore, Service},
     runtime::MicroVmState,
-    utils::{MONOCORE_LOG_DIR, MONOCORE_STATE_DIR},
+    utils::{LOG_SUBDIR, STATE_SUBDIR},
     MonocoreError, MonocoreResult,
 };
 
@@ -80,8 +80,10 @@ impl Orchestrator {
         supervisor_exe_path: impl AsRef<Path>,
         log_retention_policy: LogRetentionPolicy,
     ) -> MonocoreResult<Self> {
+        let state_dir = home_dir.as_ref().join(STATE_SUBDIR);
+
         // Ensure the state directory exists
-        fs::create_dir_all(&*MONOCORE_STATE_DIR).await?;
+        fs::create_dir_all(&state_dir).await?;
 
         // Verify supervisor binary exists
         let supervisor_exe_path = supervisor_exe_path.as_ref().to_path_buf();
@@ -142,8 +144,10 @@ impl Orchestrator {
         supervisor_exe_path: impl AsRef<Path>,
         log_retention_policy: LogRetentionPolicy,
     ) -> MonocoreResult<Self> {
+        let state_dir = home_dir.as_ref().join(STATE_SUBDIR);
+
         // Ensure the state directory exists
-        fs::create_dir_all(&*MONOCORE_STATE_DIR).await?;
+        fs::create_dir_all(&state_dir).await?;
 
         // Verify supervisor binary exists
         let supervisor_exe_path = supervisor_exe_path.as_ref().to_path_buf();
@@ -154,7 +158,7 @@ impl Orchestrator {
         }
 
         // Load state from files
-        let state = utils::load_state_from_files(&MONOCORE_STATE_DIR).await?;
+        let state = utils::load_state_from_files(&state_dir).await?;
 
         // Create config from state
         let (
@@ -221,16 +225,18 @@ impl Orchestrator {
     /// Performs cleanup of old log files based on the configured maximum age. Removes
     /// files that exceed the age threshold and logs the cleanup activity.
     pub async fn cleanup_old_logs(&self) -> MonocoreResult<()> {
+        let log_dir = self.home_dir.join(LOG_SUBDIR);
+
         // Ensure log directory exists before attempting cleanup
-        if !fs::try_exists(&*MONOCORE_LOG_DIR).await? {
-            fs::create_dir_all(&*MONOCORE_LOG_DIR).await?;
+        if !fs::try_exists(&log_dir).await? {
+            fs::create_dir_all(&log_dir).await?;
             return Ok(());
         }
 
         let now = SystemTime::now();
         let mut cleaned_files = 0;
 
-        let mut entries = fs::read_dir(&*MONOCORE_LOG_DIR).await?;
+        let mut entries = fs::read_dir(&log_dir).await?;
         while let Some(entry) = entries.next_entry().await? {
             if self
                 .should_delete_log(&entry, now, self.log_retention_policy.max_age)

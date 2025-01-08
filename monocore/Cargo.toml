@@ -69,6 +69,8 @@ pretty-error-debug.workspace = true
 serde_yaml = "0.9.34"
 async-stream.workspace = true
 pin-project = "1.1.7"
+tracing-appender = "0.2.3"
+pin-project-lite = "0.2.15"
 
 [dev-dependencies]
 test-log.workspace = true

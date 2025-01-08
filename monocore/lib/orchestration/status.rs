@@ -1,6 +1,6 @@
 use tokio::fs;
 
-use crate::{runtime::MicroVmState, utils::MONOCORE_STATE_DIR, MonocoreResult};
+use crate::{runtime::MicroVmState, utils::STATE_SUBDIR, MonocoreResult};
 
 use super::{utils, Orchestrator, ServiceStatus};
 
@@ -15,15 +15,16 @@ impl Orchestrator {
     pub async fn status(&self) -> MonocoreResult<Vec<ServiceStatus>> {
         let mut statuses = Vec::new();
         let mut stale_files = Vec::new();
+        let state_dir = self.home_dir.join(STATE_SUBDIR);
 
         // Ensure directory exists before reading
-        if !fs::try_exists(&*MONOCORE_STATE_DIR).await? {
-            fs::create_dir_all(&*MONOCORE_STATE_DIR).await?;
+        if !fs::try_exists(&state_dir).await? {
+            fs::create_dir_all(&state_dir).await?;
             return Ok(statuses);
         }
 
         // Read all state files from the state directory
-        let mut dir = fs::read_dir(&*MONOCORE_STATE_DIR).await?;
+        let mut dir = fs::read_dir(&state_dir).await?;
         while let Some(entry) = dir.next_entry().await? {
             let path = entry.path();
             if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {

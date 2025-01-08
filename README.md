@@ -7,19 +7,19 @@
 
   <p>
     <a href="https://discord.gg/T95Y3XnEAK">
-      <img src="https://img.shields.io/static/v1?label=Discord&message=join%20us!&color=mediumslateblue" alt="Discord">
+      <img src="https://img.shields.io/static/v1?label=Discord&message=join%20us!&color=mediumslateblue&logo=discord&logoColor=white" alt="Discord">
     </a>
     <a href="https://github.com/appcypher/monocore/actions?query=">
       <img src="https://github.com/appcypher/monocore/actions/workflows/tests_and_checks.yml/badge.svg" alt="Build Status">
     </a>
     <a href="https://crates.io/crates/monocore">
-      <img src="https://img.shields.io/crates/v/monocore?label=crates" alt="Monocore Crate">
+      <img src="https://img.shields.io/crates/v/monocore?label=crates&logo=rust" alt="Monocore Crate">
     </a>
     <a href="https://docs.rs/monocore">
-      <img src="https://img.shields.io/static/v1?label=Docs&message=docs.rs&color=blue" alt="Monocore Docs">
+      <img src="https://img.shields.io/static/v1?label=Docs&message=docs.rs&color=blue&logo=docs.rs" alt="Monocore Docs">
     </a>
     <a href="https://github.com/appcypher/monocore/blob/main/LICENSE">
-      <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License">
+      <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?logo=apache&logoColor=white" alt="License">
     </a>
   </p>
 </div>
@@ -31,7 +31,7 @@ Building AI agents that write and execute code? You'll need a secure sandbox.
 - Generate visualizations and charts
 - Run data analysis scripts
 - Execute system commands safely
-- Create and test web applications
+- Create and host web applications
 - Run automated browser tasks
 - Perform complex calculations
 
@@ -100,29 +100,29 @@ This will install both the `monocore` command and its alias `mc`.
    ```toml
    # monocore.toml
    [[service]]
-    name = "sh-counter"
-    base = "alpine:latest"
-    ram = 256
-    cpus = 1
-    group = "demo"
-    command = "/bin/sh"
-    args = ["-c", "for i in $(seq 1 20); do echo $i; sleep 2; done"]
+   name = "sh-counter"
+   base = "alpine:latest"
+   ram = 256
+   cpus = 1
+   group = "demo"
+   command = "/bin/sh"
+   args = ["-c", "for i in $(seq 1 20); do echo $i; sleep 2; done"]
 
-    [[service]]
-    name = "python-counter"
-    base = "python:3.11-slim"
-    ram = 256
-    cpus = 1
-    group = "demo"
-    command = "/usr/local/bin/python3"
-    args = [
-        "-c",
-        "import time; count=0; [print(f'Count: {count+1}') or time.sleep(2) or (count:=count+1) for _ in range(20)]",
-    ]
+   [[service]]
+   name = "python-counter"
+   base = "python:3.11-slim"
+   ram = 256
+   cpus = 1
+   group = "demo"
+   command = "/usr/local/bin/python3"
+   args = [
+      "-c",
+      "import time; count=0; [print(f'Count: {count+1}') or time.sleep(2) or (count:=count+1) for _ in range(20)]",
+   ]
 
-    [[group]]
-    name = "demo"
-    local_only = true
+   [[group]]
+   name = "demo"
+   local_only = true
    ```
 
 2. **Manage your sandboxes**

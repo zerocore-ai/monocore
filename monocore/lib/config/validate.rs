@@ -142,12 +142,15 @@ impl Monocore {
 
     /// Validates that services within the same group don't have port conflicts
     fn validate_service_ports(&self, services: &[Service], errors: &mut Vec<String>) {
+        // Map of group name (or None for default group) to a map of host ports to service names
         let mut used_ports: HashMap<Option<String>, HashMap<u16, String>> = HashMap::new();
 
         for service in services {
-            if let Some(port) = &service.port {
+            let group_ports = used_ports.entry(service.group.clone()).or_default();
+
+            // Check each port in the service's ports vector
+            for port in &service.ports {
                 let host_port = port.get_host();
-                let group_ports = used_ports.entry(service.group.clone()).or_default();
 
                 if let Some(existing_service) = group_ports.get(&host_port) {
                     errors.push(format!(
@@ -1098,14 +1101,20 @@ mod tests {
         let service1 = Service::builder()
             .name("service1")
             .group("test-group")
-            .port("8080:8080".parse::<PortPair>().unwrap())
+            .ports(vec![
+                PortPair::with_same(8080),
+                PortPair::with_distinct(8081, 81),
+            ])
             .command("./test1")
             .build();
 
         let service2 = Service::builder()
             .name("service2")
             .group("test-group")
-            .port("8080:8080".parse::<PortPair>().unwrap())
+            .ports(vec![
+                PortPair::with_same(8080),         // Conflicts with service1
+                PortPair::with_distinct(8082, 82), // This one is fine
+            ])
             .command("./test2")
             .build();
 
@@ -1128,14 +1137,20 @@ mod tests {
         let service1 = Service::builder()
             .name("service1")
             .group("group1")
-            .port("8080:8080".parse::<PortPair>().unwrap())
+            .ports(vec![
+                PortPair::with_same(8080),
+                PortPair::with_distinct(8081, 81),
+            ])
             .command("./test1")
             .build();
 
         let service2 = Service::builder()
             .name("service2")
             .group("group2")
-            .port("8080:8080".parse::<PortPair>().unwrap())
+            .ports(vec![
+                PortPair::with_same(8080), // Same port is fine in different group
+                PortPair::with_distinct(8082, 82),
+            ])
             .command("./test2")
             .build();
 
@@ -1157,18 +1172,91 @@ mod tests {
         // Create services with no group (default group) with conflicting ports
         let service1 = Service::builder()
             .name("service1")
-            .port("8080:8080".parse::<PortPair>().unwrap())
+            .ports(vec![
+                PortPair::with_same(8080),
+                PortPair::with_distinct(8081, 81),
+            ])
             .command("./test1")
             .build();
 
         let service2 = Service::builder()
             .name("service2")
-            .port("8080:8080".parse::<PortPair>().unwrap())
+            .ports(vec![
+                PortPair::with_same(8080),         // Conflicts with service1
+                PortPair::with_distinct(8082, 82), // This one is fine
+            ])
             .command("./test2")
             .build();
 
         let config = Monocore {
             services: vec![service1, service2],
+            groups: vec![],
+        };
+
+        let mut errors = Vec::new();
+        config.validate_service_ports(&config.services, &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("Port 8080 is already in use"));
+    }
+
+    #[test]
+    fn test_validate_service_ports_multiple_conflicts() {
+        // Create services with multiple port conflicts
+        let service1 = Service::builder()
+            .name("service1")
+            .group("test-group")
+            .ports(vec![
+                PortPair::with_same(8080),
+                PortPair::with_same(8081),
+                PortPair::with_distinct(8082, 82),
+            ])
+            .command("./test1")
+            .build();
+
+        let service2 = Service::builder()
+            .name("service2")
+            .group("test-group")
+            .ports(vec![
+                PortPair::with_same(8080),         // Conflicts with service1
+                PortPair::with_same(8081),         // Also conflicts with service1
+                PortPair::with_distinct(8083, 83), // This one is fine
+            ])
+            .command("./test2")
+            .build();
+
+        let group = Group::builder().name("test-group").build();
+
+        let config = Monocore {
+            services: vec![service1, service2],
+            groups: vec![group],
+        };
+
+        let mut errors = Vec::new();
+        config.validate_service_ports(&config.services, &mut errors);
+        assert_eq!(errors.len(), 2); // Should have two conflict errors
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Port 8080 is already in use")));
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Port 8081 is already in use")));
+    }
+
+    #[test]
+    fn test_validate_service_ports_same_service() {
+        // Create a service with duplicate ports
+        let service = Service::builder()
+            .name("service1")
+            .ports(vec![
+                PortPair::with_same(8080),
+                PortPair::with_same(8080), // Duplicate port in same service
+                PortPair::with_distinct(8081, 81),
+            ])
+            .command("./test")
+            .build();
+
+        let config = Monocore {
+            services: vec![service],
             groups: vec![],
         };
 

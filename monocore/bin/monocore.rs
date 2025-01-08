@@ -7,7 +7,7 @@ use monocore::{
     config::Monocore,
     orchestration::Orchestrator,
     server::{self, ServerState},
-    utils::{self, OCI_SUBDIR, ROOTFS_SUBDIR},
+    utils::{self, OCI_SUBDIR},
     MonocoreError, MonocoreResult,
 };
 use serde::de::DeserializeOwned;
@@ -118,8 +118,8 @@ async fn main() -> MonocoreResult<()> {
         Some(MonocoreSubcommand::Status {}) => {
             let current_exe = env::current_exe()?;
             let supervisor_path = current_exe.parent().unwrap().join(SUPERVISOR_EXE);
-            let rootfs_dir = monocore::utils::monocore_home_path().join(ROOTFS_SUBDIR);
-            let orchestrator = Orchestrator::load(&rootfs_dir, &supervisor_path).await?;
+            let home_dir = monocore::utils::monocore_home_path();
+            let orchestrator = Orchestrator::load(&home_dir, &supervisor_path).await?;
             let statuses = orchestrator.status().await?;
 
             println!();
@@ -238,48 +238,10 @@ async fn main() -> MonocoreResult<()> {
             let current_exe = env::current_exe()?;
             let supervisor_path = current_exe.parent().unwrap().join(SUPERVISOR_EXE);
             let orchestrator = Orchestrator::load(&home_dir, &supervisor_path).await?;
-
-            let mut log_stream = orchestrator.view_logs(&service, lines, follow).await?;
-
-            if follow || no_pager {
-                // Set up Ctrl+C handler
-                let mut sigint = tokio::signal::unix::signal(SignalKind::interrupt())?;
-
-                // Print directly to stdout for follow mode or when no pager is requested
-                loop {
-                    tokio::select! {
-                        maybe_line = log_stream.next() => {
-                            match maybe_line {
-                                Some(line) => {
-                                    print!("{}", line?);
-                                    std::io::stdout().flush()?;
-                                }
-                                None => break,
-                            }
-                        }
-                        _ = sigint.recv() => {
-                            break;
-                        }
-                    }
-                }
-            } else {
-                // Collect all content for pager mode
-                let mut content = String::new();
-                while let Some(line) = log_stream.next().await {
-                    content.push_str(&line?);
-                }
-
-                let mut less = Command::new("less")
-                    .arg("-R") // Handle ANSI color codes
-                    .stdin(std::process::Stdio::piped())
-                    .spawn()?;
-
-                if let Some(mut stdin) = less.stdin.take() {
-                    stdin.write_all(content.as_bytes()).await?;
-                }
-
-                less.wait().await?;
-            }
+            let mut log_stream = orchestrator
+                .view_logs(service.as_deref(), lines, follow)
+                .await?;
+            display_logs(&mut log_stream, no_pager, follow).await?;
         }
 
         None => {
@@ -306,4 +268,70 @@ async fn parse_config_file<T: DeserializeOwned>(
         "yaml" | "yml" => serde_yaml::from_str(&content).map_err(MonocoreError::SerdeYaml),
         _ => toml::from_str(&content).map_err(MonocoreError::Toml),
     }
+}
+
+/// Helper function to display logs with optional pager and follow mode
+async fn display_logs(
+    log_stream: &mut (impl futures::Stream<Item = MonocoreResult<String>> + Unpin),
+    no_pager: bool,
+    follow: bool,
+) -> MonocoreResult<()> {
+    if follow || no_pager {
+        // Set up Ctrl+C handler
+        let mut sigint = tokio::signal::unix::signal(SignalKind::interrupt())?;
+
+        // Print directly to stdout for follow mode or when no pager is requested
+        loop {
+            tokio::select! {
+                maybe_line = log_stream.next() => {
+                    match maybe_line {
+                        Some(line) => {
+                            print!("{}", line?);
+                            std::io::stdout().flush()?;
+                        }
+                        None => break,
+                    }
+                }
+                _ = sigint.recv() => {
+                    break;
+                }
+            }
+        }
+    } else {
+        // Try to spawn less, fall back to direct output if not available
+        let less_result = Command::new("less")
+            .arg("-R") // Handle ANSI color codes
+            .stdin(std::process::Stdio::piped())
+            .spawn();
+
+        match less_result {
+            Ok(mut less) => {
+                let mut stdin = less.stdin.take().ok_or_else(|| {
+                    MonocoreError::PagerError("Failed to open stdin to pager".to_string())
+                })?;
+
+                // Stream directly to less
+                while let Some(line) = log_stream.next().await {
+                    let line = line?;
+                    if stdin.write_all(line.as_bytes()).await.is_err() {
+                        // Pager was probably closed by user
+                        break;
+                    }
+                }
+
+                // Close pager's stdin and wait for it
+                drop(stdin);
+                less.wait().await?;
+            }
+            Err(_) => {
+                // less not available, fall back to direct output
+                while let Some(line) = log_stream.next().await {
+                    print!("{}", line?);
+                    std::io::stdout().flush()?;
+                }
+            }
+        }
+    }
+
+    Ok(())
 }

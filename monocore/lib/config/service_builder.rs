@@ -19,7 +19,7 @@ pub struct ServiceBuilder<Name> {
     group_volumes: Vec<VolumeMount>,
     group_envs: Vec<String>,
     depends_on: Vec<String>,
-    port: Option<PortPair>,
+    ports: Vec<PortPair>,
     workdir: Option<String>,
     command: Option<String>,
     args: Vec<String>,
@@ -74,9 +74,9 @@ impl<Name> ServiceBuilder<Name> {
         self
     }
 
-    /// Sets the port mapping for the service
-    pub fn port(mut self, port: PortPair) -> Self {
-        self.port = Some(port);
+    /// Sets the port mappings for the service
+    pub fn ports(mut self, ports: impl IntoIterator<Item = PortPair>) -> Self {
+        self.ports = ports.into_iter().collect();
         self
     }
 
@@ -121,7 +121,7 @@ impl<Name> ServiceBuilder<Name> {
             group_volumes: self.group_volumes,
             group_envs: self.group_envs,
             depends_on: self.depends_on,
-            port: self.port,
+            ports: self.ports,
             workdir: self.workdir,
             command: self.command,
             args: self.args,
@@ -143,7 +143,7 @@ impl ServiceBuilder<String> {
             group_volumes: self.group_volumes,
             group_envs: self.group_envs,
             depends_on: self.depends_on,
-            port: self.port,
+            ports: self.ports,
             workdir: self.workdir,
             command: self.command,
             args: self.args,
@@ -168,7 +168,7 @@ impl Default for ServiceBuilder<()> {
             group_volumes: vec![],
             group_envs: vec![],
             depends_on: vec![],
-            port: None,
+            ports: vec![],
             workdir: None,
             command: None,
             args: vec![],
@@ -194,18 +194,18 @@ mod tests {
             .name("test-service")
             .base("ubuntu:24.04")
             .group("app")
-            .volumes(vec!["/app;".parse()?])
-            .envs(vec!["ENV=main".parse()?])
-            .group_volumes(vec![VolumeMount::builder()
+            .volumes(["/app;".parse()?])
+            .envs(["ENV=main".parse()?])
+            .group_volumes([VolumeMount::builder()
                 .name("main".to_string())
                 .mount(PathPair::Same("/app".parse()?))
                 .build()])
-            .group_envs(vec!["main".to_string()])
-            .depends_on(vec!["db".to_string()])
-            .port("8080:80".parse()?)
+            .group_envs(["main".to_string()])
+            .depends_on(["db".to_string()])
+            .ports(["8080:80".parse()?])
             .workdir("/app")
             .command("./app")
-            .args(vec!["--port", "80"])
+            .args(["--port", "80"])
             .cpus(2)
             .ram(1024)
             .build();
@@ -218,7 +218,7 @@ mod tests {
         assert_eq!(service.group_volumes.len(), 1);
         assert_eq!(service.group_envs, vec!["main".to_string()]);
         assert_eq!(service.depends_on, vec!["db".to_string()]);
-        assert_eq!(service.port, Some("8080:80".parse()?));
+        assert_eq!(service.ports, vec!["8080:80".parse()?]);
         assert_eq!(service.workdir, Some("/app".to_string()));
         assert_eq!(service.command, Some("./app".to_string()));
         assert_eq!(service.args, vec!["--port", "80"]);
@@ -240,7 +240,7 @@ mod tests {
         assert!(service.group_volumes.is_empty());
         assert!(service.group_envs.is_empty());
         assert!(service.depends_on.is_empty());
-        assert_eq!(service.port, None);
+        assert!(service.ports.is_empty());
         assert_eq!(service.workdir, None);
         assert_eq!(service.command, None);
         assert!(service.args.is_empty());

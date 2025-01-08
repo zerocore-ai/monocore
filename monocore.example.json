@@ -6,7 +6,7 @@
       "ram": 256,
       "cpus": 1,
       "group": "demo",
-      "command": "/bin/sh",
+      "command": "sh",
       "args": ["-c", "for i in $(seq 1 20); do echo $i; sleep 2; done"]
     },
     {
@@ -15,7 +15,7 @@
       "ram": 256,
       "cpus": 1,
       "group": "demo",
-      "command": "/usr/local/bin/python3",
+      "command": "python",
       "args": [
         "-c",
         "import time; count=0; [print(f'Count: {count+1}') or time.sleep(2) or (count:=count+1) for _ in range(20)]"
