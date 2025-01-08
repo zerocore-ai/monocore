@@ -1,8 +1,6 @@
-use std::{
-    collections::BTreeMap,
-    fmt::{self, Debug},
-    iter,
-};
+use std::collections::BTreeMap;
+use std::fmt::{self, Debug};
+use std::iter;
 
 use chrono::{DateTime, Utc};
 use getset::Getters;
@@ -11,7 +9,7 @@ use monoutils_store::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::config::DEFAULT_SOFTLINK_DEPTH;
+use crate::config::DEFAULT_SYMLINK_DEPTH;
 
 use super::{kind::EntityType, AttributesCidLink, FsResult};
 
@@ -28,8 +26,8 @@ pub const ENTITY_TYPE_KEY: &str = "monofs.entity_type";
 /// The key for the modified at field in the metadata.
 pub const MODIFIED_AT_KEY: &str = "monofs.modified_at";
 
-/// The key for the softlink depth field in the metadata.
-pub const SOFTLINK_DEPTH_KEY: &str = "monofs.softlink_depth";
+/// The key for the symbolic link depth field in the metadata.
+pub const SYMLINK_DEPTH_KEY: &str = "monofs.symlink_depth";
 
 /// The key for the sync type field in the metadata.
 pub const SYNC_TYPE_KEY: &str = "monofs.sync_type";
@@ -51,14 +49,15 @@ pub const TOMBSTONE_KEY: &str = "monofs.tombstone";
 ///
 /// ```
 /// use monofs::filesystem::{EntityType, Metadata, SyncType};
-/// use monofs::config::DEFAULT_SOFTLINK_DEPTH;
+/// use monofs::config::DEFAULT_SYMLINK_DEPTH;
 /// use monoutils_store::MemoryStore;
 ///
 /// let store = MemoryStore::default();
 /// let metadata = Metadata::new(EntityType::File, store);
+///
 /// assert_eq!(*metadata.get_entity_type(), EntityType::File);
 /// assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
-/// assert_eq!(*metadata.get_softlink_depth(), DEFAULT_SOFTLINK_DEPTH);
+/// assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
 /// ```
 #[derive(Clone, Serialize, Deserialize, Getters)]
 #[getset(get = "pub with_prefix")]
@@ -75,8 +74,8 @@ where
     /// The time of the last modification of the entity.
     modified_at: DateTime<Utc>,
 
-    /// The maximum depth of a softlink.
-    softlink_depth: u32,
+    /// The maximum depth of a symbolic link.
+    symlink_depth: u32,
 
     /// The sync type of the entity.
     sync_type: SyncType,
@@ -126,7 +125,7 @@ pub struct MetadataSerializable {
     entity_type: EntityType,
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
-    softlink_depth: u32,
+    symlink_depth: u32,
     sync_type: SyncType,
     tombstone: bool,
     extended_attrs: Option<Cid>,
@@ -150,14 +149,15 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{EntityType, Metadata, SyncType};
-    /// use monofs::config::DEFAULT_SOFTLINK_DEPTH;
+    /// use monofs::config::DEFAULT_SYMLINK_DEPTH;
     /// use monoutils_store::MemoryStore;
     ///
     /// let store = MemoryStore::default();
     /// let metadata = Metadata::new(EntityType::File, store);
+    ///
     /// assert_eq!(*metadata.get_entity_type(), EntityType::File);
     /// assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
-    /// assert_eq!(*metadata.get_softlink_depth(), DEFAULT_SOFTLINK_DEPTH);
+    /// assert_eq!(*metadata.get_symcidlink_depth(), DEFAULT_SYMLINK_DEPTH);
     /// ```
     pub fn new(entity_type: EntityType, store: S) -> Self {
         let now = Utc::now();
@@ -166,7 +166,7 @@ where
             entity_type,
             created_at: now,
             modified_at: now,
-            softlink_depth: DEFAULT_SOFTLINK_DEPTH,
+            symlink_depth: DEFAULT_SYMLINK_DEPTH,
             sync_type: SyncType::RAFT,
             tombstone: false,
             extended_attrs: None,
@@ -180,7 +180,7 @@ where
             entity_type: serializable.entity_type,
             created_at: serializable.created_at,
             modified_at: serializable.modified_at,
-            softlink_depth: serializable.softlink_depth,
+            symlink_depth: serializable.symlink_depth,
             sync_type: serializable.sync_type,
             tombstone: serializable.tombstone,
             extended_attrs: serializable
@@ -204,7 +204,7 @@ where
             entity_type: self.entity_type,
             created_at: self.created_at,
             modified_at: self.modified_at,
-            softlink_depth: self.softlink_depth,
+            symlink_depth: self.symlink_depth,
             sync_type: self.sync_type,
             tombstone: self.tombstone,
             extended_attrs,
@@ -302,6 +302,11 @@ where
         }
         Ok(())
     }
+
+    /// Sets the maximum depth of a symbolic link.
+    pub fn set_symlink_depth(&mut self, depth: u32) {
+        self.symlink_depth = depth;
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -362,7 +367,7 @@ where
             .field("entity_type", &self.entity_type)
             .field("created_at", &self.created_at)
             .field("modified_at", &self.modified_at)
-            .field("softlink_depth", &self.softlink_depth)
+            .field("symlink_depth", &self.symlink_depth)
             .field("sync_type", &self.sync_type)
             .field("tombstone", &self.tombstone)
             .field(
@@ -399,7 +404,7 @@ mod tests {
         let metadata: Metadata<MemoryStore> = Metadata::new(EntityType::File, store);
 
         assert_eq!(*metadata.get_entity_type(), EntityType::File);
-        assert_eq!(*metadata.get_softlink_depth(), DEFAULT_SOFTLINK_DEPTH);
+        assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
         assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
         assert!(!metadata.get_tombstone());
     }
@@ -410,7 +415,7 @@ mod tests {
         let metadata = Metadata::new(EntityType::Dir, store);
 
         assert_eq!(*metadata.get_entity_type(), EntityType::Dir);
-        assert_eq!(*metadata.get_softlink_depth(), DEFAULT_SOFTLINK_DEPTH);
+        assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
         assert!(metadata.get_created_at() <= &Utc::now());
         assert!(metadata.get_modified_at() <= &Utc::now());
         assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
@@ -430,8 +435,8 @@ mod tests {
             loaded_metadata.get_entity_type()
         );
         assert_eq!(
-            metadata.get_softlink_depth(),
-            loaded_metadata.get_softlink_depth()
+            metadata.get_symlink_depth(),
+            loaded_metadata.get_symlink_depth()
         );
         assert_eq!(metadata.get_sync_type(), loaded_metadata.get_sync_type());
         assert_eq!(metadata.get_tombstone(), loaded_metadata.get_tombstone());

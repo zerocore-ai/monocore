@@ -19,65 +19,64 @@ use super::{entity::Entity, kind::EntityType, MetadataSerializable};
 // Types
 //--------------------------------------------------------------------------------------------------
 
-/// Represents a [`symbolic link`][softlink] to a file or directory in the `monofs` _immutable_ file system.
+/// A content-addressed symbolic link that refers to files or directories by their CID (content hash), making it resilient to target moves.
 ///
 /// ## Important
 ///
 /// Entities in `monofs` are designed to be immutable and clone-on-write meaning writes create
 /// forks of the entity.
 ///
-/// [softlink]: https://en.wikipedia.org/wiki/Symbolic_link
+/// ## CID-based Symlinks
+///
+/// Unlike traditional location-addressable file systems where symlinks break if the target entity is moved
+/// from its original location, `SymCidLink` refers to an entity by its Cid. This means it only breaks if
+/// the Cid to the target entity is deleted, not when the target entity is moved. This can be particularly
+/// useful in content-addressed systems where you want to maintain references to specific versions of entities.
+///
+/// Note: For Unix-like system compatibility, a path-based symlink implementation (`SymPathLink<S>`) is planned
+/// for the future, where the path will be relative to the symlink's location.
+///
+/// [symlink]: https://en.wikipedia.org/wiki/Symbolic_link
 #[derive(Clone)]
-pub struct SoftLink<S>
+pub struct SymCidLink<S>
 where
     S: IpldStore,
 {
-    inner: Arc<SoftLinkInner<S>>,
+    inner: Arc<SymCidLinkInner<S>>,
 }
 
 #[derive(Clone)]
-struct SoftLinkInner<S>
+struct SymCidLinkInner<S>
 where
     S: IpldStore,
 {
-    /// The CID of the softlink when it is initially loaded from the store.
+    /// The CID of the symlink when it is initially loaded from the store.
     ///
-    /// It is not initialized if the softlink was not loaded from the store.
+    /// It is not initialized if the symlink was not loaded from the store.
     initial_load_cid: OnceLock<Cid>,
 
-    /// The CID of the previous version of the softlink.
+    /// The CID of the previous version of the symlink.
     previous: Option<Cid>,
 
-    /// The metadata of the softlink.
+    /// The metadata of the symlink.
     metadata: Metadata<S>,
 
-    /// The store of the softlink.
+    /// The store of the symlink.
     store: S,
 
-    /// The (weak) link to some target [`Entity`].
-    ///
-    /// ## Important
-    ///
-    /// Because `SoftLink` refers to an entity by its Cid, it's behavior is a bit different from
-    /// typical location-addressable file systems where softlinks break if the target entity is moved
-    /// from its original location. `SoftLink` only breaks if the Cid to the target entity is deleted
-    /// not the target entity itself. This is bad. A softlink can potentially point to a stale item if
-    /// the target entity is modified because it works at the Cid level. This is also bad.
-    ///
-    /// In order to maintain compatibility with Unix-like systems, we may need to change this to an
-    /// `EntityPathLink<S>` in the future, where the path is relative to the location of the softlink.
+    /// The link to some target [`Entity`].
     link: EntityCidLink<S>,
 }
 
-/// Represents the result of following a softlink.
-pub enum FollowResult<'a, S>
+/// Represents the result of following a symlink.
+pub enum CidFollowResult<'a, S>
 where
     S: IpldStore,
 {
-    /// The softlink was successfully resolved to a non-softlink entity.
+    /// The symlink was successfully resolved to a non-symlink entity.
     Resolved(&'a Entity<S>),
 
-    /// The maximum follow depth was reached without resolving to a non-softlink entity.
+    /// The maximum follow depth was reached without resolving to a non-symlink entity.
     MaxDepthReached,
 
     /// A broken link was encountered during resolution.
@@ -89,26 +88,26 @@ where
 //--------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SoftLinkSerializable {
+pub(crate) struct SymCidLinkSerializable {
     metadata: MetadataSerializable,
     target: Cid,
     previous: Option<Cid>,
 }
 
 //--------------------------------------------------------------------------------------------------
-// Methods: SoftLink
+// Methods: SymCidLink
 //--------------------------------------------------------------------------------------------------
 
-impl<S> SoftLink<S>
+impl<S> SymCidLink<S>
 where
     S: IpldStore,
 {
-    /// Creates a new softlink.
+    /// Creates a new symlink.
     pub fn with_cid(store: S, target: Cid) -> Self {
         Self {
-            inner: Arc::new(SoftLinkInner {
+            inner: Arc::new(SymCidLinkInner {
                 initial_load_cid: OnceLock::new(),
-                metadata: Metadata::new(EntityType::SoftLink, store.clone()),
+                metadata: Metadata::new(EntityType::SymCidLink, store.clone()),
                 store,
                 link: CidLink::from(target),
                 previous: None,
@@ -116,12 +115,12 @@ where
         }
     }
 
-    /// Returns the CID of the softlink when it was initially loaded from the store.
+    /// Returns the CID of the symlink when it was initially loaded from the store.
     ///
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::SoftLink;
+    /// use monofs::filesystem::SymCidLink;
     /// use monoutils_store::{MemoryStore, Storable};
     /// use monoutils_store::ipld::cid::Cid;
     ///
@@ -129,19 +128,19 @@ where
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
     /// let target_cid: Cid = "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
-    /// let softlink = SoftLink::with_cid(store.clone(), target_cid);
+    /// let symlink = SymCidLink::with_cid(store.clone(), target_cid);
     ///
     /// // Initially, the CID is not set
-    /// assert!(softlink.get_initial_load_cid().is_none());
+    /// assert!(symlink.get_initial_load_cid().is_none());
     ///
-    /// // Store the softlink
-    /// let stored_cid = softlink.store().await?;
+    /// // Store the symlink
+    /// let stored_cid = symlink.store().await?;
     ///
-    /// // Load the softlink
-    /// let loaded_softlink = SoftLink::load(&stored_cid, store).await?;
+    /// // Load the symlink
+    /// let loaded_symlink = SymCidLink::load(&stored_cid, store).await?;
     ///
     /// // Now the initial load CID is set
-    /// assert_eq!(loaded_softlink.get_initial_load_cid(), Some(&stored_cid));
+    /// assert_eq!(loaded_symlink.get_initial_load_cid(), Some(&stored_cid));
     /// # Ok(())
     /// # }
     /// ```
@@ -149,12 +148,12 @@ where
         self.inner.initial_load_cid.get()
     }
 
-    /// Returns the CID of the previous version of the softlink if there is one.
+    /// Returns the CID of the previous version of the symlink if there is one.
     ///
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::SoftLink;
+    /// use monofs::filesystem::SymCidLink;
     /// use monoutils_store::{MemoryStore, Storable};
     /// use monoutils_store::ipld::cid::Cid;
     ///
@@ -162,24 +161,24 @@ where
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
     /// let target_cid: Cid = "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
-    /// let softlink = SoftLink::with_cid(store.clone(), target_cid);
+    /// let symlink = SymCidLink::with_cid(store.clone(), target_cid);
     ///
     /// // Initially, there's no previous version
-    /// assert!(softlink.get_previous().is_none());
+    /// assert!(symlink.get_previous().is_none());
     ///
-    /// // Store the softlink
-    /// let first_cid = softlink.store().await?;
+    /// // Store the symlink
+    /// let first_cid = symlink.store().await?;
     ///
-    /// // Load the softlink and create a new version
-    /// let mut loaded_softlink = SoftLink::load(&first_cid, store.clone()).await?;
+    /// // Load the symlink and create a new version
+    /// let mut loaded_symlink = SymCidLink::load(&first_cid, store.clone()).await?;
     /// let new_target_cid: Cid = "bafkreihogico5an3e2xy3fykalfwxxry7itbhfcgq6f47sif6d7w6uk2ze".parse()?;
-    /// loaded_softlink.set_cid(new_target_cid);
+    /// loaded_symlink.set_cid(new_target_cid);
     ///
     /// // Store the new version
-    /// let second_cid = loaded_softlink.store().await?;
+    /// let second_cid = loaded_symlink.store().await?;
     ///
     /// // Load the new version
-    /// let new_version = SoftLink::load(&second_cid, store).await?;
+    /// let new_version = SymCidLink::load(&second_cid, store).await?;
     ///
     /// // Now the previous CID is set
     /// assert_eq!(new_version.get_previous(), Some(&first_cid));
@@ -190,54 +189,55 @@ where
         self.inner.previous.as_ref()
     }
 
-    /// Returns the metadata for the directory.
+    /// Returns the metadata for the symlink.
     pub fn get_metadata(&self) -> &Metadata<S> {
         &self.inner.metadata
     }
 
-    /// Returns a mutable reference to the metadata for the softlink.
+    /// Returns a mutable reference to the metadata for the symlink.
+
     pub fn get_metadata_mut(&mut self) -> &mut Metadata<S> {
         let inner = Arc::make_mut(&mut self.inner);
         &mut inner.metadata
     }
 
-    /// Returns the store used to persist the softlink.
+    /// Returns the store used to persist the symlink.
     pub fn get_store(&self) -> &S {
         &self.inner.store
     }
 
-    /// Gets the [`EntityCidLink`] of the target of the softlink.
+    /// Gets the [`EntityCidLink`] of the target of the symlink.
     pub fn get_link(&self) -> &EntityCidLink<S> {
         &self.inner.link
     }
 
-    /// Sets the [`EntityCidLink`] of the target of the softlink.
+    /// Sets the [`EntityCidLink`] of the target of the symlink.
     pub fn set_link(&mut self, link: EntityCidLink<S>) {
         let inner = Arc::make_mut(&mut self.inner);
         inner.link = link;
     }
 
-    /// Sets the CID of the target of the softlink.
+    /// Sets the CID of the target of the symlink.
     pub fn set_cid(&mut self, cid: Cid) {
         self.set_link(CidLink::from(cid));
     }
 
-    /// Sets the [`Dir`] as the target of the softlink.
+    /// Sets the [`Dir`] as the target of the symlink.
     pub fn set_dir(&mut self, dir: Dir<S>) {
         self.set_link(EntityCidLink::from(dir));
     }
 
-    /// Sets the [`File`] as the target of the softlink.
+    /// Sets the [`File`] as the target of the symlink.
     pub fn set_file(&mut self, file: File<S>) {
         self.set_link(EntityCidLink::from(file));
     }
 
-    /// Sets the [`SoftLink`] as the target of the softlink.
-    pub fn set_softlink(&mut self, softlink: SoftLink<S>) {
-        self.set_link(EntityCidLink::from(softlink));
+    /// Sets the [`SymCidLink`] as the target of the symlink.
+    pub fn set_symlink(&mut self, symlink: SymCidLink<S>) {
+        self.set_link(EntityCidLink::from(symlink));
     }
 
-    /// Gets the [`Cid`] of the target of the softlink.
+    /// Gets the [`Cid`] of the target of the symlink.
     pub async fn get_cid(&self) -> FsResult<Cid>
     where
         S: Send + Sync,
@@ -245,7 +245,7 @@ where
         self.inner.link.resolve_cid().await
     }
 
-    /// Gets the [`Entity`] that the softlink points to.
+    /// Gets the [`Entity`] that the symlink points to.
     pub async fn get_entity(&self) -> FsResult<&Entity<S>>
     where
         S: Send + Sync,
@@ -256,7 +256,7 @@ where
             .await
     }
 
-    /// Gets the [`Dir`] that the softlink points to.
+    /// Gets the [`Dir`] that the symlink points to.
     pub async fn get_dir(&self) -> FsResult<Option<&Dir<S>>>
     where
         S: Send + Sync,
@@ -267,7 +267,7 @@ where
         }
     }
 
-    /// Gets the [`File`] that the softlink points to.
+    /// Gets the [`File`] that the symlink points to.
     pub async fn get_file(&self) -> FsResult<Option<&File<S>>>
     where
         S: Send + Sync,
@@ -277,28 +277,27 @@ where
             _ => Ok(None),
         }
     }
-
-    /// Gets the [`SoftLink`] that the softlink points to.
-    pub async fn get_softlink(&self) -> FsResult<Option<&SoftLink<S>>>
+    /// Gets the [`SymCidLink`] that the symlink points to.
+    pub async fn get_symlink(&self) -> FsResult<Option<&SymCidLink<S>>>
     where
         S: Send + Sync,
     {
         match self.get_entity().await? {
-            Entity::SoftLink(softlink) => Ok(Some(softlink)),
+            Entity::SymCidLink(symlink) => Ok(Some(symlink)),
             _ => Ok(None),
         }
     }
 
-    /// Follows the softlink to resolve the target entity.
+    /// Follows the symlink to resolve the target entity.
     ///
-    /// This method will follow the chain of softlinks up to the maximum depth specified in the metadata.
-    /// If the maximum depth is reached without resolving to a non-softlink entity, it returns `MaxDepthReached`.
+    /// This method will follow the chain of symlinks up to the maximum depth specified in the metadata.
+    /// If the maximum depth is reached without resolving to a non-symlink entity, it returns `MaxDepthReached`.
     /// If a broken link is encountered, it returns `BrokenLink`.
     ///
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{SoftLink, Dir, File, Entity, FollowResult};
+    /// use monofs::filesystem::{SymCidLink, Dir, File, Entity, CidFollowResult};
     /// use monoutils_store::{MemoryStore, Storable};
     /// use monoutils_store::ipld::cid::Cid;
     ///
@@ -310,73 +309,73 @@ where
     /// let file = File::with_content(store.clone(), b"Hello, World!".to_vec()).await;
     /// let file_cid = file.store().await?;
     ///
-    /// // Create a softlink to the file
-    /// let softlink = SoftLink::with_cid(store.clone(), file_cid);
+    /// // Create a symlink to the file
+    /// let symlink = SymCidLink::with_cid(store.clone(), file_cid);
     ///
-    /// // Follow the softlink
-    /// match softlink.follow().await? {
-    ///     FollowResult::Resolved(entity) => {
+    /// // Follow the symlink
+    /// match symlink.follow().await? {
+    ///     CidFollowResult::Resolved(entity) => {
     ///         assert!(matches!(entity, Entity::File(_)));
     ///     },
     ///     _ => panic!("Expected Resolved, got something else"),
     /// }
     ///
-    /// // Create a chain of softlinks
-    /// let softlink1 = SoftLink::with_cid(store.clone(), file_cid);
-    /// let softlink1_cid = softlink1.store().await?;
-    /// let softlink2 = SoftLink::with_cid(store.clone(), softlink1_cid);
+    /// // Create a chain of symlinks
+    /// let symlink1 = SymCidLink::with_cid(store.clone(), file_cid);
+    /// let symlink1_cid = symlink1.store().await?;
+    /// let symlink2 = SymCidLink::with_cid(store.clone(), symlink1_cid);
     ///
-    /// // Follow the chain of softlinks
-    /// assert!(matches!(softlink2.follow().await?, FollowResult::Resolved(Entity::File(_))));
+    /// // Follow the chain of symlinks
+    /// assert!(matches!(symlink2.follow().await?, CidFollowResult::Resolved(Entity::File(_))));
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn follow(&self) -> FsResult<FollowResult<'_, S>>
+    pub async fn follow(&self) -> FsResult<CidFollowResult<'_, S>>
     where
         S: Send + Sync,
     {
-        let max_depth = *self.inner.metadata.get_softlink_depth();
+        let max_depth = *self.inner.metadata.get_symlink_depth();
         self.follow_recursive(max_depth).await
     }
 
     #[async_recursion]
-    async fn follow_recursive(&self, remaining_depth: u32) -> FsResult<FollowResult<'life_self, S>>
+    async fn follow_recursive(
+        &self,
+        remaining_depth: u32,
+    ) -> FsResult<CidFollowResult<'life_self, S>>
     where
         S: Send + Sync,
     {
         if remaining_depth == 0 {
-            return Ok(FollowResult::MaxDepthReached);
+            return Ok(CidFollowResult::MaxDepthReached);
         }
 
         match self.get_entity().await {
             Ok(entity) => match entity {
-                Entity::SoftLink(next_softlink) => {
-                    next_softlink.follow_recursive(remaining_depth - 1).await
+                Entity::SymCidLink(next_symlink) => {
+                    next_symlink.follow_recursive(remaining_depth - 1).await
                 }
-                _ => Ok(FollowResult::Resolved(entity)),
+                _ => Ok(CidFollowResult::Resolved(entity)),
             },
-            // We find the error `get_entity` returns that deals with not being able to load an entity
-            // from the store and return a `FollowResult::BrokenLink`.
             Err(FsError::IpldStore(StoreError::Custom(any_err))) => {
                 if let Some(FsError::UnableToLoadEntity(cid)) = any_err.downcast::<FsError>() {
-                    return Ok(FollowResult::BrokenLink(*cid));
+                    return Ok(CidFollowResult::BrokenLink(*cid));
                 }
-
-                return Err(StoreError::custom(any_err).into());
+                Err(StoreError::custom(any_err).into())
             }
             Err(e) => Err(e),
         }
     }
 
-    /// Resolves the softlink to its target entity.
+    /// Resolves the symlink to its target entity.
     ///
-    /// This method will follow the chain of softlinks up to the maximum depth specified in the metadata.
+    /// This method will follow the chain of symlinks up to the maximum depth specified in the metadata.
     /// It will return an error if the maximum depth is reached or if a broken link is encountered.
     ///
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{SoftLink, Dir, File, Entity, FsError};
+    /// use monofs::filesystem::{SymCidLink, Dir, File, Entity, FsError};
     /// use monoutils_store::{MemoryStore, Storable};
     /// use monoutils_store::ipld::cid::Cid;
     ///
@@ -388,19 +387,19 @@ where
     /// let file = File::with_content(store.clone(), b"Hello, World!".to_vec()).await;
     /// let file_cid = file.store().await?;
     ///
-    /// // Create a softlink to the file
-    /// let softlink = SoftLink::with_cid(store.clone(), file_cid);
+    /// // Create a symlink to the file
+    /// let symlink = SymCidLink::with_cid(store.clone(), file_cid);
     ///
-    /// // Resolve the softlink
-    /// let resolved_entity = softlink.resolve().await?;
+    /// // Resolve the symlink
+    /// let resolved_entity = symlink.resolve().await?;
     /// assert!(matches!(resolved_entity, Entity::File(_)));
     ///
-    /// // Create a broken softlink
+    /// // Create a broken symlink
     /// let non_existent_cid = Cid::default();
-    /// let broken_softlink = SoftLink::with_cid(store.clone(), non_existent_cid);
+    /// let broken_symlink = SymCidLink::with_cid(store.clone(), non_existent_cid);
     ///
-    /// // Try to resolve the broken softlink
-    /// assert!(matches!(broken_softlink.resolve().await, Err(FsError::BrokenSoftLink(_))));
+    /// // Try to resolve the broken symlink
+    /// assert!(matches!(broken_symlink.resolve().await, Err(FsError::BrokenSymCidLink(_))));
     /// # Ok(())
     /// # }
     /// ```
@@ -409,22 +408,22 @@ where
         S: Send + Sync,
     {
         match self.follow().await? {
-            FollowResult::Resolved(entity) => Ok(entity),
-            FollowResult::MaxDepthReached => Err(FsError::MaxFollowDepthReached),
-            FollowResult::BrokenLink(cid) => Err(FsError::BrokenSoftLink(cid)),
+            CidFollowResult::Resolved(entity) => Ok(entity),
+            CidFollowResult::MaxDepthReached => Err(FsError::MaxFollowDepthReached),
+            CidFollowResult::BrokenLink(cid) => Err(FsError::BrokenSymCidLink(cid)),
         }
     }
 
-    /// Tries to create a new `Dir` from a serializable representation.
+    /// Tries to create a new `SymCidLink` from a serializable representation.
     pub(crate) fn from_serializable(
-        serializable: SoftLinkSerializable,
+        serializable: SymCidLinkSerializable,
         store: S,
         load_cid: Cid,
     ) -> FsResult<Self> {
         let metadata = Metadata::from_serializable(serializable.metadata, store.clone())?;
 
-        Ok(SoftLink {
-            inner: Arc::new(SoftLinkInner {
+        Ok(SymCidLink {
+            inner: Arc::new(SymCidLinkInner {
                 initial_load_cid: OnceLock::from(load_cid),
                 previous: serializable.previous,
                 metadata,
@@ -439,19 +438,19 @@ where
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
-impl<S> From<Entity<S>> for SoftLink<S>
+impl<S> From<Entity<S>> for SymCidLink<S>
 where
     S: IpldStore + Clone,
 {
     fn from(entity: Entity<S>) -> Self {
         Self {
-            inner: Arc::new(SoftLinkInner {
+            inner: Arc::new(SymCidLinkInner {
                 initial_load_cid: if let Some(cid) = entity.get_initial_load_cid().cloned() {
                     OnceLock::from(cid)
                 } else {
                     OnceLock::new()
                 },
-                metadata: Metadata::new(EntityType::SoftLink, entity.get_store().clone()),
+                metadata: Metadata::new(EntityType::SymCidLink, entity.get_store().clone()),
                 store: entity.get_store().clone(),
                 link: EntityCidLink::from(entity),
                 previous: None,
@@ -460,34 +459,7 @@ where
     }
 }
 
-impl<S> From<Dir<S>> for Entity<S>
-where
-    S: IpldStore + Clone,
-{
-    fn from(dir: Dir<S>) -> Self {
-        Entity::Dir(dir)
-    }
-}
-
-impl<S> From<File<S>> for Entity<S>
-where
-    S: IpldStore + Clone,
-{
-    fn from(file: File<S>) -> Self {
-        Entity::File(file)
-    }
-}
-
-impl<S> From<SoftLink<S>> for Entity<S>
-where
-    S: IpldStore + Clone,
-{
-    fn from(softlink: SoftLink<S>) -> Self {
-        Entity::SoftLink(softlink)
-    }
-}
-
-impl<S> Storable<S> for SoftLink<S>
+impl<S> Storable<S> for SymCidLink<S>
 where
     S: IpldStore + Send + Sync,
 {
@@ -499,7 +471,7 @@ where
             .await
             .map_err(StoreError::custom)?;
 
-        let serializable = SoftLinkSerializable {
+        let serializable = SymCidLinkSerializable {
             metadata,
             target: self
                 .inner
@@ -515,24 +487,23 @@ where
 
     async fn load(cid: &Cid, store: S) -> StoreResult<Self> {
         let serializable = store.get_node(cid).await?;
-        SoftLink::from_serializable(serializable, store, *cid).map_err(StoreError::custom)
+        SymCidLink::from_serializable(serializable, store, *cid).map_err(StoreError::custom)
     }
 }
 
-impl<S> Debug for SoftLink<S>
+impl<S> Debug for SymCidLink<S>
 where
     S: IpldStore,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SoftLink")
+        f.debug_struct("SymCidLink")
             .field("metadata", &self.inner.metadata)
             .finish()
     }
 }
 
-impl IpldReferences for SoftLinkSerializable {
+impl IpldReferences for SymCidLinkSerializable {
     fn get_references<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Cid> + Send + 'a> {
-        // This empty because `SoftLink`s cannot have strong references to other entities.
         Box::new(std::iter::empty())
     }
 }
@@ -545,7 +516,7 @@ impl IpldReferences for SoftLinkSerializable {
 mod tests {
     use super::*;
     use crate::{
-        config::DEFAULT_SOFTLINK_DEPTH,
+        config::DEFAULT_SYMLINK_DEPTH,
         filesystem::{Dir, Entity, File},
     };
     use monoutils_store::MemoryStore;
@@ -567,7 +538,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_softlink_creation() -> FsResult<()> {
+    async fn test_symcidlink_creation() -> FsResult<()> {
         let (store, root_dir, _) = fixtures::setup_test_env().await;
 
         let file_cid = root_dir
@@ -575,35 +546,35 @@ mod tests {
             .unwrap()
             .resolve_cid()
             .await?;
-        let softlink = SoftLink::with_cid(store, file_cid);
+        let symlink = SymCidLink::with_cid(store, file_cid);
 
         assert_eq!(
-            softlink.get_metadata().get_entity_type(),
-            &EntityType::SoftLink
+            symlink.get_metadata().get_entity_type(),
+            &EntityType::SymCidLink
         );
-        assert_eq!(softlink.get_cid().await?, file_cid);
+        assert_eq!(symlink.get_cid().await?, file_cid);
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_softlink_from_entity() -> FsResult<()> {
+    async fn test_symcidlink_from_entity() -> FsResult<()> {
         let (_, _, file) = fixtures::setup_test_env().await;
 
         let file_entity = Entity::File(file);
-        let softlink = SoftLink::from(file_entity);
+        let symlink = SymCidLink::from(file_entity);
 
         assert_eq!(
-            softlink.get_metadata().get_entity_type(),
-            &EntityType::SoftLink
+            symlink.get_metadata().get_entity_type(),
+            &EntityType::SymCidLink
         );
-        assert!(matches!(softlink.get_entity().await?, Entity::File(_)));
+        assert!(matches!(symlink.get_entity().await?, Entity::File(_)));
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_softlink_follow() -> FsResult<()> {
+    async fn test_symcidlink_follow() -> FsResult<()> {
         let (store, root_dir, _) = fixtures::setup_test_env().await;
 
         let file_cid = root_dir
@@ -611,10 +582,10 @@ mod tests {
             .unwrap()
             .resolve_cid()
             .await?;
-        let softlink = SoftLink::with_cid(store, file_cid);
+        let symlink = SymCidLink::with_cid(store, file_cid);
 
-        match softlink.follow().await? {
-            FollowResult::Resolved(entity) => {
+        match symlink.follow().await? {
+            CidFollowResult::Resolved(entity) => {
                 assert!(matches!(entity, Entity::File(_)));
             }
             _ => panic!("Expected Resolved, got something else"),
@@ -624,7 +595,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_softlink_to_softlink() -> FsResult<()> {
+    async fn test_symcidlink_to_symcidlink() -> FsResult<()> {
         let (store, root_dir, _) = fixtures::setup_test_env().await;
 
         let file_cid = root_dir
@@ -632,13 +603,13 @@ mod tests {
             .unwrap()
             .resolve_cid()
             .await?;
-        let softlink1 = SoftLink::with_cid(store.clone(), file_cid);
+        let symlink1 = SymCidLink::with_cid(store.clone(), file_cid);
 
-        let softlink1_cid = softlink1.store().await?;
-        let softlink2 = SoftLink::with_cid(store, softlink1_cid);
+        let symlink1_cid = symlink1.store().await?;
+        let symlink2 = SymCidLink::with_cid(store, symlink1_cid);
 
-        match softlink2.follow().await? {
-            FollowResult::Resolved(entity) => {
+        match symlink2.follow().await? {
+            CidFollowResult::Resolved(entity) => {
                 assert!(matches!(entity, Entity::File(_)));
             }
             _ => panic!("Expected Resolved, got something else"),
@@ -648,7 +619,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_softlink_max_depth() -> FsResult<()> {
+    async fn test_symcidlink_max_depth() -> FsResult<()> {
         let (store, root_dir, _) = fixtures::setup_test_env().await;
 
         let file_cid = root_dir
@@ -658,27 +629,27 @@ mod tests {
             .await?;
 
         // Link depth 1 to file.
-        let mut softlink = SoftLink::with_cid(store.clone(), file_cid);
+        let mut symlink = SymCidLink::with_cid(store.clone(), file_cid);
 
         // Link depth 9 to file.
-        for _ in 0..DEFAULT_SOFTLINK_DEPTH - 1 {
-            let cid = softlink.store().await?;
-            softlink = SoftLink::with_cid(store.clone(), cid);
+        for _ in 0..DEFAULT_SYMLINK_DEPTH - 1 {
+            let cid = symlink.store().await?;
+            symlink = SymCidLink::with_cid(store.clone(), cid);
         }
 
-        match softlink.follow().await? {
-            FollowResult::Resolved(entity) => {
+        match symlink.follow().await? {
+            CidFollowResult::Resolved(entity) => {
                 assert!(matches!(entity, Entity::File(_)));
             }
             _ => panic!("Expected Resolved, got something else"),
         }
 
         // Link depth 10 to file.
-        let cid = softlink.store().await?;
-        softlink = SoftLink::with_cid(store.clone(), cid);
+        let cid = symlink.store().await?;
+        symlink = SymCidLink::with_cid(store.clone(), cid);
 
-        match softlink.follow().await? {
-            FollowResult::MaxDepthReached => {}
+        match symlink.follow().await? {
+            CidFollowResult::MaxDepthReached => {}
             _ => panic!("Expected MaxDepthReached, got something else"),
         }
 
@@ -686,27 +657,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_softlink_broken() -> FsResult<()> {
+    async fn test_symcidlink_broken() -> FsResult<()> {
         let store = MemoryStore::default();
         let non_existent_cid = Cid::default(); // This CID doesn't exist in the store
 
-        let softlink = SoftLink::with_cid(store, non_existent_cid);
+        let symlink = SymCidLink::with_cid(store, non_existent_cid);
 
-        match softlink.follow().await? {
-            FollowResult::BrokenLink(_) => {}
+        match symlink.follow().await? {
+            CidFollowResult::BrokenLink(_) => {}
             _ => panic!("Expected BrokenLink, got something else"),
         }
 
         assert!(matches!(
-            softlink.resolve().await,
-            Err(FsError::BrokenSoftLink(_))
+            symlink.resolve().await,
+            Err(FsError::BrokenSymCidLink(_))
         ));
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_softlink_resolve() -> FsResult<()> {
+    async fn test_symcidlink_resolve() -> FsResult<()> {
         let (store, root_dir, _) = fixtures::setup_test_env().await;
 
         let file_cid = root_dir
@@ -714,63 +685,63 @@ mod tests {
             .unwrap()
             .resolve_cid()
             .await?;
-        let softlink = SoftLink::with_cid(store, file_cid);
+        let symlink = SymCidLink::with_cid(store, file_cid);
 
-        let resolved_entity = softlink.resolve().await?;
+        let resolved_entity = symlink.resolve().await?;
         assert!(matches!(resolved_entity, Entity::File(_)));
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_softlink_get_initial_load_cid() -> anyhow::Result<()> {
+    async fn test_symcidlink_get_initial_load_cid() -> anyhow::Result<()> {
         let store = MemoryStore::default();
         let target_cid: Cid =
             "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
 
-        let softlink = SoftLink::with_cid(store.clone(), target_cid);
+        let symlink = SymCidLink::with_cid(store.clone(), target_cid);
 
         // Initially, the CID is not set
-        assert!(softlink.get_initial_load_cid().is_none());
+        assert!(symlink.get_initial_load_cid().is_none());
 
-        // Store the softlink
-        let stored_cid = softlink.store().await?;
+        // Store the symlink
+        let stored_cid = symlink.store().await?;
 
-        // Load the softlink
-        let loaded_softlink = SoftLink::load(&stored_cid, store).await?;
+        // Load the symlink
+        let loaded_symlink = SymCidLink::load(&stored_cid, store).await?;
 
         // Now the initial load CID is set
-        assert_eq!(loaded_softlink.get_initial_load_cid(), Some(&stored_cid));
+        assert_eq!(loaded_symlink.get_initial_load_cid(), Some(&stored_cid));
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_softlink_get_previous() -> FsResult<()> {
+    async fn test_symcidlink_get_previous() -> FsResult<()> {
         let store = MemoryStore::default();
         let target_cid: Cid =
             "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
 
-        let softlink = SoftLink::with_cid(store.clone(), target_cid);
+        let symlink = SymCidLink::with_cid(store.clone(), target_cid);
 
         // Initially, there's no previous version
-        assert!(softlink.get_previous().is_none());
+        assert!(symlink.get_previous().is_none());
 
-        // Store the softlink
-        let first_cid = softlink.store().await?;
+        // Store the symlink
+        let first_cid = symlink.store().await?;
 
-        // Load the softlink and create a new version
-        let mut loaded_softlink = SoftLink::load(&first_cid, store.clone()).await?;
+        // Load the symlink and create a new version
+        let mut loaded_symlink = SymCidLink::load(&first_cid, store.clone()).await?;
 
         let new_target_cid: Cid =
             "bafkreihogico5an3e2xy3fykalfwxxry7itbhfcgq6f47sif6d7w6uk2ze".parse()?;
-        loaded_softlink.set_cid(new_target_cid);
+        loaded_symlink.set_cid(new_target_cid);
 
         // Store the new version
-        let second_cid = loaded_softlink.store().await?;
+        let second_cid = loaded_symlink.store().await?;
 
         // Load the new version
-        let new_version = SoftLink::load(&second_cid, store).await?;
+        let new_version = SymCidLink::load(&second_cid, store).await?;
 
         // Now the previous and initial load CIDs are set
         assert_eq!(new_version.get_previous(), Some(&first_cid));

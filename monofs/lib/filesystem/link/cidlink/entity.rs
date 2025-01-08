@@ -1,7 +1,7 @@
 use monoutils_store::IpldStore;
 
 use crate::filesystem::{
-    dir::Dir, entity::Entity, file::File, softlink::SoftLink, CidLink, FsResult,
+    dir::Dir, entity::Entity, file::File, symcidlink::SymCidLink, CidLink, FsResult,
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -92,11 +92,11 @@ where
     }
 }
 
-impl<S> From<SoftLink<S>> for EntityCidLink<S>
+impl<S> From<SymCidLink<S>> for EntityCidLink<S>
 where
     S: IpldStore,
 {
-    fn from(softlink: SoftLink<S>) -> Self {
-        Self::Decoded(Entity::SoftLink(softlink))
+    fn from(symlink: SymCidLink<S>) -> Self {
+        Self::Decoded(Entity::SymCidLink(symlink))
     }
 }

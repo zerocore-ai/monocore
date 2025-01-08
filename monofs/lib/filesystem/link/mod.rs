@@ -1,6 +1,9 @@
+mod cidlink;
+mod entitypathlink;
+
 //--------------------------------------------------------------------------------------------------
-// Constants
+// Exports
 //--------------------------------------------------------------------------------------------------
 
-/// The default maximum depth of a symbolic link.
-pub const DEFAULT_SYMLINK_DEPTH: u32 = 10;
+pub use cidlink::*;
+pub use entitypathlink::*;

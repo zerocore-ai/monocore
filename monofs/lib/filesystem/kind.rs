@@ -16,6 +16,9 @@ pub enum EntityType {
     /// The entity is a directory.
     Dir,
 
-    /// The entity is a symbolic link.
-    SoftLink,
+    /// The entity is a symbolic CID link.
+    SymCidLink,
+
+    /// The entity is a symbolic path link.
+    SymPathLink,
 }

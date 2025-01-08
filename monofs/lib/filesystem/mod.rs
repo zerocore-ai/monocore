@@ -8,8 +8,9 @@ mod file;
 mod kind;
 mod link;
 mod metadata;
-mod softlink;
 mod storeswitch;
+mod sympathlink;
+mod symcidlink;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -23,5 +24,6 @@ pub use file::*;
 pub use kind::*;
 pub use link::*;
 pub use metadata::*;
-pub use softlink::*;
 pub use storeswitch::*;
+pub use symcidlink::*;
+pub use sympathlink::*;
