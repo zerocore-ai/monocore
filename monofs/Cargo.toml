@@ -27,3 +27,5 @@ aliasable = "0.1.3"
 async-recursion = "1.1.1"
 serde_json.workspace = true
 monoutils.workspace = true
+serde_ipld_dagcbor.workspace = true
+pretty-error-debug.workspace = true

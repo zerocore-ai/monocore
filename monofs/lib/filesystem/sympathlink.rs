@@ -1,5 +1,8 @@
+//! Symbolic link implementation.
+
 use std::{
     fmt::{self, Debug},
+    str::FromStr,
     sync::{Arc, OnceLock},
 };
 
@@ -9,9 +12,18 @@ use monoutils_store::{
 use serde::{Deserialize, Serialize};
 use typed_path::Utf8UnixPathBuf;
 
-use crate::filesystem::{FsResult, Metadata};
+use crate::filesystem::{
+    FsResult, Metadata, MetadataSerializable,
+};
 
-use super::{kind::EntityType, MetadataSerializable};
+use super::kind::EntityType;
+
+//--------------------------------------------------------------------------------------------------
+// Constants
+//--------------------------------------------------------------------------------------------------
+
+/// The type identifier for path-based symbolic links.
+pub const SYMPATHLINK_TYPE_TAG: &str = "monofs.sympathlink";
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -64,10 +76,13 @@ where
 /// A serializable representation of a [`SymPathLink`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SymPathLinkSerializable {
+    /// The type of the entity.
+    pub r#type: String,
+
     /// The metadata of the symlink.
     metadata: MetadataSerializable,
 
-    /// The target path that this symlink points to.
+    /// The path of the target of the symlink.
     target: String,
 
     /// The CID of the previous version of the symlink if there is one.
@@ -139,7 +154,7 @@ where
         load_cid: Cid,
     ) -> FsResult<Self> {
         let metadata = Metadata::from_serializable(serializable.metadata, store.clone())?;
-        let target_path = Utf8UnixPathBuf::from(serializable.target);
+        let target_path = Utf8UnixPathBuf::from_str(&serializable.target)?;
 
         Ok(SymPathLink {
             inner: Arc::new(SymPathLinkInner {
@@ -159,9 +174,10 @@ where
     {
         let metadata = self.get_metadata().get_serializable().await?;
         Ok(SymPathLinkSerializable {
+            r#type: SYMPATHLINK_TYPE_TAG.to_string(),
             metadata,
-            target: self.inner.target_path.to_string(),
-            previous: self.inner.previous,
+            target: self.get_target_path().to_string(),
+            previous: self.inner.initial_load_cid.get().cloned(),
         })
     }
 }
@@ -175,19 +191,7 @@ where
     S: IpldStore + Send + Sync,
 {
     async fn store(&self) -> StoreResult<Cid> {
-        let metadata = self
-            .inner
-            .metadata
-            .get_serializable()
-            .await
-            .map_err(StoreError::custom)?;
-
-        let serializable = SymPathLinkSerializable {
-            metadata,
-            target: self.inner.target_path.to_string(),
-            previous: self.inner.initial_load_cid.get().cloned(),
-        };
-
+        let serializable = self.get_serializable().await.map_err(StoreError::custom)?;
         self.inner.store.put_node(&serializable).await
     }
 

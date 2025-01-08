@@ -16,7 +16,7 @@ use crate::filesystem::Utf8UnixPathSegment;
 pub type FsResult<T> = Result<T, FsError>;
 
 /// An error that occurred during a file system operation.
-#[derive(Debug, Error)]
+#[derive(pretty_error_debug::Debug, Error)]
 pub enum FsError {
     /// Infallible error.
     #[error("Infallible error")]

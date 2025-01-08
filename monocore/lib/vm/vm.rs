@@ -7,6 +7,7 @@ use std::{
 };
 
 use getset::Getters;
+use monoutils::SupportedPathType;
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
@@ -555,7 +556,10 @@ impl MicroVmConfig {
         // Pre-normalize all paths once to avoid repeated normalization
         let normalized_paths: Vec<_> = mapped_dirs
             .iter()
-            .map(|dir| utils::normalize_path(dir.get_guest().as_str(), true))
+            .map(|dir| {
+                monoutils::normalize_path(dir.get_guest().as_str(), SupportedPathType::Absolute)
+                    .map_err(Into::into)
+            })
             .collect::<MonocoreResult<Vec<_>>>()?;
 
         // Compare each path with every other path only once

@@ -1,3 +1,4 @@
+use monoutils::MonoutilsError;
 use nix::errno::Errno;
 use std::{
     error::Error,
@@ -6,8 +7,6 @@ use std::{
     time::SystemTimeError,
 };
 use thiserror::Error;
-
-// use crate::oci::distribution::DockerRegistryResponseError;
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -43,9 +42,6 @@ pub enum MonocoreError {
     #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
 
-    // /// An error that occurred during a Docker registry operation.
-    // #[error("docker registry error: {0}")]
-    // DockerRegistry(#[from] DockerRegistryResponseError),
     /// An error that occurred when a manifest was not found.
     #[error("manifest not found")]
     ManifestNotFound,
@@ -249,6 +245,10 @@ pub enum MonocoreError {
     /// An error that occurred when a pager error occurred
     #[error("pager error: {0}")]
     PagerError(String),
+
+    /// An error from monoutils
+    #[error("monoutils error: {0}")]
+    MonoutilsError(#[from] MonoutilsError),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

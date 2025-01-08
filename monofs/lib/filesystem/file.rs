@@ -14,6 +14,13 @@ use serde::{Deserialize, Serialize};
 use crate::filesystem::{kind::EntityType, FsResult, Metadata, MetadataSerializable};
 
 //--------------------------------------------------------------------------------------------------
+// Constants
+//--------------------------------------------------------------------------------------------------
+
+/// The type identifier for files.
+pub const FILE_TYPE_TAG: &str = "monofs.file";
+
+//--------------------------------------------------------------------------------------------------
 // Types
 //--------------------------------------------------------------------------------------------------
 
@@ -61,6 +68,9 @@ where
 /// A serializable representation of [`File`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileSerializable {
+    /// The type of the entity.
+    pub r#type: String,
+
     /// The metadata of the file.
     metadata: MetadataSerializable,
 
@@ -365,11 +375,11 @@ where
         S: Send + Sync,
     {
         let metadata = self.get_metadata().get_serializable().await?;
-
         Ok(FileSerializable {
+            r#type: FILE_TYPE_TAG.to_string(),
             metadata,
-            previous: self.inner.initial_load_cid.get().cloned(),
             content: self.inner.content,
+            previous: self.inner.initial_load_cid.get().cloned(),
         })
     }
 }

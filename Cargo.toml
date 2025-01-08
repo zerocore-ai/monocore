@@ -4,7 +4,9 @@ members = [
     "monocore",
     "monofs",
     "monopacks",
+    "monoutils",
     "monoutils-did",
+    "monoutils-nfs",
     "monoutils-raft",
     "monoutils-store",
     "monoutils-ucan",
@@ -24,7 +26,7 @@ async-trait = "0.1"
 dirs = "5.0"
 hex = "0.4"
 libc = "0.2"
-axum = "0.7.9"
+axum = "0.8"
 bytes = "1.9"
 libipld = "0.16"
 serde = { version = "1.0", features = ["derive"] }
@@ -48,6 +50,7 @@ reqwest = { version = "0.12", features = ["stream", "json"] }
 reqwest-middleware = "0.3"                                        # Cannot upgrade to 0.4 due to https://github.com/TrueLayer/reqwest-middleware/issues/204
 reqwest-retry = "0.6"                                             # Cannot upgrade to 0.7 due to https://github.com/TrueLayer/reqwest-middleware/issues/204
 monoutils-store = { version = "0.2", path = "./monoutils-store" }
+monoutils = { version = "0.2", path = "./monoutils" }
 chrono = { version = "0.4", features = ["serde"] }
 criterion = "0.5"
 test-log = "0.2"
@@ -56,3 +59,4 @@ toml = "0.8"
 typed-builder = "0.20"
 uuid = { version = "1.11", features = ["v4"] }
 pretty-error-debug = "0.3"
+serde_ipld_dagcbor = "0.6"

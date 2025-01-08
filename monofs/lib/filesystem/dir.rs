@@ -20,6 +20,13 @@ use crate::filesystem::{
 };
 
 //--------------------------------------------------------------------------------------------------
+// Constants
+//--------------------------------------------------------------------------------------------------
+
+/// The type identifier for directories.
+pub const DIR_TYPE_TAG: &str = "monofs.dir";
+
+//--------------------------------------------------------------------------------------------------
 // Types: Dir
 //--------------------------------------------------------------------------------------------------
 
@@ -67,6 +74,9 @@ where
 /// A serializable representation of [`Dir`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DirSerializable {
+    /// The type of the entity.
+    pub r#type: String,
+
     /// The metadata of the directory.
     metadata: MetadataSerializable,
 
@@ -513,6 +523,7 @@ where
         let metadata = self.get_metadata().get_serializable().await?;
 
         Ok(DirSerializable {
+            r#type: DIR_TYPE_TAG.to_string(),
             previous: self.inner.initial_load_cid.get().cloned(),
             metadata,
             entries,
