@@ -30,51 +30,14 @@
 //! # Usage Example
 //!
 //! ```rust,no_run
-//! use monocore::{
-//!     config::{Group, Monocore, Service},
-//!     orchestration::Orchestrator,
-//! };
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     // Configure a service
-//!     let service = Service::builder()
-//!         .name("ai-agent")
-//!         .base("alpine:latest")
-//!         .ram(512)
-//!         .build();
-//!
-//!     // Create monocore config
-//!     let config = Monocore::builder()
-//!         .services(vec![service])
-//!         .groups(vec![Group::builder().name("agents").build()])
-//!         .build()?;
-//!
-//!     // Start orchestrator
-//!     let mut orchestrator = Orchestrator::new("/path/to/home_dir", "/path/to/supervisor").await?;
-//!     orchestrator.up(config).await?;
-//!
-//!     Ok(())
-//! }
+//! // TODO
 //! ```
-//!
-//! # Feature Flags
-//!
-//! - `overlayfs` - Enables experimental overlayfs support on Linux
-//!   - Not recommended for production use
-//!   - Does not support OCI whiteout files
-//!   - May have permission issues
-//!   - Falls back to copy-based merge on failure
-//!   - Will be replaced by monofs in the future for a more robust solution
 //!
 //! # Modules
 //!
 //! - [`cli`] - Command-line interface and argument parsing
 //! - [`config`] - Configuration types and validation
-//! - [`oci`] - OCI image handling and distribution
-//! - [`orchestration`] - Service lifecycle management
 //! - [`runtime`] - Process supervision and monitoring
-//! - [`server`] - REST API server implementation
 //! - [`utils`] - Common utilities and helpers
 //! - [`vm`] - MicroVM configuration and control
 //!
