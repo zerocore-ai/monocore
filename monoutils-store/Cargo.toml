@@ -22,7 +22,7 @@ hex = "0.4.3"
 libipld = { workspace = true, features = ["serde-codec"] }
 lru = "0.12.3"
 serde = { workspace = true, features = ["derive"] }
-serde_ipld_dagcbor = "0.6.1"
+serde_ipld_dagcbor.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 tokio-util = { workspace = true, features = ["io"] }

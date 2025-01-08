@@ -16,6 +16,13 @@ use crate::filesystem::{CidLink, Dir, EntityCidLink, File, FsError, FsResult, Me
 use super::{entity::Entity, kind::EntityType, MetadataSerializable};
 
 //--------------------------------------------------------------------------------------------------
+// Constants
+//--------------------------------------------------------------------------------------------------
+
+/// The type identifier for CID-based symbolic links.
+pub const SYMCIDLINK_TYPE_TAG: &str = "monofs.symcidlink";
+
+//--------------------------------------------------------------------------------------------------
 // Types
 //--------------------------------------------------------------------------------------------------
 
@@ -82,6 +89,9 @@ where
 /// A serializable representation of [`SymCidLink`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SymCidLinkSerializable {
+    /// The type of the entity.
+    pub r#type: String,
+
     /// The metadata of the symlink.
     metadata: MetadataSerializable,
 
@@ -355,6 +365,9 @@ where
                 }
                 _ => Ok(CidFollowResult::Resolved(entity)),
             },
+            Err(FsError::IpldStore(StoreError::BlockNotFound(cid))) => {
+                return Ok(CidFollowResult::BrokenLink(cid));
+            }
             Err(FsError::IpldStore(StoreError::Custom(any_err))) => {
                 if let Some(FsError::UnableToLoadEntity(cid)) = any_err.downcast::<FsError>() {
                     return Ok(CidFollowResult::BrokenLink(*cid));
@@ -438,9 +451,10 @@ where
     {
         let metadata = self.get_metadata().get_serializable().await?;
         Ok(SymCidLinkSerializable {
+            r#type: SYMCIDLINK_TYPE_TAG.to_string(),
             metadata,
             target: self.get_cid().await?,
-            previous: self.get_previous().cloned(),
+            previous: self.inner.initial_load_cid.get().cloned(),
         })
     }
 }
@@ -475,24 +489,7 @@ where
     S: IpldStore + Send + Sync,
 {
     async fn store(&self) -> StoreResult<Cid> {
-        let metadata = self
-            .inner
-            .metadata
-            .get_serializable()
-            .await
-            .map_err(StoreError::custom)?;
-
-        let serializable = SymCidLinkSerializable {
-            metadata,
-            target: self
-                .inner
-                .link
-                .resolve_cid()
-                .await
-                .map_err(StoreError::custom)?,
-            previous: self.inner.initial_load_cid.get().cloned(),
-        };
-
+        let serializable = self.get_serializable().await.map_err(StoreError::custom)?;
         self.inner.store.put_node(&serializable).await
     }
 

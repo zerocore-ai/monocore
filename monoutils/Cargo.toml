@@ -1,0 +1,18 @@
+[package]
+name = "monoutils"
+version = "0.2.1"
+description = "`monoutils` is a library containing general utilities for the monocore project."
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[lib]
+name = "monoutils"
+path = "lib/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+typed-path.workspace = true
+pretty-error-debug.workspace = true

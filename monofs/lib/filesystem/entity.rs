@@ -1,12 +1,22 @@
 use std::fmt::{self, Debug};
 
 use monoutils_store::{ipld::cid::Cid, IpldStore, Storable, StoreError, StoreResult};
+use serde::Deserialize;
 
-use crate::filesystem::{Dir, File, FsError, FsResult, Metadata, SymCidLink, SymPathLink};
+use crate::filesystem::{
+    dir::DIR_TYPE_TAG, file::FILE_TYPE_TAG, symcidlink::SYMCIDLINK_TYPE_TAG,
+    sympathlink::SYMPATHLINK_TYPE_TAG, Dir, File, FsError, FsResult, Metadata, SymCidLink,
+    SymPathLink,
+};
 
 //--------------------------------------------------------------------------------------------------
 // Types
 //--------------------------------------------------------------------------------------------------
+
+#[derive(Deserialize, Debug)]
+struct TypeField {
+    r#type: String,
+}
 
 /// This is an entity in the file system.
 #[derive(Clone)]
@@ -159,27 +169,18 @@ where
     }
 
     async fn load(cid: &Cid, store: S) -> StoreResult<Self> {
-        // The order of the following `if let` statements is important because File can be
-        // deserialized into a Dir (where File has no content) and SymCidLink can be deserialized
-        // into a SymPathLink (where path string is a valid Cid).
+        // First, get the raw bytes to check the type field
+        let type_field: TypeField = store.get_node(cid).await?;
 
-        if let Ok(symlink) = SymPathLink::load(cid, store.clone()).await {
-            return Ok(Entity::SymPathLink(symlink));
+        println!("type_field: {:?}", type_field);
+
+        match type_field.r#type.as_str() {
+            DIR_TYPE_TAG => Ok(Entity::Dir(Dir::load(cid, store).await?)),
+            FILE_TYPE_TAG => Ok(Entity::File(File::load(cid, store).await?)),
+            SYMCIDLINK_TYPE_TAG => Ok(Entity::SymCidLink(SymCidLink::load(cid, store).await?)),
+            SYMPATHLINK_TYPE_TAG => Ok(Entity::SymPathLink(SymPathLink::load(cid, store).await?)),
+            _ => Err(StoreError::custom(FsError::UnableToLoadEntity(*cid))),
         }
-
-        if let Ok(symlink) = SymCidLink::load(cid, store.clone()).await {
-            return Ok(Entity::SymCidLink(symlink));
-        }
-
-        if let Ok(dir) = Dir::load(cid, store.clone()).await {
-            return Ok(Entity::Dir(dir));
-        }
-
-        if let Ok(file) = File::load(cid, store.clone()).await {
-            return Ok(Entity::File(file));
-        }
-
-        Err(StoreError::custom(FsError::UnableToLoadEntity(*cid)))
     }
 }
 
