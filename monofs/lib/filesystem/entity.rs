@@ -159,16 +159,16 @@ where
     }
 
     async fn load(cid: &Cid, store: S) -> StoreResult<Self> {
-        // The order of the following `if let` statements is important because for some reason
-        // Directory entity deserializes successfully into a File entity even though they have
-        // different structure. This is likely due to the way `serde_ipld_dagcbor` deserializes
-        // the entities.
-        if let Ok(symlink) = SymCidLink::load(cid, store.clone()).await {
-            return Ok(Entity::SymCidLink(symlink));
-        }
+        // The order of the following `if let` statements is important because File can be
+        // deserialized into a Dir (where File has no content) and SymCidLink can be deserialized
+        // into a SymPathLink (where path string is a valid Cid).
 
         if let Ok(symlink) = SymPathLink::load(cid, store.clone()).await {
             return Ok(Entity::SymPathLink(symlink));
+        }
+
+        if let Ok(symlink) = SymCidLink::load(cid, store.clone()).await {
+            return Ok(Entity::SymCidLink(symlink));
         }
 
         if let Ok(dir) = Dir::load(cid, store.clone()).await {

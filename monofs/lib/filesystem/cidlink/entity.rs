@@ -1,7 +1,7 @@
 use monoutils_store::IpldStore;
 
 use crate::filesystem::{
-    dir::Dir, entity::Entity, file::File, symcidlink::SymCidLink, CidLink, FsResult,
+    dir::Dir, entity::Entity, file::File, symcidlink::SymCidLink, CidLink, FsResult, SymPathLink,
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -98,5 +98,14 @@ where
 {
     fn from(symlink: SymCidLink<S>) -> Self {
         Self::Decoded(Entity::SymCidLink(symlink))
+    }
+}
+
+impl<S> From<SymPathLink<S>> for EntityCidLink<S>
+where
+    S: IpldStore,
+{
+    fn from(symlink: SymPathLink<S>) -> Self {
+        Self::Decoded(Entity::SymPathLink(symlink))
     }
 }

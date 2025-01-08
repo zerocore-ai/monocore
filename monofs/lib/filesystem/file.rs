@@ -61,8 +61,13 @@ where
 /// A serializable representation of [`File`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileSerializable {
+    /// The metadata of the file.
     metadata: MetadataSerializable,
+
+    /// The content of the file.
     content: Option<Cid>,
+
+    /// The CID of the previous version of the file if there is one.
     previous: Option<Cid>,
 }
 

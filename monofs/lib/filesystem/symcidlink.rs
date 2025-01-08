@@ -21,22 +21,14 @@ use super::{entity::Entity, kind::EntityType, MetadataSerializable};
 
 /// A content-addressed symbolic link that refers to files or directories by their CID (content hash), making it resilient to target moves.
 ///
-/// ## Important
-///
-/// Entities in `monofs` are designed to be immutable and clone-on-write meaning writes create
-/// forks of the entity.
-///
 /// ## CID-based Symlinks
 ///
 /// Unlike traditional location-addressable file systems where symlinks break if the target entity is moved
 /// from its original location, `SymCidLink` refers to an entity by its Cid. This means it only breaks if
 /// the Cid to the target entity is deleted, not when the target entity is moved. This can be particularly
-/// useful in content-addressed systems where you want to maintain references to specific versions of entities.
+/// useful in situations where you want to maintain references to specific versions of entities.
 ///
-/// Note: For Unix-like system compatibility, a path-based symlink implementation (`SymPathLink<S>`) is planned
-/// for the future, where the path will be relative to the symlink's location.
-///
-/// [symlink]: https://en.wikipedia.org/wiki/Symbolic_link
+/// Note: For Unix-like system compatibility, see [`SymPathLink`](super::sympathlink::SymPathLink).
 #[derive(Clone)]
 pub struct SymCidLink<S>
 where
@@ -87,10 +79,16 @@ where
 // Types: Serializable
 //--------------------------------------------------------------------------------------------------
 
+/// A serializable representation of [`SymCidLink`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SymCidLinkSerializable {
+pub struct SymCidLinkSerializable {
+    /// The metadata of the symlink.
     metadata: MetadataSerializable,
+
+    /// The CID of the target of the symlink.
     target: Cid,
+
+    /// The CID of the previous version of the symlink if there is one.
     previous: Option<Cid>,
 }
 
@@ -415,7 +413,7 @@ where
     }
 
     /// Tries to create a new `SymCidLink` from a serializable representation.
-    pub(crate) fn from_serializable(
+    pub fn from_serializable(
         serializable: SymCidLinkSerializable,
         store: S,
         load_cid: Cid,
@@ -430,6 +428,19 @@ where
                 link: CidLink::from(serializable.target),
                 store,
             }),
+        })
+    }
+
+    /// Gets the serializable representation of the symlink.
+    pub async fn get_serializable(&self) -> FsResult<SymCidLinkSerializable>
+    where
+        S: Send + Sync,
+    {
+        let metadata = self.get_metadata().get_serializable().await?;
+        Ok(SymCidLinkSerializable {
+            metadata,
+            target: self.get_cid().await?,
+            previous: self.get_previous().cloned(),
         })
     }
 }

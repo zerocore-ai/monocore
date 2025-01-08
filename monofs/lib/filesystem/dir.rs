@@ -67,8 +67,13 @@ where
 /// A serializable representation of [`Dir`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DirSerializable {
+    /// The metadata of the directory.
     metadata: MetadataSerializable,
+
+    /// The entries in the directory.
     entries: BTreeMap<String, Cid>,
+
+    /// The CID of the previous version of the directory if there is one.
     previous: Option<Cid>,
 }
 

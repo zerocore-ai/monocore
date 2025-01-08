@@ -157,7 +157,7 @@ where
     ///
     /// assert_eq!(*metadata.get_entity_type(), EntityType::File);
     /// assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
-    /// assert_eq!(*metadata.get_symcidlink_depth(), DEFAULT_SYMLINK_DEPTH);
+    /// assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
     /// ```
     pub fn new(entity_type: EntityType, store: S) -> Self {
         let now = Utc::now();
