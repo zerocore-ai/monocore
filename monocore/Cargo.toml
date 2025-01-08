@@ -1,7 +1,7 @@
 [package]
 name = "monocore"
 version = "0.2.1"
-description = "`monocore` is a secure MicroVM provisioning system for running untrusted code in isolated environments."
+description = "`monocore` is a tool for managing lightweight virtual machines and images."
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
@@ -19,9 +19,10 @@ path = "bin/monocore.rs"
 name = "monokrun"
 path = "bin/monokrun.rs"
 
-[[bench]]
-name = "microvm_provision"
-harness = false
+[[test]]
+name = "integration_cli"
+path = "tests/cli/mod.rs"
+harness = true
 
 [dependencies]
 anyhow.workspace = true
@@ -36,10 +37,9 @@ dotenvy.workspace = true
 futures.workspace = true
 getset.workspace = true
 hex.workspace = true
-lazy_static.workspace = true
 libc.workspace = true
 oci-spec = { version = "0.7.1" }
-procspawn.workspace = true
+procspawn = { workspace = true, features = ["test-support"] }
 reqwest.workspace = true
 reqwest-middleware.workspace = true
 reqwest-retry.workspace = true
@@ -71,12 +71,16 @@ async-stream.workspace = true
 pin-project = "1.1.7"
 tracing-appender = "0.2.3"
 pin-project-lite = "0.2.15"
+semver = { version = "1.0.24", features = ["serde"] }
+bon = "3.3.0"
+ipnetwork = { version = "0.21.0", features = ["serde"] }
+sqlx = { version = "0.8.2", features = ["sqlite", "runtime-tokio-rustls"] }
 
 [dev-dependencies]
 test-log.workspace = true
 criterion.workspace = true
 rand.workspace = true
+regex = "1.10.3"
 
 [features]
 default = []
-overlayfs = []

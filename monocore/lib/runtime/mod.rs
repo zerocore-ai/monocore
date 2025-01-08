@@ -1,13 +1,11 @@
-//! Supervisor for managing vm lifecycles.
-
-mod log;
-mod state;
-mod supervisor;
+mod microvm;
+mod orchestration;
+mod supervision;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use log::*;
-pub use state::*;
-pub use supervisor::*;
+pub use microvm::*;
+pub use orchestration::*;
+pub use supervision::*;

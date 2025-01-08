@@ -7,7 +7,7 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::oci::distribution::DockerRegistryResponseError;
+// use crate::oci::distribution::DockerRegistryResponseError;
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -39,10 +39,13 @@ pub enum MonocoreError {
     #[error("http middleware error: {0}")]
     HttpMiddleware(#[from] reqwest_middleware::Error),
 
-    /// An error that occurred during a Docker registry operation.
-    #[error("docker registry error: {0}")]
-    DockerRegistry(#[from] DockerRegistryResponseError),
+    /// An error that occurred during a database operation.
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
 
+    // /// An error that occurred during a Docker registry operation.
+    // #[error("docker registry error: {0}")]
+    // DockerRegistry(#[from] DockerRegistryResponseError),
     /// An error that occurred when a manifest was not found.
     #[error("manifest not found")]
     ManifestNotFound,

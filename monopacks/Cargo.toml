@@ -1,0 +1,14 @@
+[package]
+name = "monopacks"
+version = "0.1.0"
+description = "`monopacks` is a library for generating monocore environments from other arbitrary environments."
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[lib]
+name = "monopacks"
+path = "lib/lib.rs"
+
+[dependencies]

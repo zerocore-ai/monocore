@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::filesystem::{CidLink, Dir, EntityCidLink, File, FsError, FsResult, Metadata};
 
-use super::{entity::Entity, kind::EntityType};
+use super::{entity::Entity, kind::EntityType, MetadataSerializable};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -49,19 +49,23 @@ where
     previous: Option<Cid>,
 
     /// The metadata of the softlink.
-    metadata: Metadata,
+    metadata: Metadata<S>,
 
     /// The store of the softlink.
     store: S,
 
     /// The (weak) link to some target [`Entity`].
-    // TODO: Because `SoftLink` refers to an entity by its Cid, it's behavior is a bit different from
-    // typical location-addressable file systems where softlinks break if the target entity is moved
-    // from its original location. `SoftLink` only breaks if the Cid to the target entity is deleted
-    // not the target entity itself. This is bad.
-    //
-    // In order to maintain compatibility with Unix-like systems, we may need to change this to an
-    // `EntityPathLink<S>` in the future, where the path is relative to the location of the softlink.
+    ///
+    /// ## Important
+    ///
+    /// Because `SoftLink` refers to an entity by its Cid, it's behavior is a bit different from
+    /// typical location-addressable file systems where softlinks break if the target entity is moved
+    /// from its original location. `SoftLink` only breaks if the Cid to the target entity is deleted
+    /// not the target entity itself. This is bad. A softlink can potentially point to a stale item if
+    /// the target entity is modified because it works at the Cid level. This is also bad.
+    ///
+    /// In order to maintain compatibility with Unix-like systems, we may need to change this to an
+    /// `EntityPathLink<S>` in the future, where the path is relative to the location of the softlink.
     link: EntityCidLink<S>,
 }
 
@@ -86,7 +90,7 @@ where
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct SoftLinkSerializable {
-    metadata: Metadata,
+    metadata: MetadataSerializable,
     target: Cid,
     previous: Option<Cid>,
 }
@@ -104,7 +108,7 @@ where
         Self {
             inner: Arc::new(SoftLinkInner {
                 initial_load_cid: OnceLock::new(),
-                metadata: Metadata::new(EntityType::SoftLink),
+                metadata: Metadata::new(EntityType::SoftLink, store.clone()),
                 store,
                 link: CidLink::from(target),
                 previous: None,
@@ -187,8 +191,14 @@ where
     }
 
     /// Returns the metadata for the directory.
-    pub fn get_metadata(&self) -> &Metadata {
+    pub fn get_metadata(&self) -> &Metadata<S> {
         &self.inner.metadata
+    }
+
+    /// Returns a mutable reference to the metadata for the softlink.
+    pub fn get_metadata_mut(&mut self) -> &mut Metadata<S> {
+        let inner = Arc::make_mut(&mut self.inner);
+        &mut inner.metadata
     }
 
     /// Returns the store used to persist the softlink.
@@ -411,11 +421,13 @@ where
         store: S,
         load_cid: Cid,
     ) -> FsResult<Self> {
+        let metadata = Metadata::from_serializable(serializable.metadata, store.clone())?;
+
         Ok(SoftLink {
             inner: Arc::new(SoftLinkInner {
                 initial_load_cid: OnceLock::from(load_cid),
                 previous: serializable.previous,
-                metadata: serializable.metadata,
+                metadata,
                 link: CidLink::from(serializable.target),
                 store,
             }),
@@ -439,7 +451,7 @@ where
                 } else {
                     OnceLock::new()
                 },
-                metadata: Metadata::new(EntityType::SoftLink),
+                metadata: Metadata::new(EntityType::SoftLink, entity.get_store().clone()),
                 store: entity.get_store().clone(),
                 link: EntityCidLink::from(entity),
                 previous: None,
@@ -480,8 +492,15 @@ where
     S: IpldStore + Send + Sync,
 {
     async fn store(&self) -> StoreResult<Cid> {
+        let metadata = self
+            .inner
+            .metadata
+            .get_serializable()
+            .await
+            .map_err(StoreError::custom)?;
+
         let serializable = SoftLinkSerializable {
-            metadata: self.inner.metadata.clone(),
+            metadata,
             target: self
                 .inner
                 .link

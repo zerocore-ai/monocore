@@ -38,9 +38,6 @@ pub enum FsError {
     #[error("Path not found: {0}")]
     PathNotFound(String),
 
-    // /// UCAN error.
-    // #[error("UCAN error: {0}")]
-    // Ucan(#[from] monoutils_ucan::UcanError),
     /// Custom error.
     #[error("Custom error: {0}")]
     Custom(#[from] AnyError),
@@ -100,6 +97,10 @@ pub enum FsError {
     #[error("Target is not a directory: {0}")]
     TargetIsNotADir(String),
 
+    /// Path already exists.
+    #[error("Path already exists: {0}")]
+    PathExists(String),
+
     /// Path is empty.
     #[error("Path is empty")]
     PathIsEmpty,
@@ -112,14 +113,6 @@ pub enum FsError {
     #[error("Broken softlink: {0}")]
     BrokenSoftLink(Cid),
 }
-
-// /// Permission error.
-// #[derive(Debug, Error)]
-// pub enum PermissionError {
-//     /// Child descriptor has higher permission than parent.
-//     #[error("Child descriptor has higher permission than parent: path: {0}, parent(descriptor_flags: {1:?}) child (descriptor_flags: {2:?}, open_flags: {3:?})")]
-//     ChildPermissionEscalation(Path, DescriptorFlags, DescriptorFlags, OpenFlags),
-// }
 
 /// An error that can represent any error.
 #[derive(Debug)]

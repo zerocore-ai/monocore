@@ -14,8 +14,10 @@ private
 
 # monocore
 monocore.toml
+monocore.yaml
 ignore/
 build/
 monocore/build/
 libkrunfw.*
 libkrun.*
+.menv/

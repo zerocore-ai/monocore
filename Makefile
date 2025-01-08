@@ -41,17 +41,9 @@ else
 endif
 
 # -----------------------------------------------------------------------------
-# Feature Flags
-# -----------------------------------------------------------------------------
-FEATURES ?=
-ifdef OVERLAYFS
-	FEATURES += --features overlayfs
-endif
-
-# -----------------------------------------------------------------------------
 # Phony Targets Declaration
 # -----------------------------------------------------------------------------
-.PHONY: all build install clean deps example bench bin _run_example _run_bench _run_bin help
+.PHONY: all build install clean deps example bench bin _run_example _run_bench _run_bin help uninstall
 
 # -----------------------------------------------------------------------------
 # Main Targets
@@ -70,25 +62,19 @@ $(MONOCORE_RELEASE_BIN): deps
 	@mkdir -p $(BUILD_DIR)
 	cd monocore
 ifeq ($(OS),Darwin)
-	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib" cargo build --release --bin monocore $(FEATURES)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib,-rpath,@executable_path" cargo build --release --bin monocore $(FEATURES)
 	codesign --entitlements monocore.entitlements --force -s - $@
 else
-	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib" cargo build --release --bin monocore $(FEATURES)
-ifdef OVERLAYFS
-	sudo setcap cap_sys_admin+ep $@
-endif
+	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib,-rpath,\$$ORIGIN" cargo build --release --bin monocore $(FEATURES)
 endif
 
 $(MONOKRUN_RELEASE_BIN): deps
 	cd monocore
 ifeq ($(OS),Darwin)
-	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib" cargo build --release --bin monokrun $(FEATURES)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib,-rpath,@executable_path" cargo build --release --bin monokrun $(FEATURES)
 	codesign --entitlements monocore.entitlements --force -s - $@
 else
-	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib" cargo build --release --bin monokrun $(FEATURES)
-ifdef OVERLAYFS
-	sudo setcap cap_sys_admin+ep $@
-endif
+	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib,-rpath,\$$ORIGIN" cargo build --release --bin monokrun $(FEATURES)
 endif
 
 # -----------------------------------------------------------------------------
@@ -144,35 +130,6 @@ else
 	cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
 endif
 
-# Run benchmarks
-bench:
-	@if [ -z "$(word 2,$(MAKECMDGOALS))" ]; then \
-		echo "Usage: make bench <benchmark_name>"; \
-			exit 1; \
-	fi
-	@$(MAKE) _run_bench BENCH_NAME=$(word 2,$(MAKECMDGOALS))
-
-_run_bench:
-	cd monocore && cargo bench --bench $(BENCH_NAME)
-
-# Run binaries from bin/
-bin: $(MONOKRUN_RELEASE_BIN).dev
-	@if [ -z "$(word 2,$(MAKECMDGOALS))" ]; then \
-		echo "Usage: make bin <binary_name> [-- <args>]"; \
-			exit 1; \
-	fi
-	@$(eval BIN_ARGS := $(filter-out bin $(word 2,$(MAKECMDGOALS)) --, $(MAKECMDGOALS)))
-	@$(MAKE) _run_bin BIN_NAME=$(word 2,$(MAKECMDGOALS)) ARGS="$(BIN_ARGS)"
-
-_run_bin:
-ifeq ($(OS),Darwin)
-	cargo build --bin $(BIN_NAME) --release
-	codesign --entitlements monocore.entitlements --force -s - $(BENCHES_DIR)/$(BIN_NAME)
-	DYLD_LIBRARY_PATH=$(BUILD_DIR):$$DYLD_LIBRARY_PATH $(BENCHES_DIR)/$(BIN_NAME) $(ARGS) || exit $$?
-else
-	cargo run --bin $(BIN_NAME) --release -- $(ARGS) || exit $$?
-endif
-
 # -----------------------------------------------------------------------------
 # Maintenance
 # -----------------------------------------------------------------------------
@@ -180,8 +137,21 @@ clean:
 	rm -rf $(BUILD_DIR)
 	cd monocore && cargo clean && rm -rf build
 
+uninstall:
+	rm -f $(HOME_BIN)/monocore
+	rm -f $(HOME_BIN)/monokrun
+	rm -f $(HOME_BIN)/mc
+	rm -f $(HOME_LIB)/libkrunfw.dylib
+	rm -f $(HOME_LIB)/libkrun.dylib
+	@if [ -n "$(LIBKRUNFW_FILE)" ]; then \
+		rm -f $(HOME_LIB)/$(notdir $(LIBKRUNFW_FILE)); \
+	fi
+	@if [ -n "$(LIBKRUN_FILE)" ]; then \
+		rm -f $(HOME_LIB)/$(notdir $(LIBKRUN_FILE)); \
+	fi
+
 deps:
-	./build_libkrun.sh --no-clean
+	./scripts/build_libkrun.sh --no-clean
 
 # Catch-all target to allow example names and arguments
 %:
@@ -195,23 +165,15 @@ help:
 	@echo "======================"
 	@echo
 	@echo "Main Targets:"
-	@echo "  make build    - Build monocore and monokrun binaries"
-	@echo "  make install  - Install binaries and libraries to ~/.local/{bin,lib}"
-	@echo "  make clean    - Remove build artifacts"
-	@echo "  make deps     - Build and install dependencies"
+	@echo "  make build                   - Build monocore and monokrun binaries"
+	@echo "  make install                 - Install binaries and libraries to ~/.local/{bin,lib}"
+	@echo "  make uninstall               - Remove all installed components"
+	@echo "  make clean                   - Remove build artifacts"
+	@echo "  make deps                    - Build and install dependencies"
 	@echo
 	@echo "Development Tools:"
 	@echo "  make example <name> [-- <args>]  - Build and run an example"
 	@echo "    Example: make example microvm_shell -- arg1 arg2"
-	@echo
-	@echo "  make bench <name>                - Run a specific benchmark"
-	@echo "    Example: make bench my_benchmark"
-	@echo
-	@echo "  make bin <name> [-- <args>]      - Build and run a binary from bin/"
-	@echo "    Example: make bin my_binary -- --flag value"
-	@echo
-	@echo "Environment Variables:"
-	@echo "  OVERLAYFS=1  - Enable overlayfs feature flag"
 	@echo
 	@echo "Note: For commands that accept arguments, use -- to separate them"
 	@echo "      from the make target name."
