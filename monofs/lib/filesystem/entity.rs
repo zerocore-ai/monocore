@@ -3,11 +3,7 @@ use std::fmt::{self, Debug};
 use monoutils_store::{ipld::cid::Cid, IpldStore, Storable, StoreError, StoreResult};
 use serde::Deserialize;
 
-use crate::filesystem::{
-    dir::DIR_TYPE_TAG, file::FILE_TYPE_TAG, symcidlink::SYMCIDLINK_TYPE_TAG,
-    sympathlink::SYMPATHLINK_TYPE_TAG, Dir, File, FsError, FsResult, Metadata, SymCidLink,
-    SymPathLink,
-};
+use crate::filesystem::{self, Dir, File, FsError, FsResult, Metadata, SymCidLink, SymPathLink};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -172,13 +168,15 @@ where
         // First, get the raw bytes to check the type field
         let type_field: TypeField = store.get_node(cid).await?;
 
-        println!("type_field: {:?}", type_field);
-
         match type_field.r#type.as_str() {
-            DIR_TYPE_TAG => Ok(Entity::Dir(Dir::load(cid, store).await?)),
-            FILE_TYPE_TAG => Ok(Entity::File(File::load(cid, store).await?)),
-            SYMCIDLINK_TYPE_TAG => Ok(Entity::SymCidLink(SymCidLink::load(cid, store).await?)),
-            SYMPATHLINK_TYPE_TAG => Ok(Entity::SymPathLink(SymPathLink::load(cid, store).await?)),
+            filesystem::DIR_TYPE_TAG => Ok(Entity::Dir(Dir::load(cid, store).await?)),
+            filesystem::FILE_TYPE_TAG => Ok(Entity::File(File::load(cid, store).await?)),
+            filesystem::SYMCIDLINK_TYPE_TAG => {
+                Ok(Entity::SymCidLink(SymCidLink::load(cid, store).await?))
+            }
+            filesystem::SYMPATHLINK_TYPE_TAG => {
+                Ok(Entity::SymPathLink(SymPathLink::load(cid, store).await?))
+            }
             _ => Err(StoreError::custom(FsError::UnableToLoadEntity(*cid))),
         }
     }

@@ -80,16 +80,16 @@ pub async fn find_dir<S>(mut dir: &Dir<S>, path: impl AsRef<str>) -> FsResult<Fi
 where
     S: IpldStore + Send + Sync,
 {
-    let path = Utf8UnixPath::new(path.as_ref());
+    // Normalize the path first - this will handle . and .. components and validate the path
+    let normalized_path =
+        monoutils::normalize_path(path.as_ref(), monoutils::SupportedPathType::Relative)
+            .map_err(|_| FsError::InvalidSearchPath(path.as_ref().to_string()))?;
 
-    // Convert path components to Utf8UnixPathSegment and collect them
-    let components = path
+    let components = Utf8UnixPath::new(&normalized_path)
         .components()
-        .map(|ref c| match c {
-            Utf8UnixComponent::RootDir => Err(FsError::InvalidSearchPath(path.to_string())),
-            Utf8UnixComponent::CurDir => Err(FsError::InvalidSearchPath(path.to_string())),
-            Utf8UnixComponent::ParentDir => Err(FsError::InvalidSearchPath(path.to_string())),
-            _ => Ok(Utf8UnixPathSegment::try_from(c)?),
+        .filter_map(|c| match c {
+            Utf8UnixComponent::Normal(s) => Some(Utf8UnixPathSegment::try_from(s)),
+            _ => None, // Skip any . or .. since they were handled by normalize_path
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -101,7 +101,7 @@ where
             }
             Some(Entity::SymCidLink(_)) => {
                 // SymCidLinks are not supported yet, so we return an error
-                return Err(FsError::SymCidLinkNotSupportedYet(components.clone()));
+                return Err(FsError::SymCidLinkNotSupportedYet(components));
             }
             Some(_) => {
                 // If we encounter a non-directory entity in the middle of the path,
@@ -156,16 +156,16 @@ pub async fn find_dir_mut<S>(
 where
     S: IpldStore + Send + Sync,
 {
-    let path = Utf8UnixPath::new(path.as_ref());
+    // Normalize the path first - this will handle . and .. components and validate the path
+    let normalized_path =
+        monoutils::normalize_path(path.as_ref(), monoutils::SupportedPathType::Relative)
+            .map_err(|_| FsError::InvalidSearchPath(path.as_ref().to_string()))?;
 
-    // Convert path components to Utf8UnixPathSegment and collect them
-    let components = path
+    let components = Utf8UnixPath::new(&normalized_path)
         .components()
-        .map(|ref c| match c {
-            Utf8UnixComponent::RootDir => Err(FsError::InvalidSearchPath(path.to_string())),
-            Utf8UnixComponent::CurDir => Err(FsError::InvalidSearchPath(path.to_string())),
-            Utf8UnixComponent::ParentDir => Err(FsError::InvalidSearchPath(path.to_string())),
-            _ => Ok(Utf8UnixPathSegment::try_from(c)?),
+        .filter_map(|c| match c {
+            Utf8UnixComponent::Normal(s) => Some(Utf8UnixPathSegment::try_from(s)),
+            _ => None, // Skip any . or .. since they were handled by normalize_path
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -178,7 +178,7 @@ where
             }
             Some(Entity::SymCidLink(_)) => {
                 // SymCidLinks are not supported yet, so we return an error
-                return Err(FsError::SymCidLinkNotSupportedYet(components.clone()));
+                return Err(FsError::SymCidLinkNotSupportedYet(components));
             }
             Some(_) => {
                 // If we encounter a non-directory entity in the middle of the path,
@@ -221,15 +221,24 @@ pub async fn find_or_create_dir<S>(dir: &mut Dir<S>, path: impl AsRef<str>) -> F
 where
     S: IpldStore + Send + Sync,
 {
-    let path = Utf8UnixPath::new(path.as_ref());
-
-    match find_dir_mut(dir, path).await {
+    match find_dir_mut(dir, path.as_ref()).await {
         Ok(FindResult::Found { dir }) => Ok(dir),
         Ok(FindResult::NotFound { mut dir, depth }) => {
-            for component in path.components().skip(depth) {
-                let new_dir = Dir::new(dir.get_store().clone());
-                let segment = Utf8UnixPathSegment::try_from(&component)?;
+            let normalized_path =
+                monoutils::normalize_path(path.as_ref(), monoutils::SupportedPathType::Relative)
+                    .map_err(|_| FsError::InvalidSearchPath(path.as_ref().to_string()))?;
 
+            let components = Utf8UnixPath::new(&normalized_path)
+                .components()
+                .skip(depth)
+                .filter_map(|c| match c {
+                    Utf8UnixComponent::Normal(s) => Some(Utf8UnixPathSegment::try_from(s)),
+                    _ => None, // Skip any . or .. since they were handled by normalize_path
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            for segment in components {
+                let new_dir = Dir::new(dir.get_store().clone());
                 dir.put_dir(segment.clone(), new_dir)?;
                 dir = dir.get_dir_mut(&segment).await?.unwrap();
             }
@@ -237,10 +246,17 @@ where
             Ok(dir)
         }
         Ok(FindResult::NotADir { depth }) => {
-            let components = path
+            let normalized_path =
+                monoutils::normalize_path(path.as_ref(), monoutils::SupportedPathType::Relative)
+                    .map_err(|_| FsError::InvalidSearchPath(path.as_ref().to_string()))?;
+
+            let components = Utf8UnixPath::new(&normalized_path)
                 .components()
                 .take(depth + 1)
-                .map(|c| c.to_string())
+                .filter_map(|c| match c {
+                    Utf8UnixComponent::Normal(s) => Some(s.to_string()),
+                    _ => None,
+                })
                 .collect::<Vec<_>>();
 
             Err(FsError::NotADirectory(components.join("/")))
@@ -303,6 +319,16 @@ mod tests {
         let result = find_dir(&root, "subdir1/subdir2").await?;
         assert!(matches!(result, FindResult::Found { .. }));
 
+        // Test with . and .. components that resolve within bounds
+        let result = find_dir(&root, "subdir1/./subdir2").await?;
+        assert!(matches!(result, FindResult::Found { .. }));
+
+        let result = find_dir(&root, "subdir1/subdir2/../subdir2").await?;
+        assert!(matches!(result, FindResult::Found { .. }));
+
+        let result = find_dir(&root, "./subdir1").await?;
+        assert!(matches!(result, FindResult::Found { .. }));
+
         // Test finding non-existent directories
         let result = find_dir(&root, "nonexistent").await?;
         assert!(matches!(result, FindResult::NotFound { depth: 0, .. }));
@@ -314,14 +340,21 @@ mod tests {
         let result = find_dir(&root, "subdir1/file1.txt/invalid").await?;
         assert!(matches!(result, FindResult::NotADir { depth: 1 }));
 
+        // Test path escape attempts - these should fail
+        let result = find_dir(&root, "..").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
+
+        let result = find_dir(&root, "../escaped").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
+
+        let result = find_dir(&root, "subdir1/../../escaped").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
+
         // Test invalid paths
         let result = find_dir(&root, "/invalid/path").await;
         assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
 
-        let result = find_dir(&root, "invalid/../path").await;
-        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
-
-        let result = find_dir(&root, "./invalid/path").await;
+        let result = find_dir(&root, "").await;
         assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
 
         Ok(())
@@ -338,6 +371,16 @@ mod tests {
         let result = find_dir_mut(&mut root, "subdir1/subdir2").await?;
         assert!(matches!(result, FindResult::Found { .. }));
 
+        // Test with . and .. components that resolve within bounds
+        let result = find_dir_mut(&mut root, "subdir1/./subdir2").await?;
+        assert!(matches!(result, FindResult::Found { .. }));
+
+        let result = find_dir_mut(&mut root, "subdir1/subdir2/../subdir2").await?;
+        assert!(matches!(result, FindResult::Found { .. }));
+
+        let result = find_dir_mut(&mut root, "./subdir1").await?;
+        assert!(matches!(result, FindResult::Found { .. }));
+
         // Test finding non-existent directories
         let result = find_dir_mut(&mut root, "nonexistent").await?;
         assert!(matches!(result, FindResult::NotFound { depth: 0, .. }));
@@ -348,6 +391,23 @@ mod tests {
         // Test finding a path that contains a file
         let result = find_dir_mut(&mut root, "subdir1/file1.txt/invalid").await?;
         assert!(matches!(result, FindResult::NotADir { depth: 1 }));
+
+        // Test path escape attempts - these should fail
+        let result = find_dir_mut(&mut root, "..").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
+
+        let result = find_dir_mut(&mut root, "../escaped").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
+
+        let result = find_dir_mut(&mut root, "subdir1/../../escaped").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
+
+        // Test invalid paths
+        let result = find_dir_mut(&mut root, "/invalid/path").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
+
+        let result = find_dir_mut(&mut root, "").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
 
         Ok(())
     }
@@ -372,6 +432,17 @@ mod tests {
         let result = find_dir(&root, "parent/child/grandchild").await?;
         assert!(matches!(result, FindResult::Found { .. }));
 
+        // Test with . and .. components that resolve within bounds
+        let dir1 = find_or_create_dir(&mut root, "test/./dir1").await?;
+        assert!(dir1.is_empty());
+        let result = find_dir(&root, "test/dir1").await?;
+        assert!(matches!(result, FindResult::Found { .. }));
+
+        let dir2 = find_or_create_dir(&mut root, "test/temp/../dir2").await?;
+        assert!(dir2.is_empty());
+        let result = find_dir(&root, "test/dir2").await?;
+        assert!(matches!(result, FindResult::Found { .. }));
+
         // Test getting an existing directory
         let existing_dir = find_or_create_dir(&mut root, "subdir1").await?;
         assert!(!existing_dir.is_empty());
@@ -379,6 +450,23 @@ mod tests {
         // Test creating a directory where a file already exists
         let result = find_or_create_dir(&mut root, "subdir1/file1.txt").await;
         assert!(matches!(result, Err(FsError::NotADirectory(_))));
+
+        // Test path escape attempts - these should fail
+        let result = find_or_create_dir(&mut root, "..").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
+
+        let result = find_or_create_dir(&mut root, "../escaped").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
+
+        let result = find_or_create_dir(&mut root, "test/../../escaped").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
+
+        // Test invalid paths
+        let result = find_or_create_dir(&mut root, "/invalid/path").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
+
+        let result = find_or_create_dir(&mut root, "").await;
+        assert!(matches!(result, Err(FsError::InvalidSearchPath(_))));
 
         Ok(())
     }

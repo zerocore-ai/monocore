@@ -38,7 +38,7 @@ use tokio::{
 /// # Example
 ///
 /// ```no_run
-/// use monocore::runtime::RotatingLog;
+/// use monocore::RotatingLog;
 ///
 /// #[tokio::main]
 /// async fn main() -> std::io::Result<()> {

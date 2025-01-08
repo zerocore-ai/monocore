@@ -20,10 +20,10 @@ fn verify_init_results(dir_path: &std::path::Path) {
     assert!(log_path.exists(), "log directory should exist");
     assert!(log_path.is_dir(), "log should be a directory");
 
-    // Verify state.db was created
-    let db_path = menv_path.join("state.db");
-    assert!(db_path.exists(), "state.db should exist");
-    assert!(db_path.is_file(), "state.db should be a file");
+    // Verify active.db was created
+    let db_path = menv_path.join("active.db");
+    assert!(db_path.exists(), "active.db should exist");
+    assert!(db_path.is_file(), "active.db should be a file");
 
     // Verify monocore.yaml was created
     let config_path = dir_path.join("monocore.yaml");
@@ -33,16 +33,8 @@ fn verify_init_results(dir_path: &std::path::Path) {
     // Verify monocore.yaml contents
     let config_contents = fs::read_to_string(config_path).unwrap();
     assert!(
-        config_contents.contains("meta:"),
-        "config should have meta section"
-    );
-    assert!(
         config_contents.contains("sandboxes:"),
         "config should have sandboxes section"
-    );
-    assert!(
-        config_contents.contains("groups:"),
-        "config should have groups section"
     );
 }
 
