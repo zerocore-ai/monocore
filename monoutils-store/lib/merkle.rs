@@ -14,8 +14,8 @@ use super::IpldReferences;
 /// can be either leaf or non-leaf data structures.
 ///
 /// This data structure is usually used internally by `IpldStore`s to store chunked data in a way that
-/// preserves the original order of the data. See [`MemoryStore`] for an example of how this is
-/// used.
+/// preserves the original order of the data. See [`MemoryStore`](crate::MemoryStore) for an example of
+/// how this is used.
 ///
 /// ## Important
 ///

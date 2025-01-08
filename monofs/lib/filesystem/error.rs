@@ -30,9 +30,13 @@ pub enum FsError {
     #[error("Not a directory: {0:?}")]
     NotADirectory(String),
 
-    /// Not a softlink.
-    #[error("Not a softlink: {0:?}")]
-    NotASoftLink(String),
+    /// Not a symbolic CID link.
+    #[error("Not a symbolic CID link: {0:?}")]
+    NotASymCidLink(String),
+
+    /// Not a symbolic path link.
+    #[error("Not a symbolic path link: {0:?}")]
+    NotASymPathLink(String),
 
     /// Path not found.
     #[error("Path not found: {0}")]
@@ -69,9 +73,9 @@ pub enum FsError {
     #[error("Invalid search path: {0}")]
     InvalidSearchPath(String),
 
-    /// SoftLink not supported yet.
-    #[error("SoftLink not supported yet: path: {0:?}")]
-    SoftLinkNotSupportedYet(Vec<Utf8UnixPathSegment>),
+    /// Symbolic CID link not supported yet.
+    #[error("Symbolic CID link not supported yet: path: {0:?}")]
+    SymCidLinkNotSupportedYet(Vec<Utf8UnixPathSegment>),
 
     /// Invalid search path empty.
     #[error("Invalid search path empty")]
@@ -109,9 +113,9 @@ pub enum FsError {
     #[error("Maximum follow depth reached")]
     MaxFollowDepthReached,
 
-    /// Broken softlink.
-    #[error("Broken softlink: {0}")]
-    BrokenSoftLink(Cid),
+    /// Broken symbolic CID link.
+    #[error("Broken symbolic CID link: {0}")]
+    BrokenSymCidLink(Cid),
 }
 
 /// An error that can represent any error.

@@ -99,9 +99,9 @@ where
             Some(Entity::Dir(d)) => {
                 dir = d;
             }
-            Some(Entity::SoftLink(_)) => {
-                // SoftLinks are not supported yet, so we return an error
-                return Err(FsError::SoftLinkNotSupportedYet(components.clone()));
+            Some(Entity::SymCidLink(_)) => {
+                // SymCidLinks are not supported yet, so we return an error
+                return Err(FsError::SymCidLinkNotSupportedYet(components.clone()));
             }
             Some(_) => {
                 // If we encounter a non-directory entity in the middle of the path,
@@ -176,9 +176,9 @@ where
                 // A hack to get a mutable reference to the directory
                 dir = dir.get_dir_mut(segment).await?.unwrap();
             }
-            Some(Entity::SoftLink(_)) => {
-                // SoftLinks are not supported yet, so we return an error
-                return Err(FsError::SoftLinkNotSupportedYet(components.clone()));
+            Some(Entity::SymCidLink(_)) => {
+                // SymCidLinks are not supported yet, so we return an error
+                return Err(FsError::SymCidLinkNotSupportedYet(components.clone()));
             }
             Some(_) => {
                 // If we encounter a non-directory entity in the middle of the path,

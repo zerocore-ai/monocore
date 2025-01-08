@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::filesystem::{
     kind::EntityType, Entity, EntityCidLink, File, FsError, FsResult, Link, Metadata,
-    MetadataSerializable, SoftLink,
+    MetadataSerializable, SymCidLink,
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -67,8 +67,13 @@ where
 /// A serializable representation of [`Dir`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DirSerializable {
+    /// The metadata of the directory.
     metadata: MetadataSerializable,
+
+    /// The entries in the directory.
     entries: BTreeMap<String, Cid>,
+
+    /// The CID of the previous version of the directory if there is one.
     previous: Option<Cid>,
 }
 
@@ -264,13 +269,13 @@ where
         self.put_entry(name, EntityCidLink::from(file))
     }
 
-    /// Adds a [`SoftLink`] and its associated name in the directory's entries.
+    /// Adds a [`SymCidLink`] and its associated name in the directory's entries.
     #[inline]
-    pub fn put_softlink(&mut self, name: impl AsRef<str>, softlink: SoftLink<S>) -> FsResult<()>
+    pub fn put_symcidlink(&mut self, name: impl AsRef<str>, symlink: SymCidLink<S>) -> FsResult<()>
     where
-        S: Send + Sync,
+        S: IpldStore,
     {
-        self.put_entry(name, EntityCidLink::from(softlink))
+        self.put_entry(name, EntityCidLink::from(symlink))
     }
 
     /// Gets the [`EntityCidLink`] with the given name from the directory's entries.
@@ -384,27 +389,27 @@ where
         }
     }
 
-    /// Gets the [`SoftLink`] with the associated name from the directory's entries.
-    pub async fn get_softlink(&self, name: impl AsRef<str>) -> FsResult<Option<&SoftLink<S>>>
+    /// Gets the [`SymCidLink`] with the associated name from the directory's entries.
+    pub async fn get_symcidlink(&self, name: impl AsRef<str>) -> FsResult<Option<&SymCidLink<S>>>
     where
-        S: Send + Sync,
+        S: IpldStore + Send + Sync,
     {
         match self.get_entity(name).await? {
-            Some(Entity::SoftLink(softlink)) => Ok(Some(softlink)),
+            Some(Entity::SymCidLink(symlink)) => Ok(Some(symlink)),
             _ => Ok(None),
         }
     }
 
-    /// Gets the [`SoftLink`] with the associated name from the directory's entries.
-    pub async fn get_softlink_mut(
+    /// Gets the [`SymCidLink`] with the associated name from the directory's entries.
+    pub async fn get_symcidlink_mut(
         &mut self,
         name: impl AsRef<str>,
-    ) -> FsResult<Option<&mut SoftLink<S>>>
+    ) -> FsResult<Option<&mut SymCidLink<S>>>
     where
-        S: Send + Sync,
+        S: IpldStore + Send + Sync,
     {
         match self.get_entity_mut(name).await? {
-            Some(Entity::SoftLink(softlink)) => Ok(Some(softlink)),
+            Some(Entity::SymCidLink(symlink)) => Ok(Some(symlink)),
             _ => Ok(None),
         }
     }
@@ -567,7 +572,7 @@ mod tests {
     use anyhow::Ok;
     use monoutils_store::MemoryStore;
 
-    use crate::config::DEFAULT_SOFTLINK_DEPTH;
+    use crate::{config::DEFAULT_SYMLINK_DEPTH, filesystem::SyncType};
 
     use super::*;
 
@@ -631,8 +636,8 @@ mod tests {
             loaded_dir_metadata.get_entity_type()
         );
         assert_eq!(
-            dir_metadata.get_softlink_depth(),
-            loaded_dir_metadata.get_softlink_depth()
+            dir_metadata.get_symlink_depth(),
+            loaded_dir_metadata.get_symlink_depth()
         );
         assert_eq!(
             dir_metadata.get_sync_type(),
@@ -704,7 +709,9 @@ mod tests {
         let metadata = dir.get_metadata();
 
         assert_eq!(*metadata.get_entity_type(), EntityType::Dir);
-        assert_eq!(*metadata.get_softlink_depth(), DEFAULT_SOFTLINK_DEPTH);
+        assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
+        assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
+        assert!(!metadata.get_tombstone());
 
         Ok(())
     }

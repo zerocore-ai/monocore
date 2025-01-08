@@ -2,7 +2,7 @@ use std::fmt::{self, Debug};
 
 use monoutils_store::{ipld::cid::Cid, IpldStore, Storable, StoreError, StoreResult};
 
-use crate::filesystem::{Dir, File, FsError, FsResult, Metadata, SoftLink};
+use crate::filesystem::{Dir, File, FsError, FsResult, Metadata, SymCidLink, SymPathLink};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -20,8 +20,11 @@ where
     /// A directory.
     Dir(Dir<S>),
 
-    /// A softlink.
-    SoftLink(SoftLink<S>),
+    /// A symbolic CID link.
+    SymCidLink(SymCidLink<S>),
+
+    /// A symbolic path link.
+    SymPathLink(SymPathLink<S>),
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -42,6 +45,16 @@ where
         matches!(self, Entity::Dir(_))
     }
 
+    /// Returns true if the entity is a symbolic CID link.
+    pub fn is_symcidlink(&self) -> bool {
+        matches!(self, Entity::SymCidLink(_))
+    }
+
+    /// Returns true if the entity is a symbolic path link.
+    pub fn is_sympathlink(&self) -> bool {
+        matches!(self, Entity::SymPathLink(_))
+    }
+
     /// Tries to convert the entity to a file.
     pub fn into_file(self) -> FsResult<File<S>> {
         if let Entity::File(file) = self {
@@ -59,13 +72,22 @@ where
         Err(FsError::NotADirectory(String::new()))
     }
 
-    /// Tries to convert the entity to a softlink.
-    pub fn into_softlink(self) -> FsResult<SoftLink<S>> {
-        if let Entity::SoftLink(softlink) = self {
-            return Ok(softlink);
+    /// Tries to convert the entity to a symbolic CID link.
+    pub fn into_symcidlink(self) -> FsResult<SymCidLink<S>> {
+        if let Entity::SymCidLink(symlink) = self {
+            return Ok(symlink);
         }
 
-        Err(FsError::NotASoftLink(String::new()))
+        Err(FsError::NotASymCidLink(String::new()))
+    }
+
+    /// Tries to convert the entity to a symbolic path link.
+    pub fn into_sympathlink(self) -> FsResult<SymPathLink<S>> {
+        if let Entity::SymPathLink(symlink) = self {
+            return Ok(symlink);
+        }
+
+        Err(FsError::NotASymPathLink(String::new()))
     }
 
     /// Returns the metadata for the entity.
@@ -73,7 +95,8 @@ where
         match self {
             Entity::File(file) => file.get_metadata(),
             Entity::Dir(dir) => dir.get_metadata(),
-            Entity::SoftLink(softlink) => softlink.get_metadata(),
+            Entity::SymCidLink(symlink) => symlink.get_metadata(),
+            Entity::SymPathLink(symlink) => symlink.get_metadata(),
         }
     }
 
@@ -82,7 +105,8 @@ where
         match self {
             Entity::File(file) => file.get_metadata_mut(),
             Entity::Dir(dir) => dir.get_metadata_mut(),
-            Entity::SoftLink(softlink) => softlink.get_metadata_mut(),
+            Entity::SymCidLink(symlink) => symlink.get_metadata_mut(),
+            Entity::SymPathLink(symlink) => symlink.get_metadata_mut(),
         }
     }
 
@@ -91,7 +115,8 @@ where
         match self {
             Entity::File(file) => file.get_initial_load_cid(),
             Entity::Dir(dir) => dir.get_initial_load_cid(),
-            Entity::SoftLink(softlink) => softlink.get_initial_load_cid(),
+            Entity::SymCidLink(symlink) => symlink.get_initial_load_cid(),
+            Entity::SymPathLink(symlink) => symlink.get_initial_load_cid(),
         }
     }
 
@@ -100,16 +125,18 @@ where
         match self {
             Entity::File(file) => file.get_previous(),
             Entity::Dir(dir) => dir.get_previous(),
-            Entity::SoftLink(softlink) => softlink.get_previous(),
+            Entity::SymCidLink(symlink) => symlink.get_previous(),
+            Entity::SymPathLink(symlink) => symlink.get_previous(),
         }
     }
 
-    /// Returns the store used to persist the entity.
+    /// Returns a reference to the store.
     pub fn get_store(&self) -> &S {
         match self {
             Entity::File(file) => file.get_store(),
             Entity::Dir(dir) => dir.get_store(),
-            Entity::SoftLink(softlink) => softlink.get_store(),
+            Entity::SymCidLink(symlink) => symlink.get_store(),
+            Entity::SymPathLink(symlink) => symlink.get_store(),
         }
     }
 }
@@ -126,17 +153,22 @@ where
         match self {
             Entity::File(file) => file.store().await,
             Entity::Dir(dir) => dir.store().await,
-            Entity::SoftLink(softlink) => softlink.store().await,
+            Entity::SymCidLink(symlink) => symlink.store().await,
+            Entity::SymPathLink(symlink) => symlink.store().await,
         }
     }
 
     async fn load(cid: &Cid, store: S) -> StoreResult<Self> {
-        // The order of the following `if let` statements is important because for some reason
-        // Directory entity deserializes successfully into a File entity even though they have
-        // different structure. This is likely due to the way `serde_ipld_dagcbor` deserializes
-        // the entities.
-        if let Ok(softlink) = SoftLink::load(cid, store.clone()).await {
-            return Ok(Entity::SoftLink(softlink));
+        // The order of the following `if let` statements is important because File can be
+        // deserialized into a Dir (where File has no content) and SymCidLink can be deserialized
+        // into a SymPathLink (where path string is a valid Cid).
+
+        if let Ok(symlink) = SymPathLink::load(cid, store.clone()).await {
+            return Ok(Entity::SymPathLink(symlink));
+        }
+
+        if let Ok(symlink) = SymCidLink::load(cid, store.clone()).await {
+            return Ok(Entity::SymCidLink(symlink));
         }
 
         if let Ok(dir) = Dir::load(cid, store.clone()).await {
@@ -159,7 +191,44 @@ where
         match self {
             Entity::File(file) => f.debug_tuple("File").field(file).finish(),
             Entity::Dir(dir) => f.debug_tuple("Dir").field(dir).finish(),
-            Entity::SoftLink(softlink) => f.debug_tuple("SoftLink").field(softlink).finish(),
+            Entity::SymCidLink(symlink) => f.debug_tuple("SymCidLink").field(symlink).finish(),
+            Entity::SymPathLink(symlink) => f.debug_tuple("SymPathLink").field(symlink).finish(),
         }
+    }
+}
+
+impl<S> From<Dir<S>> for Entity<S>
+where
+    S: IpldStore + Clone,
+{
+    fn from(dir: Dir<S>) -> Self {
+        Entity::Dir(dir)
+    }
+}
+
+impl<S> From<File<S>> for Entity<S>
+where
+    S: IpldStore + Clone,
+{
+    fn from(file: File<S>) -> Self {
+        Entity::File(file)
+    }
+}
+
+impl<S> From<SymCidLink<S>> for Entity<S>
+where
+    S: IpldStore + Clone,
+{
+    fn from(symlink: SymCidLink<S>) -> Self {
+        Entity::SymCidLink(symlink)
+    }
+}
+
+impl<S> From<SymPathLink<S>> for Entity<S>
+where
+    S: IpldStore + Clone,
+{
+    fn from(symlink: SymPathLink<S>) -> Self {
+        Entity::SymPathLink(symlink)
     }
 }
