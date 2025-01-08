@@ -2367,11 +2367,12 @@ dependencies = [
 
 [[package]]
 name = "pretty-error-debug"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a8f3888f1de6a9d977610972eab0014b663a3907ec153d77200252ad22e4bb0"
+checksum = "e695211bd52be9066e85ca0c5069fd997eb408d8adb08cb2bd6ec03711a1625b"
 dependencies = [
  "pretty-error-debug-derive",
+ "rustversion",
 ]
 
 [[package]]
