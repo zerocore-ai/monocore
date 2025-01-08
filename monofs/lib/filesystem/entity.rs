@@ -68,12 +68,21 @@ where
         Err(FsError::NotASoftLink(String::new()))
     }
 
-    /// Returns the metadata for the directory.
-    pub fn get_metadata(&self) -> &Metadata {
+    /// Returns the metadata for the entity.
+    pub fn get_metadata(&self) -> &Metadata<S> {
         match self {
             Entity::File(file) => file.get_metadata(),
             Entity::Dir(dir) => dir.get_metadata(),
             Entity::SoftLink(softlink) => softlink.get_metadata(),
+        }
+    }
+
+    /// Returns a mutable reference to the metadata for the entity.
+    pub fn get_metadata_mut(&mut self) -> &mut Metadata<S> {
+        match self {
+            Entity::File(file) => file.get_metadata_mut(),
+            Entity::Dir(dir) => dir.get_metadata_mut(),
+            Entity::SoftLink(softlink) => softlink.get_metadata_mut(),
         }
     }
 

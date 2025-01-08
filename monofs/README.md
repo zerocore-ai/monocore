@@ -2,29 +2,41 @@
   <h1 align="center">monofs</h1>
 
   <p>
+    <a href="https://discord.gg/T95Y3XnEAK">
+      <img src="https://img.shields.io/static/v1?label=Discord&message=join%20us!&color=mediumslateblue&logo=discord&logoColor=white" alt="Discord">
+    </a>
     <a href="https://github.com/appcypher/monocore/actions?query=">
       <img src="https://github.com/appcypher/monocore/actions/workflows/tests_and_checks.yml/badge.svg" alt="Build Status">
     </a>
+    <a href="https://crates.io/crates/monofs">
+      <img src="https://img.shields.io/crates/v/monofs?label=crates&logo=rust" alt="Monofs Crate">
+    </a>
+    <a href="https://docs.rs/monofs">
+      <img src="https://img.shields.io/static/v1?label=Docs&message=docs.rs&color=blue&logo=docs.rs" alt="Monofs Docs">
+    </a>
     <a href="https://github.com/appcypher/monocore/blob/main/LICENSE">
-      <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License">
+      <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?logo=apache&logoColor=white" alt="License">
     </a>
   </p>
 </div>
 
-**`monofs`** is a content-addressed filesystem designed for distributed applications. It is based largely on the [WNFS](https://github.com/wnfs-wg/rs-wnfs) public filesystem. It provides a simple and intuitive API for managing files and directories in a content-addressed storage system.
+**`monofs`** is a content-addressed filesystem designed for distributed applications. It is based largely on the [WNFS](https://github.com/wnfs-wg/rs-wnfs) public filesystem.
 
 > [!WARNING]
 > This project is in early development and is not yet ready for production use.
 
 ##
 
-## Features
+## ✨ Features
 
-- Content-addressed storage
-- Immutable data structures with copy-on-write semantics
-- Support for files, directories, and symbolic links
-- Asynchronous API for efficient I/O operations
-- Versioning support for tracking file and directory history
+- 🔄 **Automatic Deduplication**: Save storage space by storing identical content only once, even across different files and directories
+- 🔒 **Immutable & Versioned**: Every change creates a new version, making it impossible to accidentally lose data
+- 🌐 **Built for Distribution**: Perfect for peer-to-peer and decentralized applications with content-addressed storage
+- ⚡ **Efficient Syncing**: Only transfer what's changed between versions, saving bandwidth and time
+- 🔗 **Smart Linking**: Create symbolic links that work reliably across different machines and network locations
+- 🚀 **Async by Design**: Built for high performance with asynchronous I/O operations
+- 📦 **Copy-on-Write**: Make changes without affecting other users or versions of the same data
+- 🛡️ **Data Integrity**: Content addressing ensures data hasn't been tampered with or corrupted
 
 ## 🚀 Getting Started
 
@@ -111,7 +123,7 @@ async fn main() -> FsResult<()> {
 
 For more detailed examples and API usage, check out the `examples` directory and the API documentation.
 
-## Development
+## 💻 Development
 
 To set up `monofs` for development:
 
@@ -130,10 +142,6 @@ To set up `monofs` for development:
    cargo test
    ```
 
-## Contributing
-
-Contributions are welcome! Please read the [CONTRIBUTING.md](../CONTRIBUTING.md) file for guidelines on how to contribute to this project.
-
-## License
+## ⚖️ License
 
 This project is licensed under the [Apache License 2.0](../LICENSE).

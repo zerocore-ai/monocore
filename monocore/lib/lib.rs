@@ -97,7 +97,6 @@
 //! - Cross-platform support
 
 #![warn(missing_docs)]
-#![allow(clippy::module_inception)]
 
 mod error;
 mod log;

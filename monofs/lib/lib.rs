@@ -1,7 +1,6 @@
 //! `monofs` is an immutable distributed file system.
 
 #![warn(missing_docs)]
-#![allow(clippy::module_inception)]
 
 //--------------------------------------------------------------------------------------------------
 // Exports

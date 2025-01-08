@@ -1,3 +1,5 @@
+mod io;
+
 use std::{
     fmt::{self, Debug},
     sync::{Arc, OnceLock},
@@ -9,7 +11,7 @@ use monoutils_store::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::filesystem::{kind::EntityType, FsResult, Metadata};
+use crate::filesystem::{kind::EntityType, FsResult, Metadata, MetadataSerializable};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -43,7 +45,7 @@ where
     previous: Option<Cid>,
 
     /// File metadata.
-    metadata: Metadata,
+    metadata: Metadata<S>,
 
     /// File content. If the file is empty, this will be `None`.
     content: Option<Cid>,
@@ -56,9 +58,10 @@ where
 // Types: Serializable
 //--------------------------------------------------------------------------------------------------
 
+/// A serializable representation of [`File`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct FileSerializable {
-    metadata: Metadata,
+pub struct FileSerializable {
+    metadata: MetadataSerializable,
     content: Option<Cid>,
     previous: Option<Cid>,
 }
@@ -89,7 +92,7 @@ where
             inner: Arc::new(FileInner {
                 initial_load_cid: OnceLock::new(),
                 previous: None,
-                metadata: Metadata::new(EntityType::File),
+                metadata: Metadata::new(EntityType::File, store.clone()),
                 content: None,
                 store,
             }),
@@ -121,7 +124,7 @@ where
             inner: Arc::new(FileInner {
                 initial_load_cid: OnceLock::new(),
                 previous: None,
-                metadata: Metadata::new(EntityType::File),
+                metadata: Metadata::new(EntityType::File, store.clone()),
                 content: Some(cid),
                 store,
             }),
@@ -257,8 +260,14 @@ where
     ///
     /// assert_eq!(file.get_metadata().get_entity_type(), &EntityType::File);
     /// ```
-    pub fn get_metadata(&self) -> &Metadata {
+    pub fn get_metadata(&self) -> &Metadata<S> {
         &self.inner.metadata
+    }
+
+    /// Returns a mutable reference to the metadata for the file.
+    pub fn get_metadata_mut(&mut self) -> &mut Metadata<S> {
+        let inner = Arc::make_mut(&mut self.inner);
+        &mut inner.metadata
     }
 
     /// Returns the store used to persist the file.
@@ -327,19 +336,35 @@ where
     }
 
     /// Tries to create a new `Dir` from a serializable representation.
-    pub(crate) fn from_serializable(
+    pub fn from_serializable(
         serializable: FileSerializable,
         store: S,
         load_cid: Cid,
     ) -> FsResult<Self> {
+        let metadata = Metadata::from_serializable(serializable.metadata, store.clone())?;
+
         Ok(File {
             inner: Arc::new(FileInner {
                 initial_load_cid: OnceLock::from(load_cid),
                 previous: serializable.previous,
-                metadata: serializable.metadata,
+                metadata,
                 content: serializable.content,
                 store,
             }),
+        })
+    }
+
+    /// Returns a serializable representation of the file.
+    pub async fn get_serializable(&self) -> FsResult<FileSerializable>
+    where
+        S: Send + Sync,
+    {
+        let metadata = self.get_metadata().get_serializable().await?;
+
+        Ok(FileSerializable {
+            metadata,
+            previous: self.inner.initial_load_cid.get().cloned(),
+            content: self.inner.content,
         })
     }
 }
@@ -353,12 +378,7 @@ where
     S: IpldStore + Send + Sync,
 {
     async fn store(&self) -> StoreResult<Cid> {
-        let serializable = FileSerializable {
-            metadata: self.inner.metadata.clone(),
-            previous: self.inner.initial_load_cid.get().cloned(),
-            content: self.inner.content,
-        };
-
+        let serializable = self.get_serializable().await.map_err(StoreError::custom)?;
         self.inner.store.put_node(&serializable).await
     }
 
@@ -377,15 +397,6 @@ where
             .field("metadata", &self.inner.metadata)
             .field("content", &self.inner.content)
             .finish()
-    }
-}
-
-impl<S> PartialEq for File<S>
-where
-    S: IpldStore,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.inner.metadata == other.inner.metadata && self.inner.content == other.inner.content
     }
 }
 
@@ -467,7 +478,11 @@ mod tests {
         let stored_cid = file.store().await.unwrap();
         let loaded_file = File::load(&stored_cid, store).await.unwrap();
 
-        assert_eq!(file, loaded_file);
+        assert_eq!(file.get_content(), loaded_file.get_content());
+        assert_eq!(
+            file.get_metadata().get_serializable().await.unwrap(),
+            loaded_file.get_metadata().get_serializable().await.unwrap()
+        )
     }
 
     #[tokio::test]
@@ -518,3 +533,9 @@ mod tests {
         Ok(())
     }
 }
+
+//--------------------------------------------------------------------------------------------------
+// Exports
+//--------------------------------------------------------------------------------------------------
+
+pub use io::*;

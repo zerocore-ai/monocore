@@ -1,3 +1,7 @@
+mod find;
+mod ops;
+mod segment;
+
 use std::{
     collections::{BTreeMap, HashMap},
     fmt::{self, Debug},
@@ -11,10 +15,9 @@ use monoutils_store::{
 use serde::{Deserialize, Serialize};
 
 use crate::filesystem::{
-    kind::EntityType, Entity, EntityCidLink, File, FsError, FsResult, Link, Metadata, SoftLink,
+    kind::EntityType, Entity, EntityCidLink, File, FsError, FsResult, Link, Metadata,
+    MetadataSerializable, SoftLink,
 };
-
-use super::Utf8UnixPathSegment;
 
 //--------------------------------------------------------------------------------------------------
 // Types: Dir
@@ -48,7 +51,7 @@ where
     previous: Option<Cid>,
 
     /// Directory metadata.
-    metadata: Metadata,
+    metadata: Metadata<S>,
 
     /// The store used to persist blocks in the directory.
     store: S,
@@ -61,9 +64,10 @@ where
 // Types: *
 //--------------------------------------------------------------------------------------------------
 
+/// A serializable representation of [`Dir`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct DirSerializable {
-    metadata: Metadata,
+pub struct DirSerializable {
+    metadata: MetadataSerializable,
     entries: BTreeMap<String, Cid>,
     previous: Option<Cid>,
 }
@@ -94,7 +98,7 @@ where
             inner: Arc::new(DirInner {
                 initial_load_cid: OnceLock::new(),
                 previous: None,
-                metadata: Metadata::new(EntityType::Dir),
+                metadata: Metadata::new(EntityType::Dir, store.clone()),
                 entries: HashMap::new(),
                 store,
             }),
@@ -416,8 +420,14 @@ where
     }
 
     /// Returns the metadata for the directory.
-    pub fn get_metadata(&self) -> &Metadata {
+    pub fn get_metadata(&self) -> &Metadata<S> {
         &self.inner.metadata
+    }
+
+    /// Returns a mutable reference to the metadata for the directory.
+    pub fn get_metadata_mut(&mut self) -> &mut Metadata<S> {
+        let inner = Arc::make_mut(&mut self.inner);
+        &mut inner.metadata
     }
 
     /// Returns an iterator over the entries in the directory.
@@ -460,7 +470,7 @@ where
     }
 
     /// Tries to create a new `Dir` from a serializable representation.
-    pub(crate) fn from_serializable(
+    pub fn from_serializable(
         serializable: DirSerializable,
         store: S,
         load_cid: Cid,
@@ -475,10 +485,32 @@ where
             inner: Arc::new(DirInner {
                 initial_load_cid: OnceLock::from(load_cid),
                 previous: serializable.previous,
-                metadata: serializable.metadata,
+                metadata: Metadata::from_serializable(serializable.metadata, store.clone())?,
                 store,
                 entries,
             }),
+        })
+    }
+
+    /// Returns a serializable representation of the directory.
+    pub async fn get_serializable(&self) -> FsResult<DirSerializable>
+    where
+        S: Send + Sync,
+    {
+        let mut entries = BTreeMap::new();
+        for (k, v) in self.get_entries() {
+            entries.insert(
+                k.to_string(),
+                v.resolve_cid().await.map_err(StoreError::custom)?,
+            );
+        }
+
+        let metadata = self.get_metadata().get_serializable().await?;
+
+        Ok(DirSerializable {
+            previous: self.inner.initial_load_cid.get().cloned(),
+            metadata,
+            entries,
         })
     }
 }
@@ -492,20 +524,7 @@ where
     S: IpldStore + Send + Sync,
 {
     async fn store(&self) -> StoreResult<Cid> {
-        let mut entries = BTreeMap::new();
-        for (k, v) in self.get_entries() {
-            entries.insert(
-                k.to_string(),
-                v.resolve_cid().await.map_err(StoreError::custom)?,
-            );
-        }
-
-        let serializable = DirSerializable {
-            metadata: self.inner.metadata.clone(),
-            previous: self.inner.initial_load_cid.get().cloned(),
-            entries,
-        };
-
+        let serializable = self.get_serializable().await.map_err(StoreError::custom)?;
         self.inner.store.put_node(&serializable).await
     }
 
@@ -521,7 +540,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Dir")
-            .field("metadata", &self.inner.metadata)
+            .field("metadata", &self.get_metadata())
             .field(
                 "entries",
                 &self
@@ -548,7 +567,7 @@ mod tests {
     use anyhow::Ok;
     use monoutils_store::MemoryStore;
 
-    use crate::{config::DEFAULT_SOFTLINK_DEPTH, filesystem::SyncType};
+    use crate::config::DEFAULT_SOFTLINK_DEPTH;
 
     use super::*;
 
@@ -605,7 +624,32 @@ mod tests {
         let loaded_dir = Dir::load(&cid, store.clone()).await?;
 
         // Assert that the metadata is the same
-        assert_eq!(dir.get_metadata(), loaded_dir.get_metadata());
+        let dir_metadata = dir.get_metadata();
+        let loaded_dir_metadata = loaded_dir.get_metadata();
+        assert_eq!(
+            dir_metadata.get_entity_type(),
+            loaded_dir_metadata.get_entity_type()
+        );
+        assert_eq!(
+            dir_metadata.get_softlink_depth(),
+            loaded_dir_metadata.get_softlink_depth()
+        );
+        assert_eq!(
+            dir_metadata.get_sync_type(),
+            loaded_dir_metadata.get_sync_type()
+        );
+        assert_eq!(
+            dir_metadata.get_tombstone(),
+            loaded_dir_metadata.get_tombstone()
+        );
+        assert_eq!(
+            dir_metadata.get_created_at(),
+            loaded_dir_metadata.get_created_at()
+        );
+        assert_eq!(
+            dir_metadata.get_modified_at(),
+            loaded_dir_metadata.get_modified_at()
+        );
 
         // Assert that the number of entries is the same
         assert_eq!(dir.get_entries().count(), loaded_dir.get_entries().count());
@@ -660,7 +704,6 @@ mod tests {
         let metadata = dir.get_metadata();
 
         assert_eq!(*metadata.get_entity_type(), EntityType::Dir);
-        assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
         assert_eq!(*metadata.get_softlink_depth(), DEFAULT_SOFTLINK_DEPTH);
 
         Ok(())
@@ -763,3 +806,10 @@ mod tests {
         Ok(())
     }
 }
+
+//--------------------------------------------------------------------------------------------------
+// Exports
+//--------------------------------------------------------------------------------------------------
+
+pub use find::*;
+pub use segment::*;
