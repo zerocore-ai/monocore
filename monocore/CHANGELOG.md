@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0](https://github.com/appcypher/monocore/compare/monocore-v0.2.1...monocore-v0.3.0) (2025-01-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* Service port configuration now uses 'ports' array instead of single 'port' field
+
+### Features
+
+* enhance service configuration with OCI defaults and improve runtime features ([#92](https://github.com/appcypher/monocore/issues/92)) ([107e551](https://github.com/appcypher/monocore/commit/107e551763ff62e201119887f2a2beade5984173))
+
 ## [0.2.1](https://github.com/appcypher/monocore/compare/monocore-v0.2.0...monocore-v0.2.1) (2024-12-11)
 
 

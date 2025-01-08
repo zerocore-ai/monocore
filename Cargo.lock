@@ -1576,7 +1576,7 @@ version = "0.1.0"
 
 [[package]]
 name = "monocore"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1631,7 +1631,7 @@ dependencies = [
 
 [[package]]
 name = "monofs"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "aliasable",
  "anyhow",
@@ -1663,7 +1663,7 @@ version = "0.1.0"
 
 [[package]]
 name = "monoutils-store"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "aliasable",
  "anyhow",
