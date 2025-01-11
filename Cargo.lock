@@ -1916,6 +1916,18 @@ name = "monoutils-did"
 version = "0.1.0"
 
 [[package]]
+name = "monoutils-raft"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "log",
+ "rand",
+ "serde",
+ "thiserror 1.0.65",
+ "tokio",
+]
+
+[[package]]
 name = "monoutils-store"
 version = "0.2.1"
 dependencies = [
