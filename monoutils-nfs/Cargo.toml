@@ -1,0 +1,21 @@
+[package]
+name = "monoutils-nfs"
+version = "0.1.0"
+description = "`monoutils-nfs` is a library for creating NFSv4.0 servers."
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[lib]
+name = "monoutils_nfs"
+path = "lib/lib.rs"
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+bytes = "1.5"
+thiserror = "1.0"
+tracing = "0.1"
+num_enum = "0.7"
+async-trait = "0.1"
+futures = "0.3"
