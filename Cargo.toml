@@ -6,7 +6,6 @@ members = [
     "monopacks",
     "monoutils",
     "monoutils-did",
-    "monoutils-raft",
     "monoutils-store",
     "monoutils-ucan",
 ]

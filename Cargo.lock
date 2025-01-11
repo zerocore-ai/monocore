@@ -1916,10 +1916,6 @@ name = "monoutils-did"
 version = "0.1.0"
 
 [[package]]
-name = "monoutils-raft"
-version = "0.1.0"
-
-[[package]]
 name = "monoutils-store"
 version = "0.2.1"
 dependencies = [
