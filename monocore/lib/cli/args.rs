@@ -8,15 +8,19 @@ use typed_path::Utf8UnixPathBuf;
 
 /// Monocore CLI - A lightweight orchestrator for running containers in microVMs
 #[derive(Debug, Parser)]
-#[command(name = "monocore", author, about, version, styles=styles::styles())]
+#[command(name = "monocore", author, about, styles=styles::styles())]
 pub struct MonocoreArgs {
     /// The subcommand to run
     #[command(subcommand)]
     pub subcommand: Option<MonocoreSubcommand>,
 
     /// Enable verbose logging
-    #[arg(short, long)]
+    #[arg(short = 'V', long)]
     pub verbose: bool,
+
+    /// Show version
+    #[arg(short = 'v', long)]
+    pub version: bool,
 }
 
 /// Available subcommands for managing services
@@ -306,7 +310,7 @@ pub enum MonocoreSubcommand {
         image: bool,
 
         /// Whether to install from an image group
-        #[arg(long)]
+        #[arg(short = 'G', long)]
         image_group: bool,
 
         /// Name of the image or image group
@@ -332,7 +336,7 @@ pub enum MonocoreSubcommand {
         image: bool,
 
         /// Whether to uninstall from an image group
-        #[arg(long)]
+        #[arg(short = 'G', long)]
         image_group: bool,
 
         /// Name of the image or image group
@@ -452,7 +456,7 @@ pub enum MonocoreSubcommand {
         image: bool,
 
         /// Whether to pull an image group
-        #[arg(long)]
+        #[arg(short = 'G', long)]
         image_group: bool,
 
         /// Name of the image or image group
