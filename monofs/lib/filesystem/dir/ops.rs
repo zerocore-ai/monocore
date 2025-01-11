@@ -1,8 +1,9 @@
+use chrono::Utc;
 use monoutils_store::IpldStore;
 use typed_path::Utf8UnixPath;
 
 use crate::{
-    filesystem::{dir::find, entity::Entity, file::File, EntityCidLink, FsError, FsResult},
+    filesystem::{dir::find, entity::Entity, file::File, FsError, FsResult},
     utils::path,
 };
 
@@ -20,7 +21,7 @@ where
     /// Finds an entity in the directory structure given a path.
     ///
     /// This method traverses the directory structure to find the entity specified by the path.
-    /// It returns a reference to the found entity if it exists.
+    /// It returns a reference to the found entity if it exists and is not marked as deleted.
     ///
     /// ## Examples
     ///
@@ -35,6 +36,10 @@ where
     ///
     /// let entity = dir.find("foo/bar.txt").await?;
     /// assert!(matches!(entity, Some(Entity::File(_))));
+    ///
+    /// // After removing, find returns None
+    /// dir.remove("foo/bar.txt").await?;
+    /// assert!(dir.find("foo/bar.txt").await?.is_none());
     /// # Ok(())
     /// # }
     /// ```
@@ -59,6 +64,7 @@ where
     /// Finds an entity in the directory structure given a path, returning a mutable reference.
     ///
     /// This method is similar to `find`, but it returns a mutable reference to the found entity.
+    /// It will skip entities that are marked as deleted.
     ///
     /// ## Examples
     ///
@@ -73,6 +79,10 @@ where
     ///
     /// let entity = dir.find_mut("foo/bar.txt").await?;
     /// assert!(matches!(entity, Some(Entity::File(_))));
+    ///
+    /// // After removing, find_mut returns None
+    /// dir.remove("foo/bar.txt").await?;
+    /// assert!(dir.find_mut("foo/bar.txt").await?.is_none());
     /// # Ok(())
     /// # }
     /// ```
@@ -136,7 +146,7 @@ where
             None => self,
         };
 
-        if parent_dir.has_entry(&file_name).await? {
+        if parent_dir.has_entry(&file_name)? {
             return parent_dir
                 .get_entity_mut(&file_name)
                 .await?
@@ -256,6 +266,9 @@ where
 
     /// Removes an entity at the specified path and returns it.
     ///
+    /// This method completely removes the entity from its parent directory, leaving no trace.
+    /// For a version that marks the entity as deleted but keeps it in the structure, use `remove`.
+    ///
     /// ## Examples
     ///
     /// ```
@@ -267,19 +280,12 @@ where
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("foo/bar.txt", true).await?;
     ///
-    /// let (filename, _entity) = dir.remove("foo/bar.txt").await?;
-    ///
-    /// assert_eq!(filename, "bar.txt".parse()?);
+    /// dir.remove_trace("foo/bar.txt").await?;
     /// assert!(dir.find("foo/bar.txt").await?.is_none());
     /// # Ok(())
     /// # }
     /// ```
-    ///
-    /// TODO: Add support for tombstone files.
-    pub async fn remove(
-        &mut self,
-        path: impl AsRef<str>,
-    ) -> FsResult<(Utf8UnixPathSegment, EntityCidLink<S>)> {
+    pub async fn remove_trace(&mut self, path: impl AsRef<str>) -> FsResult<()> {
         let path = Utf8UnixPath::new(path.as_ref());
 
         if path.has_root() {
@@ -303,9 +309,46 @@ where
             self
         };
 
-        let entity = parent_dir.remove_entry(&filename)?;
+        parent_dir.remove_entry(&filename)?;
+        Ok(())
+    }
 
-        Ok((filename, entity))
+    /// Removes an entity at the specified path by marking it as deleted.
+    ///
+    /// This method marks the entity as deleted by setting its deleted_at timestamp,
+    /// but keeps it in the directory structure. The entity will be skipped by find operations.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> FsResult<()> {
+    /// let mut dir = Dir::new(MemoryStore::default());
+    /// dir.find_or_create("foo/bar.txt", true).await?;
+    ///
+    /// dir.remove("foo/bar.txt").await?;
+    ///
+    /// // The entity still exists but is marked as deleted
+    /// assert!(dir.find("foo/bar.txt").await?.is_none());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn remove(&mut self, path: impl AsRef<str>) -> FsResult<()> {
+        let path = Utf8UnixPath::new(path.as_ref());
+
+        if path.has_root() {
+            return Err(FsError::PathHasRoot(path.to_string()));
+        }
+
+        if let Some(entity) = self.find_mut(path).await? {
+            entity.get_metadata_mut().set_deleted_at(Some(Utc::now()));
+            Ok(())
+        } else {
+            Err(FsError::PathNotFound(path.to_string()))
+        }
     }
 
     /// Renames (moves) an entity from one path to another.
@@ -351,11 +394,11 @@ where
         // First check if target exists to fail fast
         let target_exists = if let Some(parent_path) = new_parent {
             match find::find_dir(self, parent_path).await? {
-                find::FindResult::Found { dir } => dir.has_entry(&new_filename).await?,
+                find::FindResult::Found { dir } => dir.has_entry(&new_filename)?,
                 _ => return Err(FsError::PathNotFound(new_path.to_string())),
             }
         } else {
-            self.has_entry(&new_filename).await?
+            self.has_entry(&new_filename)?
         };
 
         if target_exists {
@@ -409,8 +452,31 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use monoutils_store::{MemoryStore, Storable};
+
+    use super::*;
+
+    mod fixtures {
+        use super::*;
+
+        pub(super) async fn setup_test_filesystem() -> FsResult<Dir<MemoryStore>> {
+            let store = MemoryStore::default();
+            let mut root = Dir::new(store.clone());
+
+            // Create a complex nested structure
+            root.find_or_create("projects/web/index.html", true).await?;
+            root.find_or_create("projects/web/styles/main.css", true)
+                .await?;
+            root.find_or_create("projects/app/src/main.rs", true)
+                .await?;
+            root.find_or_create("documents/personal/notes.txt", true)
+                .await?;
+            root.find_or_create("documents/work/report.pdf", true)
+                .await?;
+
+            Ok(root)
+        }
+    }
 
     #[tokio::test]
     async fn test_ops_find() -> FsResult<()> {
@@ -562,7 +628,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ops_remove() -> FsResult<()> {
+    async fn test_ops_remove_trace() -> FsResult<()> {
         let mut dir = Dir::new(MemoryStore::default());
 
         // Create entities to remove
@@ -570,16 +636,12 @@ mod tests {
         dir.find_or_create("baz", false).await?;
 
         // Remove file
-        let (filename, entity) = dir.remove("foo/bar.txt").await?;
-        assert_eq!(filename, "bar.txt".parse()?);
-        assert!(matches!(entity, EntityCidLink::Decoded(Entity::File(_))));
+        dir.remove_trace("foo/bar.txt").await?;
         assert!(dir.find("foo/bar.txt").await?.is_none());
         assert!(dir.find("foo").await?.is_some());
 
         // Remove directory
-        let (dirname, entity) = dir.remove("baz").await?;
-        assert_eq!(dirname, "baz".parse()?);
-        assert!(matches!(entity, EntityCidLink::Decoded(Entity::Dir(_))));
+        dir.remove_trace("baz").await?;
         assert!(dir.find("baz").await?.is_none());
 
         // Try to remove non-existent entity
@@ -589,33 +651,101 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ops_complex_nested_hierarchy() -> FsResult<()> {
-        let mut root = Dir::new(MemoryStore::default());
+    async fn test_ops_remove() -> FsResult<()> {
+        let mut dir = Dir::new(MemoryStore::default());
 
-        // Create a complex nested structure
-        root.find_or_create("projects/web/index.html", true).await?;
-        root.find_or_create("projects/web/styles/main.css", true)
-            .await?;
-        root.find_or_create("projects/app/src/main.rs", true)
-            .await?;
-        root.find_or_create("documents/personal/notes.txt", true)
-            .await?;
-        root.find_or_create("documents/work/report.pdf", true)
-            .await?;
+        // Create entities to remove
+        {
+            let _ = dir.find_or_create("foo/bar.txt", true).await?;
+            let _ = dir.find_or_create("baz", false).await?;
+        }
+
+        // Test remove (mark as deleted)
+        dir.remove("foo/bar.txt").await?;
+        assert!(dir.find("foo/bar.txt").await?.is_none()); // Should be skipped by find
+
+        // Verify the entity still exists but is marked as deleted
+        {
+            let foo_dir = dir.find_mut("foo").await?.unwrap();
+            if let Entity::Dir(dir) = foo_dir {
+                let entity = dir.get_entry("bar.txt")?.unwrap();
+                assert!(entity
+                    .resolve_entity(dir.get_store().clone())
+                    .await?
+                    .get_metadata()
+                    .get_deleted_at()
+                    .is_some());
+            }
+        }
+
+        // Test remove_trace (complete removal)
+        dir.remove_trace("baz").await?;
+        assert!(dir.find("baz").await?.is_none());
+
+        // Verify the entity is completely gone
+        assert!(dir.get_entity("baz").await?.is_none());
+
+        // Try to remove non-existent entity
+        assert!(dir.remove("nonexistent").await.is_err());
+        assert!(dir.remove_trace("nonexistent").await.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_ops_find_with_deleted() -> FsResult<()> {
+        let mut dir = Dir::new(MemoryStore::default());
+
+        // Create test entities
+        dir.find_or_create("file1.txt", true).await?;
+        dir.find_or_create("file2.txt", true).await?;
+        dir.find_or_create("dir1", false).await?;
+
+        // Mark file1.txt as deleted
+        dir.remove("file1.txt").await?;
+
+        // Test find
+        assert!(dir.find("file1.txt").await?.is_none()); // Should skip deleted
+        assert!(matches!(
+            dir.find("file2.txt").await?.unwrap(),
+            Entity::File(_)
+        )); // Should find non-deleted
+        assert!(matches!(dir.find("dir1").await?.unwrap(), Entity::Dir(_))); // Should find non-deleted
+
+        // Test find_mut
+        assert!(dir.find_mut("file1.txt").await?.is_none()); // Should skip deleted
+        assert!(matches!(
+            dir.find_mut("file2.txt").await?.unwrap(),
+            Entity::File(_)
+        )); // Should find non-deleted
+        assert!(matches!(
+            dir.find_mut("dir1").await?.unwrap(),
+            Entity::Dir(_)
+        )); // Should find non-deleted
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_ops_complex_nested_hierarchy() -> FsResult<()> {
+        let mut root = fixtures::setup_test_filesystem().await?;
 
         // Verify the structure
-        assert!(matches!(root.find("projects").await?, Some(Entity::Dir(_))));
         assert!(matches!(
-            root.find("projects/web/index.html").await?,
-            Some(Entity::File(_))
+            root.find("projects").await?.unwrap(),
+            Entity::Dir(_)
         ));
         assert!(matches!(
-            root.find("projects/app/src/main.rs").await?,
-            Some(Entity::File(_))
+            root.find("projects/web/index.html").await?.unwrap(),
+            Entity::File(_)
         ));
         assert!(matches!(
-            root.find("documents/work/report.pdf").await?,
-            Some(Entity::File(_))
+            root.find("projects/app/src/main.rs").await?.unwrap(),
+            Entity::File(_)
+        ));
+        assert!(matches!(
+            root.find("documents/work/report.pdf").await?.unwrap(),
+            Entity::File(_)
         ));
 
         // List contents of directories
@@ -659,32 +789,34 @@ mod tests {
         root.copy("documents/personal/notes.txt", "projects")
             .await?;
         assert!(matches!(
-            root.find("projects/notes.txt").await?,
-            Some(Entity::File(_))
+            root.find("projects/notes.txt").await?.unwrap(),
+            Entity::File(_)
         ));
 
-        // Remove a file
-        let (removed_filename, _) = root.remove("documents/work/report.pdf").await?;
-        assert_eq!(removed_filename, "report.pdf".parse()?);
+        // Test both remove and remove_trace
+        root.remove_trace("documents/work/report.pdf").await?;
         assert!(root.find("documents/work/report.pdf").await?.is_none());
 
-        // Remove a file and its parent directory
+        // Test remove (mark as deleted)
         root.remove("documents/personal/notes.txt").await?;
-        root.remove("documents/personal").await?;
+        assert!(root.find("documents/personal/notes.txt").await?.is_none());
+
+        // Test remove_trace again
+        root.remove_trace("documents/personal").await?;
         assert!(root.find("documents/personal").await?.is_none());
 
         // Verify the final structure
         assert!(matches!(
-            root.find("projects/web/index.html").await?,
-            Some(Entity::File(_))
+            root.find("projects/web/index.html").await?.unwrap(),
+            Entity::File(_)
         ));
         assert!(matches!(
-            root.find("projects/app/src/main.rs").await?,
-            Some(Entity::File(_))
+            root.find("projects/app/src/main.rs").await?.unwrap(),
+            Entity::File(_)
         ));
         assert!(matches!(
-            root.find("projects/notes.txt").await?,
-            Some(Entity::File(_))
+            root.find("projects/notes.txt").await?.unwrap(),
+            Entity::File(_)
         ));
         assert!(root.find("documents/personal").await?.is_none());
 

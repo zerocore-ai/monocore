@@ -139,12 +139,12 @@ where
     ///
     /// dir.put_entry(file_name, file_cid.into())?;
     ///
-    /// assert!(dir.has_entry(file_name).await?);
-    /// assert!(!dir.has_entry("nonexistent.txt").await?);
+    /// assert!(dir.has_entry(file_name)?);
+    /// assert!(!dir.has_entry("nonexistent.txt")?);
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn has_entry(&self, name: impl AsRef<str>) -> FsResult<bool> {
+    pub fn has_entry(&self, name: impl AsRef<str>) -> FsResult<bool> {
         let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
         Ok(self.inner.entries.contains_key(&name))
     }
@@ -335,7 +335,14 @@ where
         S: Send + Sync,
     {
         match self.get_entry(name)? {
-            Some(link) => Ok(Some(link.resolve_entity(self.inner.store.clone()).await?)),
+            Some(link) => {
+                let entity = link.resolve_entity(self.inner.store.clone()).await?;
+                if entity.get_metadata().get_deleted_at().is_some() {
+                    Ok(None)
+                } else {
+                    Ok(Some(entity))
+                }
+            }
             None => Ok(None),
         }
     }
@@ -350,7 +357,14 @@ where
     {
         let store = self.inner.store.clone();
         match self.get_entry_mut(name)? {
-            Some(link) => Ok(Some(link.resolve_entity_mut(store).await?)),
+            Some(link) => {
+                let entity = link.resolve_entity_mut(store).await?;
+                if entity.get_metadata().get_deleted_at().is_some() {
+                    Ok(None)
+                } else {
+                    Ok(Some(entity))
+                }
+            }
             None => Ok(None),
         }
     }
@@ -655,8 +669,8 @@ mod tests {
             loaded_dir_metadata.get_sync_type()
         );
         assert_eq!(
-            dir_metadata.get_tombstone(),
-            loaded_dir_metadata.get_tombstone()
+            dir_metadata.get_deleted_at(),
+            loaded_dir_metadata.get_deleted_at()
         );
         assert_eq!(
             dir_metadata.get_created_at(),
@@ -689,8 +703,8 @@ mod tests {
 
         dir.put_entry(file_name, file_cid.into())?;
 
-        assert!(dir.has_entry(file_name).await?);
-        assert!(!dir.has_entry("nonexistent.txt").await?);
+        assert!(dir.has_entry(file_name)?);
+        assert!(!dir.has_entry("nonexistent.txt")?);
 
         Ok(())
     }
@@ -703,11 +717,11 @@ mod tests {
             "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
 
         dir.put_entry(file_name, file_cid.clone().into())?;
-        assert!(dir.has_entry(file_name).await?);
+        assert!(dir.has_entry(file_name)?);
 
         let removed_entry = dir.remove_entry(file_name)?;
         assert_eq!(removed_entry.get_cid(), Some(&file_cid));
-        assert!(!dir.has_entry(file_name).await?);
+        assert!(!dir.has_entry(file_name)?);
 
         assert!(dir.remove_entry("nonexistent.txt").is_err());
 
@@ -722,7 +736,7 @@ mod tests {
         assert_eq!(*metadata.get_entity_type(), EntityType::Dir);
         assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
         assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
-        assert!(!metadata.get_tombstone());
+        assert!(metadata.get_deleted_at().is_none());
 
         Ok(())
     }
