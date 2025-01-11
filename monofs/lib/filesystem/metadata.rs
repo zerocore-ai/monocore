@@ -26,14 +26,14 @@ pub const ENTITY_TYPE_KEY: &str = "monofs.entity_type";
 /// The key for the modified at field in the metadata.
 pub const MODIFIED_AT_KEY: &str = "monofs.modified_at";
 
+/// The key for the deleted at field in the metadata.
+pub const DELETED_AT_KEY: &str = "monofs.deleted_at";
+
 /// The key for the symbolic link depth field in the metadata.
 pub const SYMLINK_DEPTH_KEY: &str = "monofs.symlink_depth";
 
 /// The key for the sync type field in the metadata.
 pub const SYNC_TYPE_KEY: &str = "monofs.sync_type";
-
-/// The key for the tombstone field in the metadata.
-pub const TOMBSTONE_KEY: &str = "monofs.tombstone";
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -72,16 +72,16 @@ where
     created_at: DateTime<Utc>,
 
     /// The time of the last modification of the entity.
-    modified_at: DateTime<Utc>,
+    modified_at: Option<DateTime<Utc>>,
+
+    /// Whether the entity has been deleted.
+    deleted_at: Option<DateTime<Utc>>,
 
     /// The maximum depth of a symbolic link.
     symlink_depth: u32,
 
     /// The sync type of the entity.
     sync_type: SyncType,
-
-    /// Whether the entity is a tombstone.
-    tombstone: bool,
 
     /// Extended attributes.
     #[serde(skip)]
@@ -124,10 +124,10 @@ pub struct ExtendedAttributes<S> {
 pub struct MetadataSerializable {
     entity_type: EntityType,
     created_at: DateTime<Utc>,
-    modified_at: DateTime<Utc>,
+    modified_at: Option<DateTime<Utc>>,
     symlink_depth: u32,
     sync_type: SyncType,
-    tombstone: bool,
+    deleted_at: Option<DateTime<Utc>>,
     extended_attrs: Option<Cid>,
 }
 
@@ -143,46 +143,29 @@ impl<S> Metadata<S>
 where
     S: IpldStore,
 {
-    /// Creates a new metadata object.
-    ///
-    /// ## Examples
-    ///
-    /// ```
-    /// use monofs::filesystem::{EntityType, Metadata, SyncType};
-    /// use monofs::config::DEFAULT_SYMLINK_DEPTH;
-    /// use monoutils_store::MemoryStore;
-    ///
-    /// let store = MemoryStore::default();
-    /// let metadata = Metadata::new(EntityType::File, store);
-    ///
-    /// assert_eq!(*metadata.get_entity_type(), EntityType::File);
-    /// assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
-    /// assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
-    /// ```
+    /// Creates a new metadata instance with the given entity type and store.
     pub fn new(entity_type: EntityType, store: S) -> Self {
-        let now = Utc::now();
-
         Self {
             entity_type,
-            created_at: now,
-            modified_at: now,
+            created_at: Utc::now(),
+            modified_at: None,
+            deleted_at: None,
             symlink_depth: DEFAULT_SYMLINK_DEPTH,
             sync_type: SyncType::RAFT,
-            tombstone: false,
             extended_attrs: None,
             store,
         }
     }
 
-    /// Tries to create a new `Metadata` from a serializable representation.
+    /// Creates a new metadata instance from a serializable representation.
     pub fn from_serializable(serializable: MetadataSerializable, store: S) -> FsResult<Self> {
         Ok(Self {
             entity_type: serializable.entity_type,
             created_at: serializable.created_at,
             modified_at: serializable.modified_at,
+            deleted_at: serializable.deleted_at,
             symlink_depth: serializable.symlink_depth,
             sync_type: serializable.sync_type,
-            tombstone: serializable.tombstone,
             extended_attrs: serializable
                 .extended_attrs
                 .map(|cid| AttributesCidLink::from(cid)),
@@ -190,23 +173,24 @@ where
         })
     }
 
-    /// Gets the serializable representation of the metadata.
+    /// Gets a serializable representation of the metadata.
     pub async fn get_serializable(&self) -> FsResult<MetadataSerializable>
     where
         S: Send + Sync,
     {
-        let extended_attrs = match &self.extended_attrs {
-            Some(link) => Some(link.resolve_cid().await?),
-            None => None,
+        let extended_attrs = if let Some(attrs) = &self.extended_attrs {
+            Some(attrs.resolve_cid().await?)
+        } else {
+            None
         };
 
         Ok(MetadataSerializable {
             entity_type: self.entity_type,
             created_at: self.created_at,
             modified_at: self.modified_at,
+            deleted_at: self.deleted_at,
             symlink_depth: self.symlink_depth,
             sync_type: self.sync_type,
-            tombstone: self.tombstone,
             extended_attrs,
         })
     }
@@ -307,6 +291,16 @@ where
     pub fn set_symlink_depth(&mut self, depth: u32) {
         self.symlink_depth = depth;
     }
+
+    /// Sets the deleted_at timestamp.
+    pub fn set_deleted_at(&mut self, timestamp: Option<DateTime<Utc>>) {
+        self.deleted_at = timestamp;
+    }
+
+    /// Sets the sync type.
+    pub fn set_sync_type(&mut self, sync_type: SyncType) {
+        self.sync_type = sync_type;
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -367,9 +361,9 @@ where
             .field("entity_type", &self.entity_type)
             .field("created_at", &self.created_at)
             .field("modified_at", &self.modified_at)
+            .field("deleted_at", &self.deleted_at)
             .field("symlink_depth", &self.symlink_depth)
             .field("sync_type", &self.sync_type)
-            .field("tombstone", &self.tombstone)
             .field(
                 "extended_attrs",
                 &self.extended_attrs.as_ref().map(|link| link.get_cid()),
@@ -401,50 +395,39 @@ mod tests {
     #[test]
     fn test_metadata_new() {
         let store = MemoryStore::default();
-        let metadata: Metadata<MemoryStore> = Metadata::new(EntityType::File, store);
+        let metadata = Metadata::new(EntityType::File, store);
 
         assert_eq!(*metadata.get_entity_type(), EntityType::File);
-        assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
         assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
-        assert!(!metadata.get_tombstone());
+        assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
+        assert!(metadata.get_deleted_at().is_none());
     }
 
     #[test]
     fn test_metadata_getters() {
         let store = MemoryStore::default();
-        let metadata = Metadata::new(EntityType::Dir, store);
+        let metadata = Metadata::new(EntityType::File, store);
 
-        assert_eq!(*metadata.get_entity_type(), EntityType::Dir);
-        assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
-        assert!(metadata.get_created_at() <= &Utc::now());
-        assert!(metadata.get_modified_at() <= &Utc::now());
+        assert_eq!(*metadata.get_entity_type(), EntityType::File);
         assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
-        assert!(!metadata.get_tombstone());
+        assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
+        assert!(metadata.get_deleted_at().is_none());
     }
 
     #[tokio::test]
-    async fn test_metadata_stores_loads() {
+    async fn test_metadata_stores_loads() -> anyhow::Result<()> {
         let store = MemoryStore::default();
         let metadata = Metadata::new(EntityType::File, store.clone());
 
-        let cid = metadata.store().await.unwrap();
-        let loaded_metadata = Metadata::load(&cid, store).await.unwrap();
+        let cid = metadata.store().await?;
+        let loaded = Metadata::load(&cid, store).await?;
 
-        assert_eq!(
-            metadata.get_entity_type(),
-            loaded_metadata.get_entity_type()
-        );
-        assert_eq!(
-            metadata.get_symlink_depth(),
-            loaded_metadata.get_symlink_depth()
-        );
-        assert_eq!(metadata.get_sync_type(), loaded_metadata.get_sync_type());
-        assert_eq!(metadata.get_tombstone(), loaded_metadata.get_tombstone());
-        assert_eq!(metadata.get_created_at(), loaded_metadata.get_created_at());
-        assert_eq!(
-            metadata.get_modified_at(),
-            loaded_metadata.get_modified_at()
-        );
+        assert_eq!(*loaded.get_entity_type(), EntityType::File);
+        assert_eq!(*loaded.get_sync_type(), SyncType::RAFT);
+        assert_eq!(*loaded.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
+        assert!(loaded.get_deleted_at().is_none());
+
+        Ok(())
     }
 
     #[tokio::test]

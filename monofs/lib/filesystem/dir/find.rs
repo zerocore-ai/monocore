@@ -52,31 +52,7 @@ pub type FindResultDirMut<'a, S> = FindResult<&'a mut Dir<S>>;
 /// following the path specified by `path`. It attempts to resolve each component of the path
 /// until it either finds the target directory, encounters an error, or determines that the path
 /// is not found or invalid.
-///
-/// ## Examples
-///
-/// ```
-/// use monofs::filesystem::{Dir, find_dir};
-/// use monoutils_store::MemoryStore;
-///
-/// # #[tokio::main]
-/// # async fn main() -> anyhow::Result<()> {
-/// let store = MemoryStore::default();
-/// let root_dir = Dir::new(store);
-/// let result = find_dir(&root_dir, "some/path/to/entity").await?;
-/// # Ok(())
-/// # }
-/// ```
-///
-/// ## Note
-///
-/// The function does not support the following path components:
-/// - `.`
-/// - `..`
-/// - `/`
-///
-/// If any of these components are present in the path, the function will return an error.
-pub async fn find_dir<S>(mut dir: &Dir<S>, path: impl AsRef<str>) -> FsResult<FindResultDir<S>>
+pub(crate) async fn find_dir<S>(mut dir: &Dir<S>, path: impl AsRef<str>) -> FsResult<FindResultDir<S>>
 where
     S: IpldStore + Send + Sync,
 {
@@ -125,31 +101,7 @@ where
 /// following the path specified by `path`. It attempts to resolve each component of the path
 /// until it either finds the target directory, encounters an error, or determines that the path
 /// is not found or invalid.
-///
-/// ## Examples
-///
-/// ```
-/// use monofs::filesystem::{Dir, find_dir_mut};
-/// use monoutils_store::MemoryStore;
-///
-/// # #[tokio::main]
-/// # async fn main() -> anyhow::Result<()> {
-/// let store = MemoryStore::default();
-/// let mut root_dir = Dir::new(store);
-/// let result = find_dir_mut(&mut root_dir, "some/path/to/entity").await?;
-/// # Ok(())
-/// # }
-/// ```
-///
-/// ## Note
-///
-/// The function does not support the following path components:
-/// - `.`
-/// - `..`
-/// - `/`
-///
-/// If any of these components are present in the path, the function will return an error.
-pub async fn find_dir_mut<S>(
+pub(crate) async fn find_dir_mut<S>(
     mut dir: &mut Dir<S>,
     path: impl AsRef<str>,
 ) -> FsResult<FindResultDirMut<S>>
@@ -201,23 +153,7 @@ where
 /// This function checks the existence of an entity at the given path. If the entity
 /// exists, it returns the entity. If the entity does not exist, it creates a new
 /// directory hierarchy and returns the new entity.
-///
-/// ## Examples
-///
-/// ```
-/// use monofs::filesystem::{Dir, find_or_create_dir};
-/// use monoutils_store::MemoryStore;
-///
-/// # #[tokio::main]
-/// # async fn main() -> anyhow::Result<()> {
-/// let store = MemoryStore::default();
-/// let mut root_dir = Dir::new(store);
-/// let new_dir = find_or_create_dir(&mut root_dir, "new/nested/directory").await?;
-/// assert!(new_dir.is_empty());
-/// # Ok(())
-/// # }
-/// ```
-pub async fn find_or_create_dir<S>(dir: &mut Dir<S>, path: impl AsRef<str>) -> FsResult<&mut Dir<S>>
+pub(crate) async fn find_or_create_dir<S>(dir: &mut Dir<S>, path: impl AsRef<str>) -> FsResult<&mut Dir<S>>
 where
     S: IpldStore + Send + Sync,
 {

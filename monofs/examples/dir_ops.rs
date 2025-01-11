@@ -59,8 +59,8 @@ async fn main() -> FsResult<()> {
     println!("Copied file: {:?}", copied_file);
 
     // Remove a file
-    let (removed_name, removed_entity) = root.remove("docs/readme.md").await?;
-    println!("Removed '{}': {:?}", removed_name, removed_entity);
+    root.remove("docs/readme.md").await?;
+    println!("Removed 'docs/readme.md'");
 
     // Create and add a subdirectory
     root.put_dir("subdir", Dir::new(store.clone()))?;
@@ -77,7 +77,7 @@ async fn main() -> FsResult<()> {
     }
 
     // Check if an entry exists
-    let file_exists = root.has_entry("example.txt").await?;
+    let file_exists = root.has_entry("example.txt")?;
     println!("'example.txt' exists: {}", file_exists);
 
     // Get and modify a subdirectory
