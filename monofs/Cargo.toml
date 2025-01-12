@@ -29,3 +29,6 @@ serde_json.workspace = true
 monoutils.workspace = true
 serde_ipld_dagcbor.workspace = true
 pretty-error-debug.workspace = true
+libipld.workspace = true
+hex.workspace = true
+tempfile.workspace = true

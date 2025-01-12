@@ -127,10 +127,15 @@ pub trait IpldStore: Clone {
     fn get_raw_block_max_size(&self) -> Option<u64>;
 
     /// Checks if the store is empty.
-    fn is_empty(&self) -> impl Future<Output = StoreResult<bool>>;
+    fn is_empty(&self) -> impl Future<Output = StoreResult<bool>> {
+        async {
+            let count = self.get_block_count().await?;
+            Ok(count == 0)
+        }
+    }
 
     /// Returns the number of blocks in the store.
-    fn get_size(&self) -> impl Future<Output = StoreResult<u64>>;
+    fn get_block_count(&self) -> impl Future<Output = StoreResult<u64>>;
 
     // /// Attempts to remove a node and its dependencies from the store.
     // ///

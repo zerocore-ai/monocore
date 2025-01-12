@@ -24,16 +24,17 @@ use crate::{
 /// A layout that organizes data into a flat array of chunks with a single merkle node parent.
 ///
 /// ```txt
-///                      ┌─────────────┐
-///                      │ Merkle Node │
-///                      └──────┬──────┘
-///                             │
-///      ┌───────────────┬──────┴────────┬─────────────────┐
-///      │               │               │                 │
-///  0   ▼       1       ▼         2     ▼        3        ▼
-/// ┌──┬──┬──┐  ┌──┬──┬──┬──┬──┐  ┌──┬──┬──┬──┐  ┌──┬──┬──┬──┬──┬──┐
-/// │0 │1 │2 │  │3 │4 │5 │6 │7 │  │8 │9 │10│11│  │12│13│14│15│16│17│
-/// └──┴──┴──┘  └──┴──┴──┴──┴──┘  └──┴──┴──┴──┘  └──┴──┴──┴──┴──┴──┘
+///                              ┌──────────────────┐
+///                              │   Merkle Node    │
+///                              └─────────┬────────┘
+///                                        │
+///     ┌──────────────────┬───────────────┼────────────────┬─────────────────┐
+///     │                  │               │                │                 │
+/// Chunk 0            Chunk 1          Chunk 2         Chunk 3           Chunk 4
+/// ┌──────────┐      ┌──────────┐    ┌──────────┐    ┌──────────┐      ┌──────────┐
+/// │ 00 01 02 │      │ 03 04 05 │    │ 06 07 08 │    │ 09 10 11 │      │ 12 13 14 │
+/// └──────────┘      └──────────┘    └──────────┘    └──────────┘      └──────────┘
+///     3 bytes          3 bytes         3 bytes         3 bytes           3 bytes
 /// ```
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct FlatLayout {}
@@ -51,18 +52,18 @@ pub struct FlatLayout {}
 /// chunk array.
 ///
 /// ```txt
-///  Chunk Index    = 1
-///  Chunk Distance = 3
-///            │
-///            │
-///  0         ▼ 1                 2
-/// ┌──┬──┬──┐  ┌──┬──┬──┬──┬──┐  ┌──┬──┬──┬──┐
-/// │0 │1 │2 │  │3 │4 │5 │6 │7 │  │8 │9 │10│11│
-/// └──┴──┴──┘  └──┴──┴──┴──┴──┘  └──┴──┴──┴──┘
-///                    ▲
-///                    │
-///                    │
-///                Byte Cursor = 5
+///                           Chunk Index = 1
+///                           Chunk Distance = 3
+///                                 │
+///                                 ▼
+///                   Chunk 0            Chunk 1             Chunk 2
+///              ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+///              │ 00  01  02   │   │ 03  04  05   │   │ 06  07  08   │
+///              └──────────────┘   └──────────────┘   └──────────────┘
+///                                        ▲
+///                                        │
+///                                        │
+///                                  Byte Cursor = 4
 /// ```
 pub struct FlatLayoutReader<S>
 where
@@ -400,7 +401,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_flat_dag_layout_organize_and_retrieve() -> anyhow::Result<()> {
+    async fn test_flat_layout_organize_and_retrieve() -> anyhow::Result<()> {
         let store = MemoryStore::default();
         let (data, _, chunk_stream) = fixtures::data_and_chunk_stream();
 
@@ -438,7 +439,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_flat_dag_layout_seek() -> anyhow::Result<()> {
+    async fn test_flat_layout_seek() -> anyhow::Result<()> {
         let store = MemoryStore::default();
         let (_, chunks, chunk_stream) = fixtures::data_and_chunk_stream();
 
