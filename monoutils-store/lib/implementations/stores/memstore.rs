@@ -24,7 +24,8 @@ use crate::{
 /// This store maintains a reference count for each stored block. Reference counting is used to
 /// determine when a block can be safely removed from the store.
 #[derive(Debug, Clone)]
-// TODO: Use BalancedDagLayout as default
+// TODO: Use `BalancedDagLayout` as default
+// TODO: Use `RabinChunker` as default
 pub struct MemoryStore<C = FixedSizeChunker, L = FlatLayout>
 where
     C: Chunker,
@@ -55,7 +56,7 @@ where
     L: Layout,
 {
     /// Creates a new `MemoryStore` with the given `chunker` and `layout`.
-    pub fn new(chunker: C, layout: L) -> Self {
+    pub fn with_chunker_and_layout(chunker: C, layout: L) -> Self {
         MemoryStore {
             blocks: Arc::new(RwLock::new(HashMap::new())),
             chunker,
@@ -210,11 +211,7 @@ where
         self.chunker.chunk_max_size()
     }
 
-    async fn is_empty(&self) -> StoreResult<bool> {
-        Ok(self.blocks.read().await.is_empty())
-    }
-
-    async fn get_size(&self) -> StoreResult<u64> {
+    async fn get_block_count(&self) -> StoreResult<u64> {
         Ok(self.blocks.read().await.len() as u64)
     }
 }
@@ -248,39 +245,120 @@ impl Default for MemoryStore {
 
 #[cfg(test)]
 mod tests {
+    use crate::DEFAULT_CHUNK_MAX_SIZE;
+
+    use super::fixtures::TestNode;
+    use super::*;
+    use libipld::multihash::{Code, MultihashDigest};
     use tokio::io::AsyncReadExt;
 
-    use super::*;
-
     #[tokio::test]
-    async fn test_memory_store_put_and_get() -> anyhow::Result<()> {
+    async fn test_memory_store_raw_block() -> anyhow::Result<()> {
         let store = MemoryStore::default();
 
-        //================== Raw ==================
+        // Store a raw block
+        let data = b"Hello, World!".to_vec();
+        let cid = store.put_raw_block(data.clone()).await?;
 
-        let data = vec![1, 2, 3, 4, 5];
+        // Verify the block exists
+        assert!(store.has(&cid).await);
+
+        // Read it back
+        let retrieved = store.get_raw_block(&cid).await?;
+        assert_eq!(retrieved.as_ref(), data.as_slice());
+
+        // Verify block count
+        assert_eq!(store.get_block_count().await?, 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_memory_store_bytes() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+
+        // Store bytes using a reader
+        let data = b"Hello from a reader!".to_vec();
         let cid = store.put_bytes(&data[..]).await?;
-        let mut res = store.get_bytes(&cid).await?;
 
-        let mut buf = Vec::new();
-        res.read_to_end(&mut buf).await?;
+        // Read it back using get_bytes
+        let mut reader = store.get_bytes(&cid).await?;
+        let mut retrieved = Vec::new();
+        reader.read_to_end(&mut retrieved).await?;
 
-        assert_eq!(data, buf);
+        assert_eq!(retrieved, data);
 
-        //================= IPLD =================
+        Ok(())
+    }
 
-        let data = fixtures::Directory {
-            name: "root".to_string(),
-            entries: vec![
-                utils::make_cid(Codec::Raw, &[1, 2, 3]),
-                utils::make_cid(Codec::Raw, &[4, 5, 6]),
-            ],
+    #[tokio::test]
+    async fn test_memory_store_node() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+
+        // Create and store a node
+        let node = TestNode {
+            name: "test".to_string(),
+            value: 42,
+            refs: Vec::new(),
         };
+        let cid = store.put_node(&node).await?;
 
-        let cid = store.put_node(&data).await?;
-        let res = store.get_node::<fixtures::Directory>(&cid).await?;
+        // Read it back
+        let retrieved: TestNode = store.get_node(&cid).await?;
+        assert_eq!(retrieved.name, node.name);
+        assert_eq!(retrieved.value, node.value);
 
-        assert_eq!(res, data);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_memory_store_error_handling() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+
+        // Try to get non-existent block
+        let non_existent_cid =
+            Cid::new_v1(Codec::Raw.into(), Code::Blake3_256.digest(b"non-existent"));
+        assert!(!store.has(&non_existent_cid).await);
+        assert!(store.get_raw_block(&non_existent_cid).await.is_err());
+        assert!(store.get_bytes(&non_existent_cid).await.is_err());
+
+        // Store a raw block and try to read it as a node
+        let data = b"raw data".to_vec();
+        let cid = store.put_raw_block(data).await?;
+        assert!(store.get_node::<TestNode>(&cid).await.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_memory_store_operations() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+
+        // Initially empty
+        assert!(store.is_empty().await?);
+        assert_eq!(store.get_block_count().await?, 0);
+
+        // Store some blocks
+        let data1 = b"block 1".to_vec();
+        let data2 = b"block 2".to_vec();
+        store.put_raw_block(data1).await?;
+        store.put_raw_block(data2).await?;
+
+        // Not empty anymore
+        assert!(!store.is_empty().await?);
+        assert_eq!(store.get_block_count().await?, 2);
+
+        // Verify supported codecs
+        let codecs = store.get_supported_codecs();
+        assert!(codecs.contains(&Codec::Raw));
+        assert!(codecs.contains(&Codec::DagCbor));
+
+        // Verify size limits from chunker
+        assert_eq!(
+            store.get_node_block_max_size(),
+            Some(DEFAULT_CHUNK_MAX_SIZE)
+        );
+        assert_eq!(store.get_raw_block_max_size(), Some(DEFAULT_CHUNK_MAX_SIZE));
 
         Ok(())
     }
@@ -292,23 +370,17 @@ mod fixtures {
 
     use super::*;
 
-    //--------------------------------------------------------------------------------------------------
-    // Types
-    //--------------------------------------------------------------------------------------------------
-
-    #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-    pub(super) struct Directory {
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    pub(super) struct TestNode {
         pub(super) name: String,
-        pub(super) entries: Vec<Cid>,
+        pub(super) value: i32,
+        #[serde(skip)]
+        pub(super) refs: Vec<Cid>,
     }
 
-    //--------------------------------------------------------------------------------------------------
-    // Trait Implementations
-    //--------------------------------------------------------------------------------------------------
-
-    impl IpldReferences for Directory {
+    impl IpldReferences for TestNode {
         fn get_references<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Cid> + Send + 'a> {
-            Box::new(self.entries.iter())
+            Box::new(self.refs.iter())
         }
     }
 }

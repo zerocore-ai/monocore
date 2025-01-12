@@ -1,6 +1,5 @@
 mod dualstore;
 mod memstore;
-mod plcstore;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -8,4 +7,3 @@ mod plcstore;
 
 pub use dualstore::*;
 pub use memstore::*;
-pub use plcstore::*;

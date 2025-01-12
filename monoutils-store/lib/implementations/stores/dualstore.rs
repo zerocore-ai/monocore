@@ -236,8 +236,8 @@ where
         Ok(self.store_a.is_empty().await? && self.store_b.is_empty().await?)
     }
 
-    async fn get_size(&self) -> StoreResult<u64> {
-        Ok(self.store_a.get_size().await? + self.store_b.get_size().await?)
+    async fn get_block_count(&self) -> StoreResult<u64> {
+        Ok(self.store_a.get_block_count().await? + self.store_b.get_block_count().await?)
     }
 }
 

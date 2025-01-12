@@ -51,6 +51,7 @@ monoutils-store = { version = "0.2", path = "./monoutils-store" }
 monoutils = { version = "0.2", path = "./monoutils" }
 chrono = { version = "0.4", features = ["serde"] }
 criterion = "0.5"
+tempfile = "3.15"
 test-log = "0.2"
 typed-path = "0.10"
 toml = "0.8"
