@@ -254,11 +254,11 @@ where
 
     /// Adds an [`Entity`] and its associated name in the directory's entries.
     #[inline]
-    pub fn put_entity(&mut self, name: impl AsRef<str>, entity: Entity<S>) -> FsResult<()>
+    pub fn put_entity(&mut self, name: impl AsRef<str>, entity: impl Into<Entity<S>>) -> FsResult<()>
     where
         S: Send + Sync,
     {
-        self.put_entry(name, EntityCidLink::from(entity))
+        self.put_entry(name, EntityCidLink::from(entity.into()))
     }
 
     /// Adds a [`Dir`] and its associated name in the directory's entries.

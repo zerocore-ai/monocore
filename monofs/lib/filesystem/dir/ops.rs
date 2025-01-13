@@ -167,6 +167,84 @@ where
             .ok_or_else(|| FsError::PathNotFound(path.to_string()))
     }
 
+    /// Creates an entity at the specified path without creating intermediate directories.
+    ///
+    /// This method creates a new entity at the exact path specified. Unlike `find_or_create`,
+    /// it will not create any intermediate directories. The parent directory must already exist.
+    ///
+    /// ## Arguments
+    ///
+    /// * `path` - The path where the entity should be created
+    /// * `entity` - The entity to create at the path
+    ///
+    /// ## Returns
+    ///
+    /// Returns a mutable reference to the created entity if successful.
+    ///
+    /// ## Errors
+    ///
+    /// Returns an error if:
+    /// * The path has a root
+    /// * The parent directory doesn't exist
+    /// * An entity already exists at the specified path
+    /// * The path is invalid
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, Entity, File, FsResult};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> FsResult<()> {
+    /// let mut dir = Dir::new(MemoryStore::default());
+    ///
+    /// // First create the parent directory
+    /// let store = dir.get_store().clone();
+    /// dir.create_entity("parent", Entity::Dir(Dir::new(store.clone()))).await?;
+    ///
+    /// // Now create a file in the parent directory
+    /// let file = dir.create_entity("parent/file.txt", Entity::File(File::new(store))).await?;
+    /// assert!(matches!(file, Entity::File(_)));
+    ///
+    /// // This would fail because intermediate directory doesn't exist
+    /// assert!(dir.create_entity("nonexistent/file.txt", Entity::File(File::new(store))).await.is_err());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn create_entity(
+        &mut self,
+        path: impl AsRef<str>,
+        entity: impl Into<Entity<S>>,
+    ) -> FsResult<&mut Entity<S>> {
+        let path = Utf8UnixPath::new(path.as_ref());
+
+        if path.has_root() {
+            return Err(FsError::PathHasRoot(path.to_string()));
+        }
+
+        let (parent, file_name) = path::split_last(path)?;
+        let parent_dir = if let Some(parent_path) = parent {
+            match find::find_dir_mut(self, parent_path).await? {
+                FindResult::Found { dir } => dir,
+                _ => return Err(FsError::PathNotFound(parent_path.to_string())),
+            }
+        } else {
+            self
+        };
+
+        if parent_dir.has_entry(&file_name)? {
+            return Err(FsError::PathExists(path.to_string()));
+        }
+
+        parent_dir.put_entity(file_name.clone(), entity)?;
+
+        parent_dir
+            .get_entity_mut(&file_name)
+            .await?
+            .ok_or_else(|| FsError::PathNotFound(path.to_string()))
+    }
+
     /// Lists all entries in the current directory.
     ///
     /// ## Examples
@@ -452,7 +530,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use monoutils_store::{MemoryStore, Storable};
+    use monoutils_store::{ipld::cid::Cid, MemoryStore, Storable};
+
+    use crate::filesystem::{
+        symcidlink::SymCidLink, sympathlink::SymPathLink, Dir, Entity, File, FsError,
+    };
 
     use super::*;
 
@@ -951,6 +1033,99 @@ mod tests {
             let content_cid = file.get_content().expect("File should have content");
             let content = file.get_store().get_raw_block(content_cid).await?;
             assert_eq!(content, "store state test".as_bytes());
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_ops_create_entity() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let mut dir = Dir::new(store.clone());
+
+        // Test 1: Create a file in root directory
+        let file = dir
+            .create_entity("file.txt", File::new(store.clone()))
+            .await?;
+        assert!(matches!(file, Entity::File(_)));
+        assert!(dir.has_entry("file.txt")?);
+
+        // Test 2: Create a directory in root directory
+        let subdir = dir.create_entity("subdir", Dir::new(store.clone())).await?;
+        assert!(matches!(subdir, Entity::Dir(_)));
+        assert!(dir.has_entry("subdir")?);
+
+        // Test 3: Create a file in subdirectory
+        let nested_file = dir
+            .create_entity("subdir/nested.txt", File::new(store.clone()))
+            .await?;
+        assert!(matches!(nested_file, Entity::File(_)));
+        if let Some(Entity::Dir(subdir)) = dir.find("subdir").await? {
+            assert!(subdir.has_entry("nested.txt")?);
+        }
+
+        // Test 4: Create a cid symlink
+        let target_cid = Cid::default();
+        let symlink = dir
+            .create_entity("link", SymCidLink::with_cid(store.clone(), target_cid))
+            .await?;
+        assert!(matches!(symlink, Entity::SymCidLink(_)));
+        if let Entity::SymCidLink(link) = symlink {
+            assert_eq!(&link.get_cid().await?, &target_cid);
+        }
+
+        // Test 5: Attempt to create entity at existing path
+        assert!(matches!(
+            dir.create_entity("file.txt", File::new(store.clone()))
+                .await,
+            Err(FsError::PathExists(_))
+        ));
+
+        // Test 6: Attempt to create entity in non-existent directory
+        assert!(matches!(
+            dir.create_entity("nonexistent/file.txt", File::new(store.clone()))
+                .await,
+            Err(FsError::PathNotFound(_))
+        ));
+
+        // Test 7: Attempt to create entity with root path
+        assert!(matches!(
+            dir.create_entity("/file.txt", File::new(store.clone()))
+                .await,
+            Err(FsError::PathHasRoot(_))
+        ));
+
+        // Test 8: Create multiple entities in nested directories
+        dir.create_entity("nested", Dir::new(store.clone())).await?;
+        dir.create_entity("nested/dir", Dir::new(store.clone()))
+            .await?;
+        let deep_file = dir
+            .create_entity("nested/dir/file.txt", File::new(store.clone()))
+            .await?;
+        assert!(matches!(deep_file, Entity::File(_)));
+
+        // Test 9: Verify entity metadata is preserved
+        let mut file = File::new(store.clone());
+        let content = "test content".as_bytes();
+        let content_cid = file.get_store().put_raw_block(content).await?;
+        file.set_content(Some(content_cid));
+        let created_file = dir.create_entity("content.txt", file).await?;
+        if let Entity::File(file) = created_file {
+            let stored_content = file.get_store().get_raw_block(&content_cid).await?;
+            assert_eq!(stored_content, content);
+        }
+
+        // Test 10: Create a path symlink
+        let path = "target/path";
+        let path_symlink = dir
+            .create_entity(
+                "path_link",
+                SymPathLink::with_path(store.clone(), path.to_string())?,
+            )
+            .await?;
+        assert!(matches!(path_symlink, Entity::SymPathLink(_)));
+        if let Entity::SymPathLink(link) = path_symlink {
+            assert_eq!(link.get_target_path().as_str(), path);
         }
 
         Ok(())
