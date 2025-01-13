@@ -10,13 +10,8 @@ use super::DEFAULT_CHUNK_MAX_SIZE;
 // Types
 //--------------------------------------------------------------------------------------------------
 
-/// A chunker that splits data into variable-size chunks using the Rabin fingerprinting algorithm.
-///
-/// The `RabinChunker` leverages the Rabin fingerprinting technique to produce chunks of data with
-/// variable sizes. This algorithm is particularly effective for identifying duplicate content within
-/// files, as well as across different files, by creating consistent chunk boundaries. The resulting
-/// chunks are then processed and stored in an IPLD form.
-pub struct RabinChunker {
+/// A chunker that splits data into variable-size chunks using the QuickCDC algorithm.
+pub struct QuickCdcChunker {
     /// The size of each chunk.
     chunk_size: u64,
 }
@@ -25,8 +20,8 @@ pub struct RabinChunker {
 // Methods
 //--------------------------------------------------------------------------------------------------
 
-impl RabinChunker {
-    /// Creates a new `RabinChunker` with the given `chunk_size`.
+impl QuickCdcChunker {
+    /// Creates a new `QuickCdcChunker` with the given `chunk_size`.
     pub fn new(chunk_size: u64) -> Self {
         Self { chunk_size }
     }
@@ -36,7 +31,7 @@ impl RabinChunker {
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
-impl Chunker for RabinChunker {
+impl Chunker for QuickCdcChunker {
     async fn chunk<'a>(
         &self,
         _reader: impl AsyncRead + Send + 'a,
@@ -50,7 +45,7 @@ impl Chunker for RabinChunker {
     }
 }
 
-impl Default for RabinChunker {
+impl Default for QuickCdcChunker {
     fn default() -> Self {
         Self::new(DEFAULT_CHUNK_MAX_SIZE)
     }

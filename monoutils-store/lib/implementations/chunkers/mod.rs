@@ -1,6 +1,6 @@
 mod constants;
 mod fixed;
-mod rabin;
+mod quickcdc;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -8,4 +8,4 @@ mod rabin;
 
 pub use constants::*;
 pub use fixed::*;
-pub use rabin::*;
+pub use quickcdc::*;
