@@ -4,6 +4,7 @@ use std::iter;
 
 use chrono::{DateTime, Utc};
 use getset::Getters;
+use libipld::Ipld;
 use monoutils_store::{
     ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
 };
@@ -106,10 +107,10 @@ pub enum SyncType {
 }
 
 /// Extended attributes for a file system entity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExtendedAttributes<S> {
     /// The map of extended attributes.
-    map: BTreeMap<String, String>,
+    map: BTreeMap<String, Ipld>,
 
     /// The store used to persist the extended attributes.
     store: S,
@@ -132,8 +133,8 @@ pub struct MetadataSerializable {
 }
 
 /// A serializable representation of [`ExtendedAttributes`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ExtendedAttributesSerializable<'a>(&'a BTreeMap<String, String>);
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ExtendedAttributesSerializable<'a>(&'a BTreeMap<String, Ipld>);
 
 //--------------------------------------------------------------------------------------------------
 // Methods
@@ -202,6 +203,7 @@ where
     /// ```
     /// use monofs::filesystem::{EntityType, Metadata};
     /// use monoutils_store::MemoryStore;
+    /// use libipld::Ipld;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -215,18 +217,18 @@ where
     /// metadata.set_attribute("custom.attr", "value").await?;
     ///
     /// // Now we can get the attribute
-    /// assert_eq!(metadata.get_attribute("custom.attr").await?, Some("value".to_string()));
+    /// assert_eq!(metadata.get_attribute("custom.attr").await?, Some(&Ipld::String("value".to_string())));
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn get_attribute(&self, key: impl AsRef<str>) -> FsResult<Option<String>>
+    pub async fn get_attribute(&self, key: impl AsRef<str>) -> FsResult<Option<&Ipld>>
     where
         S: Send + Sync,
     {
         match &self.extended_attrs {
             Some(link) => {
                 let attrs = link.resolve_value(self.store.clone()).await?;
-                Ok(attrs.map.get(key.as_ref()).cloned())
+                Ok(attrs.map.get(key.as_ref()))
             }
             None => Ok(None),
         }
@@ -242,6 +244,7 @@ where
     /// ```
     /// use monofs::filesystem::{EntityType, Metadata};
     /// use monoutils_store::MemoryStore;
+    /// use libipld::Ipld;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -250,18 +253,18 @@ where
     ///
     /// // Set an attribute
     /// metadata.set_attribute("custom.attr", "value").await?;
-    /// assert_eq!(metadata.get_attribute("custom.attr").await?, Some("value".to_string()));
+    /// assert_eq!(metadata.get_attribute("custom.attr").await?, Some(&Ipld::String("value".to_string())));
     ///
     /// // Update an existing attribute
     /// metadata.set_attribute("custom.attr", "new value").await?;
-    /// assert_eq!(metadata.get_attribute("custom.attr").await?, Some("new value".to_string()));
+    /// assert_eq!(metadata.get_attribute("custom.attr").await?, Some(&Ipld::String("new value".to_string())));
     /// # Ok(())
     /// # }
     /// ```
     pub async fn set_attribute(
         &mut self,
         key: impl Into<String>,
-        value: impl Into<String>,
+        value: impl Into<Ipld>,
     ) -> FsResult<()>
     where
         S: Send + Sync,
@@ -332,7 +335,7 @@ where
     }
 
     async fn load(cid: &Cid, store: S) -> StoreResult<Self> {
-        let serializable: BTreeMap<String, String> = store.get_node(cid).await?;
+        let serializable: BTreeMap<String, Ipld> = store.get_node(cid).await?;
         Ok(Self {
             map: serializable,
             store,
@@ -377,7 +380,7 @@ where
     S: IpldStore,
 {
     /// Gets a reference to the map of extended attributes.
-    pub fn get_map(&self) -> &BTreeMap<String, String> {
+    pub fn get_map(&self) -> &BTreeMap<String, Ipld> {
         &self.map
     }
 }
@@ -446,18 +449,18 @@ mod tests {
         // Verify attributes were set
         assert_eq!(
             metadata.get_attribute("test.attr1").await?,
-            Some("value1".to_string())
+            Some(&Ipld::String("value1".to_string()))
         );
         assert_eq!(
             metadata.get_attribute("test.attr2").await?,
-            Some("value2".to_string())
+            Some(&Ipld::String("value2".to_string()))
         );
 
         // Update an existing attribute
         metadata.set_attribute("test.attr1", "new value").await?;
         assert_eq!(
             metadata.get_attribute("test.attr1").await?,
-            Some("new value".to_string())
+            Some(&Ipld::String("new value".to_string()))
         );
 
         // Store and load the metadata to verify persistence
@@ -467,11 +470,11 @@ mod tests {
         // Verify attributes persisted
         assert_eq!(
             loaded_metadata.get_attribute("test.attr1").await?,
-            Some("new value".to_string())
+            Some(&Ipld::String("new value".to_string()))
         );
         assert_eq!(
             loaded_metadata.get_attribute("test.attr2").await?,
-            Some("value2".to_string())
+            Some(&Ipld::String("value2".to_string()))
         );
 
         // Non-existent attribute still returns None
