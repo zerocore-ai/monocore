@@ -13,6 +13,26 @@ use super::IpldReferences;
 /// It is a non-leaf data structure containing references (CIDs) to its direct dependencies which
 /// can be either leaf or non-leaf data structures.
 ///
+/// ```text
+/// ┌─────────────────────────┐
+/// │       MerkleNode        │
+/// │      (size: 900)        │
+/// └─────────────┬───────────┘
+///        ┌──────┴──────┐
+///        │             │
+/// ┌──────┴──────┐      │
+/// │  CID1: 500  │      │
+/// └──────┬──────┘      │
+/// ┌──────┴──────┐ ┌────┴────┐
+/// │   Leaf1     │ │  CID2   │
+/// │   (data)    │ │   400   │
+/// └─────────────┘ └────┬────┘
+///                 ┌────┴────┐
+///                 │  Leaf2  │
+///                 │  (data) │
+///                 └─────────┘
+/// ```
+///
 /// This data structure is usually used internally by `IpldStore`s to store chunked data in a way that
 /// preserves the original order of the data. See [`MemoryStore`](crate::MemoryStore) for an example of
 /// how this is used.
@@ -25,8 +45,6 @@ pub struct MerkleNode {
     /// The size in bytes of the data this node represents.
     pub size: usize,
 
-    // /// The parent of the merkle node.
-    // pub parent: Option<Cid>,
     /// The direct children of this node, represented as a vector of tuples.
     /// Each tuple contains:
     /// - `Cid`: The content identifier (CID) of the child node.

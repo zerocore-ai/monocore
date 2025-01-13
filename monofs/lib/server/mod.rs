@@ -1,13 +1,7 @@
-//! `monofs` is an immutable distributed file system.
-
-#![warn(missing_docs)]
+mod server;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub mod config;
-pub mod filesystem;
-pub mod store;
-pub mod utils;
-pub mod server;
+pub use server::*;

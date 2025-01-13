@@ -74,7 +74,7 @@ where
 
     /// A function to get a raw block.
     ///
-    /// ## Important
+    /// ## Warning
     ///
     /// Holds a reference to other fields in this struct. Declared first to ensure it is dropped
     /// before the other fields.

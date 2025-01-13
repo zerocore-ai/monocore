@@ -40,9 +40,15 @@
 
 ## 🚀 Getting Started
 
+### Installation
+
+```sh
+curl -sSfL https://install.monofs.dev | sh
+```
+
 ### Quick Start
 
-TODO: Demo of running multiple servers on different paths syncing up with each other.
+TODO: Demo of running multiple servers on different paths syncing up with each other and use with monocore.
 
 ### API
 
