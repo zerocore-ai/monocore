@@ -26,3 +26,4 @@ serde_ipld_dagcbor.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 tokio-util = { workspace = true, features = ["io"] }
+monoutils.workspace = true

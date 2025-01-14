@@ -16,3 +16,4 @@ anyhow.workspace = true
 thiserror.workspace = true
 typed-path.workspace = true
 pretty-error-debug.workspace = true
+tokio.workspace = true

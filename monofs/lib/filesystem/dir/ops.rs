@@ -204,11 +204,11 @@ where
     /// dir.create_entity("parent", Entity::Dir(Dir::new(store.clone()))).await?;
     ///
     /// // Now create a file in the parent directory
-    /// let file = dir.create_entity("parent/file.txt", Entity::File(File::new(store))).await?;
+    /// let file = dir.create_entity("parent/file.txt", Entity::File(File::new(store.clone()))).await?;
     /// assert!(matches!(file, Entity::File(_)));
     ///
     /// // This would fail because intermediate directory doesn't exist
-    /// assert!(dir.create_entity("nonexistent/file.txt", Entity::File(File::new(store))).await.is_err());
+    /// assert!(dir.create_entity("nonexistent/file.txt", Entity::File(File::new(store.clone()))).await.is_err());
     /// # Ok(())
     /// # }
     /// ```

@@ -7,12 +7,13 @@ use std::{
 use bytes::Bytes;
 use futures::StreamExt;
 use libipld::Cid;
+use monoutils::SeekableReader;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::{io::AsyncRead, sync::RwLock};
 
 use crate::{
     utils, Chunker, Codec, FixedSizeChunker, FlatLayout, IpldReferences, IpldStore,
-    IpldStoreSeekable, Layout, LayoutSeekable, SeekableReader, StoreError, StoreResult,
+    IpldStoreSeekable, Layout, LayoutSeekable, StoreError, StoreResult,
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -224,7 +225,7 @@ where
     async fn get_seekable_bytes<'a>(
         &'a self,
         cid: &'a Cid,
-    ) -> StoreResult<Pin<Box<dyn SeekableReader + Send + 'a>>> {
+    ) -> StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>> {
         self.layout.retrieve_seekable(cid, self.clone()).await
     }
 }
