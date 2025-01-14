@@ -719,6 +719,10 @@ where
     }
 
     /// Gets the [`Entity`] with the associated name from the directory's entries.
+    ///
+    /// **Note**: This method respects the deleted status of entities. If an entity exists but has been
+    /// marked as deleted (has a `deleted_at` timestamp), this method will return `None`. To access
+    /// deleted entities, use [`get_entry`][`Dir::get_entry`] instead.
     pub async fn get_entity(&self, name: impl AsRef<str>) -> FsResult<Option<&Entity<S>>>
     where
         S: Send + Sync,
@@ -729,7 +733,23 @@ where
         }
     }
 
+    /// Checks if an [`Entity`] with the given name exists in the directory.
+    ///
+    /// **Note**: This method respects the deleted status of entities. If an entity exists but has been
+    /// marked as deleted (has a `deleted_at` timestamp), this method will return `false`. To check for
+    /// existence regardless of deleted status, use [`has_entry`][`Dir::has_entry`] instead.
+    pub async fn has_entity(&self, name: impl AsRef<str>) -> FsResult<bool>
+    where
+        S: Send + Sync,
+    {
+        Ok(self.get_entity(name).await?.is_some())
+    }
+
     /// Gets the [`Entity`] with the associated name from the directory's entries.
+    ///
+    /// **Note**: This method respects the deleted status of entities. If an entity exists but has been
+    /// marked as deleted (has a `deleted_at` timestamp), this method will return `None`. To access
+    /// deleted entities, use [`get_entry_mut`][`Dir::get_entry_mut`] instead.
     pub async fn get_entity_mut(
         &mut self,
         name: impl AsRef<str>,
@@ -745,6 +765,10 @@ where
     }
 
     /// Gets the [`Dir`] with the associated name from the directory's entries.
+    ///
+    /// **Note**: This method respects the deleted status of entities. If the directory exists but has been
+    /// marked as deleted (has a `deleted_at` timestamp), this method will return `None`. To access
+    /// deleted directories, use [`get_entry`][`Dir::get_entry`] instead.
     pub async fn get_dir(&self, name: impl AsRef<str>) -> FsResult<Option<&Dir<S>>>
     where
         S: Send + Sync,
@@ -756,6 +780,10 @@ where
     }
 
     /// Gets the [`Dir`] with the associated name from the directory's entries.
+    ///
+    /// **Note**: This method respects the deleted status of entities. If the directory exists but has been
+    /// marked as deleted (has a `deleted_at` timestamp), this method will return `None`. To access
+    /// deleted directories, use [`get_entry_mut`][`Dir::get_entry_mut`] instead.
     pub async fn get_dir_mut(&mut self, name: impl AsRef<str>) -> FsResult<Option<&mut Dir<S>>>
     where
         S: Send + Sync,
@@ -767,6 +795,10 @@ where
     }
 
     /// Gets the [`File`] with the associated name from the directory's entries.
+    ///
+    /// **Note**: This method respects the deleted status of entities. If the file exists but has been
+    /// marked as deleted (has a `deleted_at` timestamp), this method will return `None`. To access
+    /// deleted files, use [`get_entry`][`Dir::get_entry`] instead.
     pub async fn get_file(&self, name: impl AsRef<str>) -> FsResult<Option<&File<S>>>
     where
         S: Send + Sync,
@@ -778,6 +810,10 @@ where
     }
 
     /// Gets the [`File`] with the associated name from the directory's entries.
+    ///
+    /// **Note**: This method respects the deleted status of entities. If the file exists but has been
+    /// marked as deleted (has a `deleted_at` timestamp), this method will return `None`. To access
+    /// deleted files, use [`get_entry_mut`][`Dir::get_entry_mut`] instead.
     pub async fn get_file_mut(&mut self, name: impl AsRef<str>) -> FsResult<Option<&mut File<S>>>
     where
         S: Send + Sync,

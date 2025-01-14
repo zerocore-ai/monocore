@@ -1,70 +1,104 @@
 use std::collections::HashMap;
-use std::future::Future;
-use std::ops::{Deref, DerefMut};
-use std::path::PathBuf;
 use std::str;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use chrono::Utc;
+use getset::Getters;
 use intaglio::{Symbol, SymbolTable};
 use libipld::Ipld;
-use monoutils_store::{IpldStore, MemoryStore};
+use monoutils_store::{IpldStore, IpldStoreSeekable, MemoryStore};
 use nfsserve::nfs::{
     fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, nfstime3, sattr3, set_atime, set_gid3,
     set_mode3, set_mtime, set_size3, set_uid3, specdata3,
 };
 use nfsserve::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
-use typed_path::UnixPathBuf;
 
-use crate::filesystem::{
-    Dir, Entity, EntityType, File, FileInputStream, FileOutputStream, FsError, FsResult, Metadata,
-    SymCidLink, SymPathLink,
-};
+use crate::filesystem::{Dir, Entity, EntityType, FsError, Metadata, SymPathLink};
 use crate::store::FlatFsStore;
 
 //--------------------------------------------------------------------------------------------------
 // Constants
 //--------------------------------------------------------------------------------------------------
 
-/// Default mode for regular files (rw-r--r--)
-/// Owner can read/write, group and others can read
+/// Default file mode (permissions) for newly created files.
+/// Equivalent to 644 in octal (rw-r--r--).
 pub const DEFAULT_FILE_MODE: u32 = 0o644;
 
-/// Default mode for directories (rwxr-xr-x)
-/// Owner has full access, group and others can read and traverse
+/// Default directory mode (permissions) for newly created directories.
+/// Equivalent to 755 in octal (rwxr-xr-x).
 pub const DEFAULT_DIR_MODE: u32 = 0o755;
 
-/// Default mode for symlinks (rwxrwxrwx)
-/// Permissions don't affect symlinks - they use target's permissions
+/// Default symlink mode (permissions) for newly created symbolic links.
+/// Equivalent to 777 in octal (rwxrwxrwx).
 pub const DEFAULT_SYMLINK_MODE: u32 = 0o777;
 
-/// The key for the Unix mode attribute.
+/// Key for storing Unix file mode in extended attributes.
 pub const UNIX_MODE_KEY: &str = "unix.mode";
 
-/// The key for the Unix user ID attribute.
+/// Key for storing Unix user ID in extended attributes.
 pub const UNIX_UID_KEY: &str = "unix.uid";
 
-/// The key for the Unix group ID attribute.
+/// Key for storing Unix group ID in extended attributes.
 pub const UNIX_GID_KEY: &str = "unix.gid";
 
-/// The key for the Unix access time attribute.
+/// Key for storing Unix access time in extended attributes.
 pub const UNIX_ATIME_KEY: &str = "unix.atime";
 
-/// The key for the Unix modification time attribute.
+/// Key for storing Unix modification time in extended attributes.
 pub const UNIX_MTIME_KEY: &str = "unix.mtime";
 
 //--------------------------------------------------------------------------------------------------
 // Types
 //--------------------------------------------------------------------------------------------------
 
+/// A MonofsServer that uses an in-memory store for testing and development.
+/// This type is not suitable for production use as all data is lost when the process exits.
 pub type MemoryMonofsServer = MonofsServer<MemoryStore>;
+
+/// A MonofsServer that uses a flat filesystem store for persistent storage.
+/// This is the recommended type for production use.
 pub type DiskMonofsServer = MonofsServer<FlatFsStore>;
 
+/// An implementation of the NFSv3 server interface backed by a content-addressed store.
+///
+/// MonofsServer provides an NFSv3 server implementation that stores all file system
+/// data in a content-addressed store. This allows for:
+///
+/// - Immutable file system history
+/// - Deduplication of file content
+/// - Efficient file system snapshots
+/// - Distributed synchronization
+///
+/// The server maintains mappings between NFS file IDs and internal paths, and handles
+/// all the standard NFS operations like:
+///
+/// - File/directory creation and removal
+/// - Reading and writing files
+/// - Directory listing
+/// - File attribute management
+/// - Symbolic link operations
+///
+/// # Type Parameters
+///
+/// * `S` - The type of content-addressed store to use. Must implement `IpldStore` and be
+///         both `Send` and `Sync` for thread safety.
+///
+/// # Examples
+///
+/// ```no_run
+/// use monofs::server::{MemoryMonofsServer, MonofsServer};
+/// use monoutils_store::MemoryStore;
+///
+/// // Create an in-memory server for testing
+/// let memory_server = MemoryMonofsServer::new(MemoryStore::default());
+///
+/// // Or create a custom server with your own store implementation
+/// let custom_server = MonofsServer::new(your_store);
+/// ```
+#[derive(Debug, Getters)]
 pub struct MonofsServer<S>
 where
     S: IpldStore + Send + Sync + 'static,
@@ -75,7 +109,6 @@ where
     fileid_to_path_map: Arc<Mutex<HashMap<fileid3, Vec<Symbol>>>>,
     path_to_fileid_map: Arc<Mutex<HashMap<Vec<Symbol>, fileid3>>>,
 }
-
 //--------------------------------------------------------------------------------------------------
 // Methods
 //--------------------------------------------------------------------------------------------------
@@ -84,6 +117,18 @@ impl<S> MonofsServer<S>
 where
     S: IpldStore + Send + Sync + 'static,
 {
+    /// Creates a new MonofsServer instance with the given store.
+    /// The server starts with an empty root directory and initializes the path-fileid mapping system.
+    ///
+    /// The root directory is assigned fileid 0 and an empty path.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use monofs::server::MemoryMonofsServer;
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// let server = MemoryMonofsServer::new(MemoryStore::default());
+    /// ```
     pub fn new(store: S) -> Self {
         Self {
             root: Arc::new(Mutex::new(Dir::new(store))),
@@ -100,31 +145,6 @@ where
 
     /// Converts a file ID to its corresponding path by looking up the symbols in the mapping
     /// and converting them back to strings.
-    ///
-    /// ```text
-    /// Input: fileid = 42
-    ///
-    /// ┌─────────────────────────────┐
-    /// │ fileid_map                  │
-    /// │ 42 => [Symbol(1),           │
-    /// │       Symbol(2),            │
-    /// │       Symbol(3)]            │
-    /// └─────────────────────────────┘
-    ///            │
-    ///            ▼
-    /// ┌─────────────────────────────┐
-    /// │ Symbol Table Lookup         │
-    /// │ Symbol(1) => "foo"          │
-    /// │ Symbol(2) => "bar"          │
-    /// │ Symbol(3) => "baz.txt"      │
-    /// └─────────────────────────────┘
-    ///            │
-    ///            ▼
-    /// ┌─────────────────────────────┐
-    /// │ Join with "/"               │
-    /// │ "foo/bar/baz.txt"           │
-    /// └─────────────────────────────┘
-    /// ```
     async fn fileid_to_path(&self, id: fileid3) -> Result<String, nfsstat3> {
         let fileid_to_path_map = self.fileid_to_path_map.lock().await;
         let symbols = fileid_to_path_map.get(&id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
@@ -138,35 +158,12 @@ where
         Ok(path)
     }
 
-    /// Ensures a path is registered in the path-fileid mapping system and returns its fileid.
-    /// If the path is already registered, returns the existing fileid.
-    /// If not, creates a new fileid and registers the bidirectional mappings.
-    ///
-    /// ```text
-    /// Input path: "foo/bar/baz.txt"
-    ///                  │
-    ///                  ▼
-    /// ┌─────────────────────────────┐
-    /// │ Split into segments         │
-    /// │  ["foo", "bar", "baz.txt"]  │
-    /// └─────────────────────────────┘
-    ///                  │
-    ///                  ▼
-    /// ┌─────────────────────────────┐
-    /// │ Convert to Symbols          │
-    /// │  [Symbol(1),                │
-    /// │   Symbol(2),                │
-    /// │   Symbol(3)]                │
-    /// └─────────────────────────────┘
-    ///                  │
-    ///                  ▼
-    /// ┌─────────────────────────────┐
-    /// │ Check if path exists        │
-    /// │ If yes: return existing id  │
-    /// │ If no:  create new mapping  │
-    /// └─────────────────────────────┘
-    /// ```
-    async fn ensure_path_registered(&self, path: &str) -> Result<fileid3, nfsstat3> {
+    /// Converts a path string into a vector of symbols.
+    /// Each path component is converted to a symbol using the server's symbol table.
+    /// Empty path components are filtered out.
+    async fn path_to_symbols(&self, path: impl AsRef<str>) -> Result<Vec<Symbol>, nfsstat3> {
+        let path = path.as_ref();
+
         // Split path into segments, filtering out empty segments
         let segments: Vec<String> = path
             .split('/')
@@ -177,6 +174,7 @@ where
         // Convert segments to symbols
         let mut path_symbols = Vec::with_capacity(segments.len());
         let mut filenames = self.filenames.lock().await;
+
         for segment in segments {
             let symbol = filenames
                 .intern(segment)
@@ -185,18 +183,53 @@ where
         }
         drop(filenames);
 
-        // Check if path already exists in path_to_fileid_map
-        let mut path_to_fileid_map = self.path_to_fileid_map.lock().await;
-        if let Some(&existing_id) = path_to_fileid_map.get(&path_symbols) {
+        Ok(path_symbols)
+    }
+
+    /// Gets the fileid for a registered path if it exists.
+    /// This is a convenience wrapper around `get_path_registered` that takes a string path.
+    async fn get_path_registered_str(
+        &self,
+        path: impl AsRef<str>,
+    ) -> Result<Option<fileid3>, nfsstat3> {
+        let path_symbols = self.path_to_symbols(path).await?;
+        self.get_path_registered(&path_symbols).await
+    }
+
+    /// Gets the fileid for a registered path if it exists.
+    /// This is the core path lookup function that works directly with symbols.
+    async fn get_path_registered(
+        &self,
+        path_symbols: &[Symbol],
+    ) -> Result<Option<fileid3>, nfsstat3> {
+        let path_to_fileid_map = self.path_to_fileid_map.lock().await;
+        Ok(path_to_fileid_map.get(path_symbols).copied())
+    }
+
+    /// Ensures a path is registered in the path-fileid mapping system and returns its fileid.
+    /// This is a convenience wrapper around `ensure_path_registered` that takes a string path.
+    async fn ensure_path_registered_str(&self, path: impl AsRef<str>) -> Result<fileid3, nfsstat3> {
+        let path_symbols = self.path_to_symbols(path).await?;
+        self.ensure_path_registered(&path_symbols).await
+    }
+
+    /// Ensures a path is registered in the path-fileid mapping system and returns its fileid.
+    /// This is the core path registration function that works directly with symbols.
+    /// If the path is already registered, returns the existing fileid.
+    /// If not, creates a new fileid and registers the bidirectional mappings.
+    async fn ensure_path_registered(&self, path_symbols: &[Symbol]) -> Result<fileid3, nfsstat3> {
+        // First check if the path is already registered
+        if let Some(existing_id) = self.get_path_registered(path_symbols).await? {
             return Ok(existing_id);
         }
 
-        // If path doesn't exist, create new mapping
+        // Create new mapping
         let fileid = self.next_fileid();
         let mut fileid_to_path_map = self.fileid_to_path_map.lock().await;
+        let mut path_to_fileid_map = self.path_to_fileid_map.lock().await;
 
-        fileid_to_path_map.insert(fileid, path_symbols.clone());
-        path_to_fileid_map.insert(path_symbols, fileid);
+        fileid_to_path_map.insert(fileid, path_symbols.to_vec());
+        path_to_fileid_map.insert(path_symbols.to_vec(), fileid);
 
         Ok(fileid)
     }
@@ -274,85 +307,9 @@ where
 
         Ok(())
     }
-}
 
-//--------------------------------------------------------------------------------------------------
-// Trait Implementations
-//--------------------------------------------------------------------------------------------------
-
-#[async_trait]
-impl<S> NFSFileSystem for MonofsServer<S>
-where
-    S: IpldStore + Send + Sync + 'static,
-{
-    fn root_dir(&self) -> fileid3 {
-        0
-    }
-
-    fn capabilities(&self) -> VFSCapabilities {
-        VFSCapabilities::ReadWrite
-    }
-
-    async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
-        // Convert filename bytes to string, ensuring valid UTF-8
-        let filename_str = str::from_utf8(filename).map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
-
-        // Validate filename doesn't contain path separators
-        if filename_str.contains('/') {
-            return Err(nfsstat3::NFS3ERR_INVAL);
-        }
-
-        // Get parent directory path
-        let parent_path = self.fileid_to_path(dirid).await?;
-
-        // Get root directory
-        let root = self.root.lock().await;
-
-        // Get parent directory - handle root directory case specially
-        let parent_dir = if parent_path.is_empty() {
-            &*root
-        } else {
-            match root.find(&parent_path).await? {
-                Some(Entity::Dir(dir)) => dir,
-                Some(_) => return Err(nfsstat3::NFS3ERR_NOTDIR),
-                None => return Err(nfsstat3::NFS3ERR_NOENT),
-            }
-        };
-
-        // Check if the entry exists
-        if !parent_dir.has_entry(filename_str)? {
-            return Err(nfsstat3::NFS3ERR_NOENT);
-        }
-
-        drop(root);
-
-        // Construct full path
-        let full_path = if parent_path.is_empty() {
-            filename_str.to_string()
-        } else {
-            format!("{}/{}", parent_path, filename_str)
-        };
-
-        // Ensure path is registered and get its fileid
-        self.ensure_path_registered(&full_path).await
-    }
-
-    async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
-        // Get path from fileid
-        let path = self.fileid_to_path(id).await?;
-
-        // Get root directory
-        let root = self.root.lock().await;
-
-        // Get metadata
-        let metadata = if path.is_empty() {
-            root.get_metadata()
-        } else {
-            let entity = root.find(&path).await?.ok_or(nfsstat3::NFS3ERR_NOENT)?;
-            entity.get_metadata()
-        };
-
-        // Convert to NFS attributes
+    /// Constructs NFS attributes (fattr3) from metadata.
+    async fn construct_attributes(metadata: &Metadata<S>, id: fileid3) -> Result<fattr3, nfsstat3> {
         Ok(fattr3 {
             ftype: match metadata.get_entity_type() {
                 EntityType::File => ftype3::NF3REG,
@@ -441,6 +398,87 @@ where
             },
         })
     }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Trait Implementations
+//--------------------------------------------------------------------------------------------------
+
+#[async_trait]
+impl<S> NFSFileSystem for MonofsServer<S>
+where
+    S: IpldStoreSeekable + Send + Sync,
+{
+    fn root_dir(&self) -> fileid3 {
+        0
+    }
+
+    fn capabilities(&self) -> VFSCapabilities {
+        VFSCapabilities::ReadWrite
+    }
+
+    async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
+        // Convert filename bytes to string, ensuring valid UTF-8
+        let filename_str = str::from_utf8(filename).map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
+
+        // Validate filename doesn't contain path separators
+        if filename_str.contains('/') {
+            return Err(nfsstat3::NFS3ERR_INVAL);
+        }
+
+        // Get parent directory path
+        let parent_path = self.fileid_to_path(dirid).await?;
+
+        // Get root directory
+        let root = self.root.lock().await;
+
+        // Get parent directory - handle root directory case specially
+        let parent_dir = if parent_path.is_empty() {
+            &*root
+        } else {
+            match root.find(&parent_path).await? {
+                Some(Entity::Dir(dir)) => dir,
+                Some(_) => return Err(nfsstat3::NFS3ERR_NOTDIR),
+                None => return Err(nfsstat3::NFS3ERR_NOENT),
+            }
+        };
+
+        // Check if the entry exists
+        if !parent_dir.has_entity(filename_str).await? {
+            return Err(nfsstat3::NFS3ERR_NOENT);
+        }
+
+        drop(root);
+
+        // Construct full path
+        let full_path = if parent_path.is_empty() {
+            filename_str.to_string()
+        } else {
+            format!("{}/{}", parent_path, filename_str)
+        };
+
+        // Ensure path is registered and get its fileid
+        self.ensure_path_registered_str(&full_path).await
+    }
+
+    async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
+        // Get path from fileid
+        let path = self.fileid_to_path(id).await?;
+
+        // Get root directory
+        let root = self.root.lock().await;
+
+        // Get metadata
+        let metadata = if path.is_empty() {
+            root.get_metadata()
+        } else {
+            let entity = root.find(&path).await?.ok_or(nfsstat3::NFS3ERR_NOENT)?;
+            entity.get_metadata()
+        };
+
+        // Convert to NFS attributes
+        Self::construct_attributes(metadata, id).await
+    }
 
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         // Get path from fileid
@@ -460,10 +498,8 @@ where
         // Update all attributes
         Self::update_attributes(metadata, &setattr).await?;
 
-        drop(root);
-
-        // Return updated attributes
-        self.getattr(id).await
+        // Construct and return updated attributes directly
+        Self::construct_attributes(metadata, id).await
     }
 
     async fn read(
@@ -472,10 +508,65 @@ where
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        todo!()
+        // Get path from fileid
+        let path = self.fileid_to_path(id).await?;
+
+        // Get root directory
+        let root = self.root.lock().await;
+
+        // Get the file
+        let entity = if path.is_empty() {
+            return Err(nfsstat3::NFS3ERR_INVAL); // Root cannot be read
+        } else {
+            root.find(&path).await?.ok_or(nfsstat3::NFS3ERR_NOENT)?
+        };
+
+        // Ensure it's a file and read its content
+        match entity {
+            Entity::File(file) => {
+                use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
+
+                // Get content CID
+                let content_cid = file.get_content().ok_or(nfsstat3::NFS3ERR_INVAL)?;
+
+                // Get seekable reader from store
+                let mut reader = file
+                    .get_store()
+                    .get_seekable_bytes(&content_cid)
+                    .await
+                    .map_err(|e| FsError::IpldStore(e))
+                    .map_err(nfsstat3::from)?;
+
+                // Seek to offset
+                reader.seek(SeekFrom::Start(offset)).await.map_err(|e| {
+                    tracing::error!("Failed to seek: {}", e);
+                    nfsstat3::NFS3ERR_IO
+                })?;
+
+                // Read requested bytes
+                let mut buffer = vec![0; count as usize];
+                let bytes_read = reader.read(&mut buffer).await.map_err(|e| {
+                    tracing::error!("Failed to read: {}", e);
+                    nfsstat3::NFS3ERR_IO
+                })?;
+
+                // Truncate buffer to actual bytes read
+                buffer.truncate(bytes_read);
+
+                // Check if we've reached the end
+                let mut peek_buf = [0u8; 1];
+                let reached_end = reader.read(&mut peek_buf).await.map_err(|e| {
+                    tracing::error!("Failed to peek: {}", e);
+                    nfsstat3::NFS3ERR_IO
+                })? == 0;
+
+                Ok((buffer, reached_end))
+            }
+            _ => Err(nfsstat3::NFS3ERR_NOTDIR),
+        }
     }
 
-    async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
+    async fn write(&self, _id: fileid3, _offset: u64, _data: &[u8]) -> Result<fattr3, nfsstat3> {
         todo!()
     }
 
@@ -549,7 +640,7 @@ where
         };
 
         // Ensure path is registered and get its fileid
-        let fileid = self.ensure_path_registered(&full_path).await?;
+        let fileid = self.ensure_path_registered_str(&full_path).await?;
 
         // Get the attributes of the created file
         let attrs = self.getattr(fileid).await?;
@@ -616,7 +707,7 @@ where
         };
 
         // Ensure path is registered and get its fileid
-        self.ensure_path_registered(&full_path).await
+        self.ensure_path_registered_str(&full_path).await
     }
 
     async fn mkdir(
@@ -678,7 +769,7 @@ where
         };
 
         // Ensure path is registered and get its fileid
-        let fileid = self.ensure_path_registered(&full_path).await?;
+        let fileid = self.ensure_path_registered_str(&full_path).await?;
 
         // Get the attributes of the created directory
         let attrs = self.getattr(fileid).await?;
@@ -687,7 +778,29 @@ where
     }
 
     async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
-        todo!()
+        // Convert filename bytes to string, ensuring valid UTF-8
+        let filename_str = str::from_utf8(filename).map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
+
+        // Validate filename doesn't contain path separators
+        if filename_str.contains('/') {
+            return Err(nfsstat3::NFS3ERR_INVAL);
+        }
+
+        // Get parent directory path
+        let parent_path = self.fileid_to_path(dirid).await?;
+
+        // Get root directory
+        let mut root = self.root.lock().await;
+
+        // Construct the full path
+        let full_path = if parent_path.is_empty() {
+            filename_str.to_string()
+        } else {
+            format!("{}/{}", parent_path, filename_str)
+        };
+
+        // Use Dir's remove operation
+        root.remove(&full_path).await.map_err(nfsstat3::from)
     }
 
     async fn rename(
@@ -697,7 +810,38 @@ where
         to_dirid: fileid3,
         to_filename: &filename3,
     ) -> Result<(), nfsstat3> {
-        Ok(())
+        // Convert filenames to strings, ensuring valid UTF-8
+        let from_filename_str =
+            str::from_utf8(from_filename).map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
+        let to_filename_str = str::from_utf8(to_filename).map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
+
+        // Validate filenames don't contain path separators
+        if from_filename_str.contains('/') || to_filename_str.contains('/') {
+            return Err(nfsstat3::NFS3ERR_INVAL);
+        }
+
+        // Get directory paths
+        let from_dir_path = self.fileid_to_path(from_dirid).await?;
+        let to_dir_path = self.fileid_to_path(to_dirid).await?;
+
+        // Construct full paths
+        let from_path = if from_dir_path.is_empty() {
+            from_filename_str.to_string()
+        } else {
+            format!("{}/{}", from_dir_path, from_filename_str)
+        };
+
+        let to_path = if to_dir_path.is_empty() {
+            to_filename_str.to_string()
+        } else {
+            format!("{}/{}", to_dir_path, to_filename_str)
+        };
+
+        // Get root directory and use Dir's rename operation
+        let mut root = self.root.lock().await;
+        root.rename(&from_path, &to_path)
+            .await
+            .map_err(nfsstat3::from)
     }
 
     async fn readdir(
@@ -706,7 +850,83 @@ where
         start_after: fileid3,
         max_entries: usize,
     ) -> Result<ReadDirResult, nfsstat3> {
-        todo!()
+        // Get path from fileid
+        let dir_path = self.fileid_to_path(dirid).await?;
+
+        // Get root directory
+        let root = self.root.lock().await;
+
+        // Get directory
+        let dir = if dir_path.is_empty() {
+            &*root
+        } else {
+            match root.find(&dir_path).await? {
+                Some(Entity::Dir(dir)) => dir,
+                Some(_) => return Err(nfsstat3::NFS3ERR_NOTDIR),
+                None => return Err(nfsstat3::NFS3ERR_NOENT),
+            }
+        };
+
+        let mut entries = Vec::new();
+        let mut found_start = start_after == 0;
+        let mut has_more = false;
+
+        for (name, link) in dir.get_entries() {
+            // Skip entries until we find the start_after fileid
+            if !found_start {
+                let entry_path = if dir_path.is_empty() {
+                    name.to_string()
+                } else {
+                    format!("{}/{}", dir_path, name)
+                };
+
+                // Try to get existing fileid without creating a new one
+                if let Some(entry_id) = self.get_path_registered_str(&entry_path).await? {
+                    if entry_id == start_after {
+                        found_start = true;
+                    }
+                }
+                continue;
+            }
+
+            // Resolve the entity to get its metadata
+            let entity = link.resolve_entity(dir.get_store().clone()).await?;
+
+            // Skip deleted entries
+            if entity.get_metadata().get_deleted_at().is_some() {
+                continue;
+            }
+
+            // Get the full path for this entry
+            let entry_path = if dir_path.is_empty() {
+                name.to_string()
+            } else {
+                format!("{}/{}", dir_path, name)
+            };
+
+            // Get or create fileid for this entry
+            let fileid = self.ensure_path_registered_str(&entry_path).await?;
+
+            // Construct attributes for this entry
+            let attr = Self::construct_attributes(entity.get_metadata(), fileid).await?;
+
+            // If we've reached max_entries, note that there are more entries and break
+            if entries.len() >= max_entries {
+                has_more = true;
+                break;
+            }
+
+            entries.push(DirEntry {
+                fileid,
+                name: filename3::from(name.as_str().as_bytes()),
+                attr,
+            });
+        }
+
+        Ok(ReadDirResult {
+            entries,
+            end: !has_more, // Set end to true only if we've processed all entries
+        })
     }
 
     async fn symlink(
@@ -778,7 +998,7 @@ where
         };
 
         // Ensure path is registered and get its fileid
-        let fileid = self.ensure_path_registered(&full_path).await?;
+        let fileid = self.ensure_path_registered_str(&full_path).await?;
 
         // Get the attributes of the created symlink
         let attrs = self.getattr(fileid).await?;
@@ -804,7 +1024,7 @@ where
         match entity {
             Entity::SymPathLink(symlink) => {
                 let target_path = symlink.get_target_path().as_str();
-                Ok(nfspath3::from(target_path.as_bytes().to_vec()))
+                Ok(nfspath3::from(target_path.as_bytes()))
             }
             _ => Err(nfsstat3::NFS3ERR_INVAL),
         }
@@ -839,7 +1059,7 @@ mod tests {
     #[tokio::test]
     async fn test_nfs_create_file() {
         let server = MemoryMonofsServer::new(MemoryStore::default());
-        let filename = filename3::from("test.txt".as_bytes().to_vec());
+        let filename = filename3::from("test.txt".as_bytes());
 
         // Create file with default attributes
         let attr = sattr3::default();
@@ -855,7 +1075,7 @@ mod tests {
         assert!(matches!(result, Err(nfsstat3::NFS3ERR_EXIST)));
 
         // Try to create file with invalid filename
-        let invalid_filename = filename3::from("test/invalid.txt".as_bytes().to_vec());
+        let invalid_filename = filename3::from("test/invalid.txt".as_bytes());
         let result = server.create(0, &invalid_filename, attr).await;
         assert!(matches!(result, Err(nfsstat3::NFS3ERR_INVAL)));
 
@@ -867,7 +1087,7 @@ mod tests {
     #[tokio::test]
     async fn test_nfs_create_with_custom_attributes() {
         let server = MemoryMonofsServer::new(MemoryStore::default());
-        let filename = filename3::from("test.txt".as_bytes().to_vec());
+        let filename = filename3::from("test.txt".as_bytes());
 
         // Create file with custom attributes
         let mut attr = sattr3::default();
@@ -886,7 +1106,7 @@ mod tests {
     #[tokio::test]
     async fn test_nfs_create_exclusive() {
         let server = MemoryMonofsServer::new(MemoryStore::default());
-        let filename = filename3::from("test.txt".as_bytes().to_vec());
+        let filename = filename3::from("test.txt".as_bytes());
 
         // Create file exclusively
         let fileid = server.create_exclusive(0, &filename).await.unwrap();
@@ -904,7 +1124,7 @@ mod tests {
     #[tokio::test]
     async fn test_nfs_lookup() {
         let server = MemoryMonofsServer::new(MemoryStore::default());
-        let filename = filename3::from("test.txt".as_bytes().to_vec());
+        let filename = filename3::from("test.txt".as_bytes());
 
         // Create a file first
         let attr = sattr3::default();
@@ -915,12 +1135,12 @@ mod tests {
         assert_eq!(created_id, looked_up_id);
 
         // Try to lookup non-existent file
-        let nonexistent = filename3::from("nonexistent.txt".as_bytes().to_vec());
+        let nonexistent = filename3::from("nonexistent.txt".as_bytes());
         let result = server.lookup(0, &nonexistent).await;
         assert!(matches!(result, Err(nfsstat3::NFS3ERR_NOENT)));
 
         // Try to lookup with invalid filename
-        let invalid_filename = filename3::from("test/invalid.txt".as_bytes().to_vec());
+        let invalid_filename = filename3::from("test/invalid.txt".as_bytes());
         let result = server.lookup(0, &invalid_filename).await;
         assert!(matches!(result, Err(nfsstat3::NFS3ERR_INVAL)));
     }
@@ -928,7 +1148,7 @@ mod tests {
     #[tokio::test]
     async fn test_nfs_setattr() {
         let server = MemoryMonofsServer::new(MemoryStore::default());
-        let filename = filename3::from("test.txt".as_bytes().to_vec());
+        let filename = filename3::from("test.txt".as_bytes());
 
         // Create a file first
         let attr = sattr3::default();
@@ -955,7 +1175,7 @@ mod tests {
     #[tokio::test]
     async fn test_nfs_fileid_to_path() {
         let server = MemoryMonofsServer::new(MemoryStore::default());
-        let filename = filename3::from("test.txt".as_bytes().to_vec());
+        let filename = filename3::from("test.txt".as_bytes());
 
         // Create a file and get its ID
         let (fileid, _) = server
@@ -975,7 +1195,7 @@ mod tests {
     #[tokio::test]
     async fn test_nfs_error_handling() {
         let server = MemoryMonofsServer::new(MemoryStore::default());
-        let filename = filename3::from("test.txt".as_bytes().to_vec());
+        let filename = filename3::from("test.txt".as_bytes());
 
         // Test handling of invalid UTF-8
         let invalid_utf8 = filename3::from(vec![0xFF, 0xFF]);
@@ -983,7 +1203,7 @@ mod tests {
         assert!(matches!(result, Err(nfsstat3::NFS3ERR_INVAL)));
 
         // Test handling of path separators in filename
-        let invalid_path = filename3::from("foo/bar".as_bytes().to_vec());
+        let invalid_path = filename3::from("foo/bar".as_bytes());
         let result = server.create(0, &invalid_path, sattr3::default()).await;
         assert!(matches!(result, Err(nfsstat3::NFS3ERR_INVAL)));
 
@@ -995,7 +1215,7 @@ mod tests {
     #[tokio::test]
     async fn test_nfs_mkdir() {
         let server = MemoryMonofsServer::new(MemoryStore::default());
-        let dirname = filename3::from("test_dir".as_bytes().to_vec());
+        let dirname = filename3::from("test_dir".as_bytes());
 
         // Test 1: Create directory in root
         let (fileid, attrs) = server.mkdir(0, &dirname).await.unwrap();
@@ -1008,14 +1228,14 @@ mod tests {
         assert!(matches!(result, Err(nfsstat3::NFS3ERR_EXIST)));
 
         // Test 3: Create nested directory
-        let nested_dirname = filename3::from("nested".as_bytes().to_vec());
+        let nested_dirname = filename3::from("nested".as_bytes());
         let (nested_id, nested_attrs) = server.mkdir(fileid, &nested_dirname).await.unwrap();
         assert!(nested_id > 0);
         assert!(matches!(nested_attrs.ftype, ftype3::NF3DIR));
         assert_eq!(nested_attrs.mode, DEFAULT_DIR_MODE);
 
         // Test 4: Try to create directory with invalid name (contains '/')
-        let invalid_dirname = filename3::from("invalid/name".as_bytes().to_vec());
+        let invalid_dirname = filename3::from("invalid/name".as_bytes());
         let result = server.mkdir(0, &invalid_dirname).await;
         assert!(matches!(result, Err(nfsstat3::NFS3ERR_INVAL)));
 
@@ -1025,7 +1245,7 @@ mod tests {
 
         // Test 6: Try to create directory in a file (not a directory)
         // First create a file
-        let filename = filename3::from("testfile.txt".as_bytes().to_vec());
+        let filename = filename3::from("testfile.txt".as_bytes());
         let attr = sattr3::default();
         let (file_id, _) = server.create(0, &filename, attr).await.unwrap();
 
@@ -1037,8 +1257,8 @@ mod tests {
     #[tokio::test]
     async fn test_nfs_symlink() {
         let server = MemoryMonofsServer::new(MemoryStore::default());
-        let linkname = filename3::from("test_link".as_bytes().to_vec());
-        let target = nfspath3::from("target_file.txt".as_bytes().to_vec());
+        let linkname = filename3::from("test_link".as_bytes());
+        let target = nfspath3::from("target_file.txt".as_bytes());
 
         // Test 1: Create symlink in root
         let (fileid, attrs) = server
@@ -1057,11 +1277,11 @@ mod tests {
 
         // Test 3: Create symlink in a subdirectory
         // First create a directory
-        let dirname = filename3::from("test_dir".as_bytes().to_vec());
+        let dirname = filename3::from("test_dir".as_bytes());
         let (dir_id, _) = server.mkdir(0, &dirname).await.unwrap();
 
         // Then create symlink in that directory
-        let nested_linkname = filename3::from("nested_link".as_bytes().to_vec());
+        let nested_linkname = filename3::from("nested_link".as_bytes());
         let (nested_id, nested_attrs) = server
             .symlink(dir_id, &nested_linkname, &target, &sattr3::default())
             .await
@@ -1071,7 +1291,7 @@ mod tests {
         assert_eq!(nested_attrs.mode, DEFAULT_SYMLINK_MODE);
 
         // Test 4: Try to create symlink with invalid name (contains '/')
-        let invalid_linkname = filename3::from("invalid/name".as_bytes().to_vec());
+        let invalid_linkname = filename3::from("invalid/name".as_bytes());
         let result = server
             .symlink(0, &invalid_linkname, &target, &sattr3::default())
             .await;
@@ -1085,7 +1305,7 @@ mod tests {
 
         // Test 6: Try to create symlink in a file (not a directory)
         // First create a file
-        let filename = filename3::from("testfile.txt".as_bytes().to_vec());
+        let filename = filename3::from("testfile.txt".as_bytes());
         let (file_id, _) = server
             .create(0, &filename, sattr3::default())
             .await
@@ -1103,7 +1323,7 @@ mod tests {
         let (custom_id, custom_attrs) = server
             .symlink(
                 0,
-                &filename3::from("custom_link".as_bytes().to_vec()),
+                &filename3::from("custom_link".as_bytes()),
                 &target,
                 &custom_attr,
             )
@@ -1117,8 +1337,8 @@ mod tests {
     #[tokio::test]
     async fn test_nfs_readlink() {
         let server = MemoryMonofsServer::new(MemoryStore::default());
-        let linkname = filename3::from("test_link".as_bytes().to_vec());
-        let target = nfspath3::from("target_file.txt".as_bytes().to_vec());
+        let linkname = filename3::from("test_link".as_bytes());
+        let target = nfspath3::from("target_file.txt".as_bytes());
 
         // Test 1: Create symlink and read its target
         let (fileid, _) = server
@@ -1137,7 +1357,7 @@ mod tests {
         assert!(matches!(result, Err(nfsstat3::NFS3ERR_INVAL)));
 
         // Test 4: Try to read regular file as symlink
-        let filename = filename3::from("testfile.txt".as_bytes().to_vec());
+        let filename = filename3::from("testfile.txt".as_bytes());
         let (file_id, _) = server
             .create(0, &filename, sattr3::default())
             .await
@@ -1146,19 +1366,463 @@ mod tests {
         assert!(matches!(result, Err(nfsstat3::NFS3ERR_INVAL)));
 
         // Test 5: Try to read directory as symlink
-        let dirname = filename3::from("testdir".as_bytes().to_vec());
+        let dirname = filename3::from("testdir".as_bytes());
         let (dir_id, _) = server.mkdir(0, &dirname).await.unwrap();
         let result = server.readlink(dir_id).await;
         assert!(matches!(result, Err(nfsstat3::NFS3ERR_INVAL)));
 
         // Test 6: Create and read symlink with longer/nested target path
-        let nested_target = nfspath3::from("path/to/nested/target.txt".as_bytes().to_vec());
-        let nested_linkname = filename3::from("nested_link".as_bytes().to_vec());
+        let nested_target = nfspath3::from("path/to/nested/target.txt".as_bytes());
+        let nested_linkname = filename3::from("nested_link".as_bytes());
         let (nested_id, _) = server
             .symlink(0, &nested_linkname, &nested_target, &sattr3::default())
             .await
             .unwrap();
         let read_nested_target = server.readlink(nested_id).await.unwrap();
         assert_eq!(read_nested_target.as_ref(), nested_target.as_ref());
+    }
+
+    #[tokio::test]
+    async fn test_nfs_readdir() {
+        let server = MemoryMonofsServer::new(MemoryStore::default());
+
+        // Create test files and directories
+        let file1 = filename3::from("file1.txt".as_bytes());
+        let file2 = filename3::from("file2.txt".as_bytes());
+        let dir1 = filename3::from("dir1".as_bytes());
+
+        let (_, _) = server.create(0, &file1, sattr3::default()).await.unwrap();
+        let (_, _) = server.create(0, &file2, sattr3::default()).await.unwrap();
+        let (dir1_id, _) = server.mkdir(0, &dir1).await.unwrap();
+
+        // Test 1: Read root directory
+        let result = server.readdir(0, 0, 10).await.unwrap();
+        assert_eq!(result.entries.len(), 3);
+        assert!(result.end); // No more entries
+
+        // Verify entries are correct
+        let mut entries = result.entries.iter();
+        let _ = entries.next().unwrap();
+        let _ = entries.next().unwrap();
+        let _ = entries.next().unwrap();
+
+        // Verify we have at least one file and one directory
+        let has_file = result
+            .entries
+            .iter()
+            .any(|e| matches!(e.attr.ftype, ftype3::NF3REG));
+        let has_dir = result
+            .entries
+            .iter()
+            .any(|e| matches!(e.attr.ftype, ftype3::NF3DIR));
+        assert!(has_file, "Should have at least one regular file");
+        assert!(has_dir, "Should have at least one directory");
+
+        // Test 2: Pagination
+        let result = server.readdir(0, 0, 2).await.unwrap();
+        assert_eq!(result.entries.len(), 2);
+        assert!(!result.end); // More entries exist
+
+        let next_id = result.entries.last().unwrap().fileid;
+        let result = server.readdir(0, next_id, 2).await.unwrap();
+        assert_eq!(result.entries.len(), 1);
+        assert!(result.end);
+
+        // Test 3: Read from subdirectory
+        let subfile = filename3::from("subfile.txt".as_bytes());
+        let (subfile_id, _) = server
+            .create(dir1_id, &subfile, sattr3::default())
+            .await
+            .unwrap();
+
+        let result = server.readdir(dir1_id, 0, 10).await.unwrap();
+        assert_eq!(result.entries.len(), 1);
+        assert!(result.end);
+        assert_eq!(result.entries[0].fileid, subfile_id);
+        assert!(matches!(result.entries[0].attr.ftype, ftype3::NF3REG));
+
+        // // Test 4: Handle deleted entries
+        // server.remove(0, &file1).await.unwrap();
+        // let result = server.readdir(0, 0, 10).await.unwrap();
+        // assert_eq!(result.entries.len(), 2); // file1 should be excluded
+        // assert!(result.end);
+
+        // // Test 5: Error cases
+        // // Non-existent directory
+        // assert!(matches!(
+        //     server.readdir(999, 0, 10).await,
+        //     Err(nfsstat3::NFS3ERR_NOENT)
+        // ));
+
+        // // Not a directory
+        // assert!(matches!(
+        //     server.readdir(file2_id, 0, 10).await,
+        //     Err(nfsstat3::NFS3ERR_NOTDIR)
+        // ));
+    }
+
+    #[tokio::test]
+    async fn test_nfs_readdir_complex_hierarchy() {
+        let server = MemoryMonofsServer::new(MemoryStore::default());
+
+        // Create a complex directory structure
+        let dir1 = filename3::from("dir1".as_bytes());
+        let dir2 = filename3::from("dir2".as_bytes());
+        let file1 = filename3::from("file1.txt".as_bytes());
+        let file2 = filename3::from("file2.txt".as_bytes());
+
+        let (dir1_id, _) = server.mkdir(0, &dir1).await.unwrap();
+        let (dir2_id, _) = server.mkdir(dir1_id, &dir2).await.unwrap();
+        let (_, _) = server
+            .create(dir1_id, &file1, sattr3::default())
+            .await
+            .unwrap();
+        let (_, _) = server
+            .create(dir2_id, &file2, sattr3::default())
+            .await
+            .unwrap();
+
+        // Test reading at different levels
+        // Root directory
+        let root_entries = server.readdir(0, 0, 10).await.unwrap();
+        assert_eq!(root_entries.entries.len(), 1); // Only dir1
+
+        // First level directory
+        let dir1_entries = server.readdir(dir1_id, 0, 10).await.unwrap();
+        assert_eq!(dir1_entries.entries.len(), 2); // dir2 and file1
+
+        // Second level directory
+        let dir2_entries = server.readdir(dir2_id, 0, 10).await.unwrap();
+        assert_eq!(dir2_entries.entries.len(), 1); // Only file2
+
+        // Test pagination at each level
+        // Root directory with pagination
+        let root_page1 = server.readdir(0, 0, 1).await.unwrap();
+        assert_eq!(root_page1.entries.len(), 1);
+        assert!(root_page1.end); // No more entries
+
+        // Dir1 with pagination
+        let dir1_page1 = server.readdir(dir1_id, 0, 1).await.unwrap();
+        assert_eq!(dir1_page1.entries.len(), 1);
+        assert!(!dir1_page1.end); // More entries exist
+
+        let next_id = dir1_page1.entries[0].fileid;
+        let dir1_page2 = server.readdir(dir1_id, next_id, 1).await.unwrap();
+        assert_eq!(dir1_page2.entries.len(), 1);
+        assert!(dir1_page2.end);
+    }
+
+    #[tokio::test]
+    async fn test_nfs_readdir_empty_and_edge_cases() {
+        let server = MemoryMonofsServer::new(MemoryStore::default());
+
+        // Test 1: Empty directory
+        let empty_dir = filename3::from("empty".as_bytes());
+        let (empty_id, _) = server.mkdir(0, &empty_dir).await.unwrap();
+
+        let result = server.readdir(empty_id, 0, 10).await.unwrap();
+        assert_eq!(result.entries.len(), 0);
+        assert!(result.end);
+
+        // Test 2: Zero max_entries
+        let result = server.readdir(empty_id, 0, 0).await.unwrap();
+        assert_eq!(result.entries.len(), 0);
+        assert!(result.end);
+
+        // Test 3: Large max_entries
+        let result = server.readdir(empty_id, 0, usize::MAX).await.unwrap();
+        assert_eq!(result.entries.len(), 0);
+        assert!(result.end);
+
+        // Test 4: Invalid start_after ID
+        let result = server.readdir(empty_id, 999, 10).await.unwrap();
+        assert_eq!(result.entries.len(), 0);
+        assert!(result.end);
+
+        // Test 5: Directory with many entries
+        let mut expected_count = 0;
+        for i in 0..20 {
+            let name = format!("file{}.txt", i);
+            let filename = filename3::from(name.as_bytes());
+            server
+                .create(empty_id, &filename, sattr3::default())
+                .await
+                .unwrap();
+            expected_count += 1;
+        }
+
+        // Read all entries
+        let result = server.readdir(empty_id, 0, 100).await.unwrap();
+        assert_eq!(result.entries.len(), expected_count);
+        assert!(result.end);
+
+        // Read with pagination
+        let result = server.readdir(empty_id, 0, 5).await.unwrap();
+        assert_eq!(result.entries.len(), 5);
+        assert!(!result.end);
+    }
+
+    #[tokio::test]
+    async fn test_nfs_remove() {
+        let server = MemoryMonofsServer::new(MemoryStore::default());
+
+        // Create test files and directories
+        let file1 = filename3::from("file1.txt".as_bytes());
+        let file2 = filename3::from("file2.txt".as_bytes());
+        let dir1 = filename3::from("dir1".as_bytes());
+        let nested_file = filename3::from("nested.txt".as_bytes());
+
+        let (_, _) = server.create(0, &file1, sattr3::default()).await.unwrap();
+        let (_, _) = server.create(0, &file2, sattr3::default()).await.unwrap();
+        let (dir1_id, _) = server.mkdir(0, &dir1).await.unwrap();
+        let (_, _) = server
+            .create(dir1_id, &nested_file, sattr3::default())
+            .await
+            .unwrap();
+
+        // Test 1: Remove a file
+        println!("map before: {:?}", server.fileid_to_path_map.lock().await);
+        println!(
+            "lookup before: {:?}",
+            server.root.lock().await.find("file1.txt").await
+        );
+
+        server.remove(0, &file1).await.unwrap();
+
+        println!("map after: {:?}", server.fileid_to_path_map.lock().await);
+        println!(
+            "lookup after: {:?}",
+            server.root.lock().await.find("file1.txt").await
+        );
+
+        assert!(matches!(
+            server.lookup(0, &file1).await,
+            Err(nfsstat3::NFS3ERR_NOENT)
+        ));
+
+        // Test 2: Remove a nested file
+        server.remove(dir1_id, &nested_file).await.unwrap();
+        assert!(matches!(
+            server.lookup(dir1_id, &nested_file).await,
+            Err(nfsstat3::NFS3ERR_NOENT)
+        ));
+
+        // Test 3: Try to remove a non-existent file
+        let nonexistent = filename3::from("nonexistent.txt".as_bytes());
+        assert!(matches!(
+            server.remove(0, &nonexistent).await,
+            Err(nfsstat3::NFS3ERR_NOENT)
+        ));
+
+        // Test 4: Try to remove from non-existent directory
+        assert!(matches!(
+            server.remove(999, &file2).await,
+            Err(nfsstat3::NFS3ERR_NOENT)
+        ));
+
+        // Test 5: Try to remove with invalid filename
+        let invalid = filename3::from("invalid/name.txt".as_bytes());
+        assert!(matches!(
+            server.remove(0, &invalid).await,
+            Err(nfsstat3::NFS3ERR_INVAL)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_nfs_rename() {
+        let server = MemoryMonofsServer::new(MemoryStore::default());
+
+        // Create test files and directories
+        let file1 = filename3::from("file1.txt".as_bytes());
+        let file2 = filename3::from("file2.txt".as_bytes());
+        let dir1 = filename3::from("dir1".as_bytes());
+        let dir2 = filename3::from("dir2".as_bytes());
+        let nested_file = filename3::from("nested.txt".as_bytes());
+
+        let (_, _) = server.create(0, &file1, sattr3::default()).await.unwrap();
+        let (_, _) = server.create(0, &file2, sattr3::default()).await.unwrap();
+        let (dir1_id, _) = server.mkdir(0, &dir1).await.unwrap();
+        let (dir2_id, _) = server.mkdir(0, &dir2).await.unwrap();
+        let (_, _) = server
+            .create(dir1_id, &nested_file, sattr3::default())
+            .await
+            .unwrap();
+
+        // Test 1: Rename a file in the same directory
+        let new_name = filename3::from("renamed.txt".as_bytes());
+        server.rename(0, &file1, 0, &new_name).await.unwrap();
+        assert!(matches!(
+            server.lookup(0, &file1).await,
+            Err(nfsstat3::NFS3ERR_NOENT)
+        ));
+        assert!(server.lookup(0, &new_name).await.is_ok());
+
+        // Test 2: Move a file to a different directory
+        let moved_name = filename3::from("moved.txt".as_bytes());
+        server
+            .rename(0, &file2, dir1_id, &moved_name)
+            .await
+            .unwrap();
+        assert!(matches!(
+            server.lookup(0, &file2).await,
+            Err(nfsstat3::NFS3ERR_NOENT)
+        ));
+        assert!(server.lookup(dir1_id, &moved_name).await.is_ok());
+
+        // Test 3: Move a file between subdirectories
+        let final_name = filename3::from("final.txt".as_bytes());
+        server
+            .rename(dir1_id, &nested_file, dir2_id, &final_name)
+            .await
+            .unwrap();
+        assert!(matches!(
+            server.lookup(dir1_id, &nested_file).await,
+            Err(nfsstat3::NFS3ERR_NOENT)
+        ));
+        assert!(server.lookup(dir2_id, &final_name).await.is_ok());
+
+        // Test 4: Try to rename non-existent file
+        let nonexistent = filename3::from("nonexistent.txt".as_bytes());
+        assert!(matches!(
+            server.rename(0, &nonexistent, dir1_id, &final_name).await,
+            Err(nfsstat3::NFS3ERR_NOENT)
+        ));
+
+        // Test 5: Try to rename to invalid filename
+        let invalid = filename3::from("invalid/name.txt".as_bytes());
+        assert!(matches!(
+            server.rename(0, &new_name, 0, &invalid).await,
+            Err(nfsstat3::NFS3ERR_INVAL)
+        ));
+
+        // Test 6: Try to rename to non-existent directory
+        assert!(matches!(
+            server.rename(0, &new_name, 999, &final_name).await,
+            Err(nfsstat3::NFS3ERR_NOENT)
+        ));
+
+        // Test 7: Verify that the file content is preserved after rename
+        let root = server.root.lock().await;
+        let final_path = "dir2/final.txt";
+        let moved_entity = root.find(final_path).await.unwrap().unwrap();
+        assert!(matches!(moved_entity, Entity::File(_)));
+    }
+
+    #[tokio::test]
+    async fn test_nfs_read_write() {
+        let server = MemoryMonofsServer::new(MemoryStore::default());
+
+        // Create a test file
+        let (fileid, _) = server
+            .create(
+                0,
+                &filename3::from("test.txt".as_bytes()),
+                sattr3::default(),
+            )
+            .await
+            .unwrap();
+
+        // Test 1: Reading from empty file
+        let (empty_data, eof) = server.read(fileid, 0, 10).await.unwrap();
+        assert!(empty_data.is_empty());
+        assert!(eof);
+
+        // Test 2: Write and read basic data
+        let data = b"Hello, World!";
+        let write_result = server.write(fileid, 0, data).await.unwrap();
+        assert_eq!(write_result.size, 13); // Length of "Hello, World!"
+
+        // Read back with different offsets
+        let (full_data, eof) = server.read(fileid, 0, 13).await.unwrap();
+        assert_eq!(&full_data, data);
+        assert!(eof);
+
+        // Read with offset in middle
+        let (partial_data, eof) = server.read(fileid, 7, 5).await.unwrap();
+        assert_eq!(&partial_data, b"World");
+        assert!(eof);
+
+        // Read with offset at end
+        let (end_data, eof) = server.read(fileid, 13, 5).await.unwrap();
+        assert!(end_data.is_empty());
+        assert!(eof);
+
+        // Test 3: Append and verify with offset reads
+        let append_data = b", NFS!";
+        let append_result = server.write(fileid, 13, append_data).await.unwrap();
+        assert_eq!(append_result.size, 18);
+
+        // Read entire content
+        let (full_data, eof) = server.read(fileid, 0, 18).await.unwrap();
+        assert_eq!(&full_data, b"Hello, World!, NFS!");
+        assert!(eof);
+
+        // Read just the appended part
+        let (appended_part, eof) = server.read(fileid, 13, 5).await.unwrap();
+        assert_eq!(&appended_part, b", NFS");
+        assert!(!eof);
+
+        // Test 4: Overwrite in middle and verify with offset reads
+        let overwrite_data = b"there";
+        let overwrite_result = server.write(fileid, 7, overwrite_data).await.unwrap();
+        assert_eq!(overwrite_result.size, 18);
+
+        // Read the modified section
+        let (modified_part, eof) = server.read(fileid, 7, 5).await.unwrap();
+        assert_eq!(&modified_part, b"there");
+        assert!(!eof);
+
+        // Read across the modified boundary
+        let (across_mod, eof) = server.read(fileid, 5, 7).await.unwrap();
+        assert_eq!(&across_mod, b", there!");
+        assert!(!eof);
+
+        // Test 5: Sparse file reads
+        let gap_data = b"sparse";
+        let gap_write = server.write(fileid, 100, gap_data).await.unwrap();
+        assert_eq!(gap_write.size, 106);
+
+        // Read the zeros before sparse data
+        let (before_sparse, eof) = server.read(fileid, 95, 5).await.unwrap();
+        assert_eq!(&before_sparse, &[0, 0, 0, 0, 0]);
+        assert!(!eof);
+
+        // Read across the sparse boundary
+        let (sparse_boundary, eof) = server.read(fileid, 98, 4).await.unwrap();
+        assert_eq!(&sparse_boundary, &[0, 0, b's', b'p']);
+        assert!(!eof);
+
+        // Read in the middle of the sparse region
+        let (mid_sparse, eof) = server.read(fileid, 102, 4).await.unwrap();
+        assert_eq!(&mid_sparse, b"arse");
+        assert!(eof);
+
+        // Test 6: Edge cases
+        // Read with zero count
+        let (zero_count, eof) = server.read(fileid, 5, 0).await.unwrap();
+        assert!(zero_count.is_empty());
+        assert!(!eof);
+
+        // Read with offset beyond file size
+        let (beyond_size, eof) = server.read(fileid, 200, 10).await.unwrap();
+        assert!(beyond_size.is_empty());
+        assert!(eof);
+
+        // Test 7: Error cases
+        // Invalid file ID
+        assert!(matches!(
+            server.read(999, 0, 10).await,
+            Err(nfsstat3::NFS3ERR_STALE)
+        ));
+
+        // Read from deleted file
+        server
+            .remove(0, &filename3::from("test.txt".as_bytes()))
+            .await
+            .unwrap();
+        assert!(matches!(
+            server.read(fileid, 0, 10).await,
+            Err(nfsstat3::NFS3ERR_STALE)
+        ));
     }
 }

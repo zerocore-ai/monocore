@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
     pin::Pin,
     sync::Arc,
 };
@@ -232,11 +233,12 @@ where
     C: Chunker + Clone + Send + Sync,
     L: LayoutSeekable + Clone + Send + Sync,
 {
-    async fn get_seekable_bytes<'a>(
+    fn get_seekable_bytes<'a>(
         &'a self,
         cid: &'a Cid,
-    ) -> StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>> {
-        self.layout.retrieve_seekable(cid, self.clone()).await
+    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>> + Send
+    {
+        self.layout.retrieve_seekable(cid, self.clone())
     }
 }
 

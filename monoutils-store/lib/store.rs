@@ -174,7 +174,7 @@ pub trait IpldStoreSeekable: IpldStore {
     fn get_seekable_bytes<'a>(
         &'a self,
         cid: &'a Cid,
-    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>>;
+    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>> + Send;
 }
 
 /// A trait for types that can be changed to a different store.

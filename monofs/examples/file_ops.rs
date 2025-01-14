@@ -21,7 +21,7 @@
 //! cargo run --example file_ops
 //! ```
 
-use monofs::filesystem::{File, FileInputStream, FileOutputStream};
+use monofs::filesystem::File;
 use monoutils_store::{MemoryStore, Storable};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
@@ -40,13 +40,13 @@ async fn main() -> anyhow::Result<()> {
 
     // Write content to the file
     let content = b"Hello, monofs!";
-    let mut output_stream = FileOutputStream::new(&mut file);
+    let mut output_stream = file.get_output_stream();
     output_stream.write_all(content).await?;
     output_stream.shutdown().await?;
     println!("Wrote content to file");
 
     // Read content from the file
-    let input_stream = FileInputStream::new(&file).await?;
+    let input_stream = file.get_input_stream().await?;
     let mut buffer = Vec::new();
     let mut reader = BufReader::new(input_stream);
     reader.read_to_end(&mut buffer).await?;
@@ -54,7 +54,6 @@ async fn main() -> anyhow::Result<()> {
         "Read content from file: {}",
         String::from_utf8_lossy(&buffer)
     );
-    drop(reader); // Drop reader to free up the input stream ref to the file
 
     // Check if the file is empty
     println!("File is empty: {}", file.is_empty().await?);
@@ -71,8 +70,12 @@ async fn main() -> anyhow::Result<()> {
     let loaded_file = File::load(&file_cid, store).await?;
     println!("Loaded file: {:?}", loaded_file);
 
+    // Drop reader to free up reference to the file
+    drop(reader);
+
     // Truncate the file
     file.truncate();
+
     println!("Truncated file");
     println!("File is empty after truncation: {}", file.is_empty().await?);
 
