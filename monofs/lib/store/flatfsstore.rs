@@ -6,9 +6,10 @@ use libipld::{
     multihash::{Code, MultihashDigest},
     Cid,
 };
+use monoutils::SeekableReader;
 use monoutils_store::{
-    Chunker, Codec, FixedSizeChunker, FlatLayout, IpldReferences, IpldStore, Layout, StoreError,
-    StoreResult,
+    Chunker, Codec, FixedSizeChunker, FlatLayout, IpldReferences, IpldStore, IpldStoreSeekable,
+    Layout, LayoutSeekable, StoreError, StoreResult,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::fs::{create_dir_all, File};
@@ -373,6 +374,19 @@ where
     }
 }
 
+impl<C, L> IpldStoreSeekable for FlatFsStore<C, L>
+where
+    C: Chunker + Clone + Send + Sync,
+    L: LayoutSeekable + Clone + Send + Sync,
+{
+    async fn get_seekable_bytes<'a>(
+        &'a self,
+        cid: &'a Cid,
+    ) -> StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>> {
+        self.layout.retrieve_seekable(cid, self.clone()).await
+    }
+}
+
 //--------------------------------------------------------------------------------------------------
 // Tests
 //--------------------------------------------------------------------------------------------------
@@ -383,8 +397,8 @@ mod tests {
     use std::fs;
     use tokio::io::AsyncReadExt;
 
-    use super::*;
     use super::fixtures::{self, TestNode};
+    use super::*;
 
     #[tokio::test]
     async fn test_flatfsstore_raw_block() -> anyhow::Result<()> {
@@ -549,7 +563,6 @@ mod tests {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod fixtures {

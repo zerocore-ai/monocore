@@ -8,7 +8,6 @@ mod error;
 mod file;
 mod kind;
 mod metadata;
-mod storeswitch;
 mod symcidlink;
 mod sympathlink;
 
@@ -24,6 +23,5 @@ pub use error::*;
 pub use file::*;
 pub use kind::*;
 pub use metadata::*;
-pub use storeswitch::*;
 pub use symcidlink::*;
 pub use sympathlink::*;

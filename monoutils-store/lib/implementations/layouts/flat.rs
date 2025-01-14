@@ -10,12 +10,10 @@ use async_stream::try_stream;
 use bytes::Bytes;
 use futures::{ready, stream::BoxStream, Future, StreamExt};
 use libipld::Cid;
+use monoutils::SeekableReader;
 use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
 
-use crate::{
-    IpldStore, Layout, LayoutError, LayoutSeekable, MerkleNode, SeekableReader, StoreError,
-    StoreResult,
-};
+use crate::{IpldStore, Layout, LayoutError, LayoutSeekable, MerkleNode, StoreError, StoreResult};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -297,7 +295,7 @@ impl LayoutSeekable for FlatLayout {
         &self,
         cid: &'a Cid,
         store: impl IpldStore + Send + Sync + 'a,
-    ) -> StoreResult<Pin<Box<dyn SeekableReader + Send + 'a>>> {
+    ) -> StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>> {
         let node = store.get_node(cid).await?;
         let reader = FlatLayoutReader::new(node, store)?;
         Ok(Box::pin(reader))

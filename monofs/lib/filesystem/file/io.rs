@@ -1,12 +1,13 @@
 use std::{
-    io,
+    io::{self, SeekFrom},
     pin::Pin,
     task::{Context, Poll},
 };
 
 use futures::Future;
-use monoutils_store::IpldStore;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use monoutils::{EmptySeekableReader, SeekableReader};
+use monoutils_store::{IpldStore, IpldStoreSeekable};
+use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 
 use crate::filesystem::{File, FsResult};
 
@@ -16,7 +17,7 @@ use crate::filesystem::{File, FsResult};
 
 /// A stream for reading from a `File` asynchronously.
 pub struct FileInputStream<'a> {
-    reader: Pin<Box<dyn AsyncRead + Send + Sync + 'a>>,
+    reader: Pin<Box<dyn SeekableReader + Send + Sync + 'a>>,
 }
 
 /// A stream for writing to a `File` asynchronously.
@@ -36,15 +37,17 @@ impl<'a> FileInputStream<'a> {
     /// Creates a new `FileInputStream` from a `File`.
     pub async fn new<S>(file: &'a File<S>) -> io::Result<Self>
     where
-        S: IpldStore + Send + Sync + 'static,
+        S: IpldStoreSeekable + Send + Sync + 'a,
     {
         let store = file.get_store();
         let reader = match file.get_content() {
             Some(cid) => store
-                .get_bytes(cid)
+                .get_seekable_bytes(cid)
                 .await
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
-            None => Box::pin(tokio::io::empty()) as Pin<Box<dyn AsyncRead + Send + Sync>>,
+            None => {
+                Box::pin(EmptySeekableReader) as Pin<Box<dyn SeekableReader + Send + Sync + 'a>>
+            }
         };
 
         Ok(Self { reader })
@@ -85,7 +88,17 @@ impl AsyncRead for FileInputStream<'_> {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        self.reader.as_mut().poll_read(cx, buf)
+        Pin::new(&mut self.reader).poll_read(cx, buf)
+    }
+}
+
+impl AsyncSeek for FileInputStream<'_> {
+    fn start_seek(mut self: Pin<&mut Self>, position: SeekFrom) -> io::Result<()> {
+        Pin::new(&mut self.reader).start_seek(position)
+    }
+
+    fn poll_complete(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
+        Pin::new(&mut self.reader).poll_complete(cx)
     }
 }
 
@@ -127,7 +140,7 @@ where
 mod tests {
     use anyhow::Result;
     use monoutils_store::MemoryStore;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+    use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 
     use crate::filesystem::File;
 
@@ -174,6 +187,40 @@ mod tests {
         buf.read_to_end(&mut content).await?;
 
         assert_eq!(content, data);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_file_input_stream_seek() -> Result<()> {
+        let store = MemoryStore::default();
+        let mut file = File::new(store.clone());
+
+        // Create some content for the file
+        let content = b"Hello, world!";
+        let cid = store.put_bytes(content.as_slice()).await?;
+        file.set_content(Some(cid));
+
+        // Create an input stream from the file
+        let mut input_stream = FileInputStream::new(&file).await?;
+
+        // Test seeking from start
+        input_stream.seek(SeekFrom::Start(7)).await?;
+        let mut buffer = [0u8; 6];
+        input_stream.read_exact(&mut buffer).await?;
+        assert_eq!(&buffer, b"world!");
+
+        // Test seeking from current position
+        input_stream.seek(SeekFrom::Current(-6)).await?;
+        let mut buffer = [0u8; 5];
+        input_stream.read_exact(&mut buffer).await?;
+        assert_eq!(&buffer, b"world");
+
+        // Test seeking from end
+        input_stream.seek(SeekFrom::End(-13)).await?;
+        let mut buffer = [0u8; 5];
+        input_stream.read_exact(&mut buffer).await?;
+        assert_eq!(&buffer, b"Hello");
 
         Ok(())
     }

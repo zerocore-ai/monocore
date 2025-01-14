@@ -9,7 +9,6 @@ mod implementations;
 mod layout;
 mod merkle;
 mod references;
-mod seekable;
 mod storable;
 mod store;
 pub(crate) mod utils;
@@ -24,7 +23,6 @@ pub use implementations::*;
 pub use layout::*;
 pub use merkle::*;
 pub use references::*;
-pub use seekable::*;
 pub use storable::*;
 pub use store::*;
 

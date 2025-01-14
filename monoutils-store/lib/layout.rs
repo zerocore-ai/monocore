@@ -3,9 +3,10 @@ use std::pin::Pin;
 use bytes::Bytes;
 use futures::{stream::BoxStream, Future};
 use libipld::Cid;
+use monoutils::SeekableReader;
 use tokio::io::AsyncRead;
 
-use super::{IpldStore, SeekableReader, StoreResult};
+use super::{IpldStore, StoreResult};
 
 //--------------------------------------------------------------------------------------------------
 // Traits
@@ -41,5 +42,5 @@ pub trait LayoutSeekable: Layout {
         &self,
         cid: &'a Cid,
         store: impl IpldStore + Send + Sync + 'a,
-    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + 'a>>>> + Send;
+    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>> + Send;
 }

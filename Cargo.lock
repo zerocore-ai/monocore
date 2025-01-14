@@ -1911,6 +1911,7 @@ dependencies = [
  "anyhow",
  "pretty-error-debug",
  "thiserror 2.0.6",
+ "tokio",
  "typed-path",
 ]
 
@@ -1930,6 +1931,7 @@ dependencies = [
  "hex",
  "libipld",
  "lru",
+ "monoutils",
  "serde",
  "serde_ipld_dagcbor",
  "thiserror 2.0.6",

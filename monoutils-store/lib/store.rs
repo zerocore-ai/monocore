@@ -2,10 +2,11 @@ use std::{collections::HashSet, future::Future, pin::Pin};
 
 use bytes::Bytes;
 use libipld::Cid;
+use monoutils::SeekableReader;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-use super::{IpldReferences, SeekableReader, StoreError, StoreResult};
+use super::{IpldReferences, StoreError, StoreResult};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -28,7 +29,7 @@ pub enum Codec {
 }
 
 //--------------------------------------------------------------------------------------------------
-// Traits: IpldStore, IpldStoreSeekable, IpldStoreExt
+// Traits: IpldStore, IpldStoreSeekable, IpldStoreExt, *
 //--------------------------------------------------------------------------------------------------
 
 /// `IpldStore` is a content-addressable store for [`IPLD` (InterPlanetary Linked Data)][ipld] that
@@ -167,7 +168,16 @@ pub trait IpldStoreSeekable: IpldStore {
     fn get_seekable_bytes<'a>(
         &'a self,
         cid: &'a Cid,
-    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + 'a>>>>;
+    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>>;
+}
+
+/// A trait for types that can be changed to a different store.
+pub trait StoreSwitchable {
+    /// The type of the entity.
+    type WithStore<U: IpldStore>;
+
+    /// Change the store used to persist the entity.
+    fn change_store<U: IpldStore>(self, new_store: U) -> Self::WithStore<U>;
 }
 
 //--------------------------------------------------------------------------------------------------

@@ -5,6 +5,7 @@
 
 mod error;
 mod path;
+mod seekable;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -12,3 +13,4 @@ mod path;
 
 pub use error::*;
 pub use path::*;
+pub use seekable::*;
