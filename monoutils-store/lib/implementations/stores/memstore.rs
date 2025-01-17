@@ -246,7 +246,7 @@ impl Default for MemoryStore {
 
 #[cfg(test)]
 mod tests {
-    use crate::DEFAULT_CHUNK_MAX_SIZE;
+    use crate::DEFAULT_MAX_CHUNK_SIZE;
 
     use super::fixtures::TestNode;
     use super::*;
@@ -357,9 +357,9 @@ mod tests {
         // Verify size limits from chunker
         assert_eq!(
             store.get_node_block_max_size(),
-            Some(DEFAULT_CHUNK_MAX_SIZE)
+            Some(DEFAULT_MAX_CHUNK_SIZE)
         );
-        assert_eq!(store.get_raw_block_max_size(), Some(DEFAULT_CHUNK_MAX_SIZE));
+        assert_eq!(store.get_raw_block_max_size(), Some(DEFAULT_MAX_CHUNK_SIZE));
 
         Ok(())
     }

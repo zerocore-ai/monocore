@@ -1,6 +1,7 @@
 mod constants;
 mod fixed;
-mod rabin;
+mod fastcdc;
+mod gearcdc;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -8,4 +9,5 @@ mod rabin;
 
 pub use constants::*;
 pub use fixed::*;
-pub use rabin::*;
+pub use fastcdc::*;
+pub use gearcdc::*;

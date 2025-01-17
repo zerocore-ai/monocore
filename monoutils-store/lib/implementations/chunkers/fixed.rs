@@ -7,7 +7,7 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::{Chunker, StoreError, StoreResult};
 
-use super::DEFAULT_CHUNK_MAX_SIZE;
+use super::constants::DEFAULT_MAX_CHUNK_SIZE;
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -71,7 +71,7 @@ impl Chunker for FixedSizeChunker {
 
 impl Default for FixedSizeChunker {
     fn default() -> Self {
-        Self::new(DEFAULT_CHUNK_MAX_SIZE)
+        Self::new(DEFAULT_MAX_CHUNK_SIZE)
     }
 }
 

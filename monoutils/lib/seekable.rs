@@ -3,7 +3,7 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
+use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -13,6 +13,10 @@ use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
 #[derive(Debug)]
 pub struct EmptySeekableReader;
 
+/// A seekable writer that always writes zero bytes and reports position as 0.
+#[derive(Debug)]
+pub struct EmptySeekableWriter;
+
 //--------------------------------------------------------------------------------------------------
 // Traits
 //--------------------------------------------------------------------------------------------------
@@ -20,11 +24,15 @@ pub struct EmptySeekableReader;
 /// A trait that extends the `AsyncRead` and `AsyncSeek` traits to allow for seeking.
 pub trait SeekableReader: AsyncRead + AsyncSeek {}
 
+pub trait SeekableWriter: AsyncWrite + AsyncSeek {}
+
 //--------------------------------------------------------------------------------------------------
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
 impl<T> SeekableReader for T where T: AsyncRead + AsyncSeek {}
+
+impl<T> SeekableWriter for T where T: AsyncWrite + AsyncSeek {}
 
 // Implement AsyncRead by always reading zero bytes
 impl AsyncRead for EmptySeekableReader {
