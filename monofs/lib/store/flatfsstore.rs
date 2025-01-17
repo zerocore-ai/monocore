@@ -393,7 +393,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use monoutils_store::DEFAULT_CHUNK_MAX_SIZE;
+    use monoutils_store::DEFAULT_MAX_CHUNK_SIZE;
     use std::fs;
     use tokio::io::AsyncReadExt;
 
@@ -556,9 +556,9 @@ mod tests {
         // Verify size limits from chunker
         assert_eq!(
             store.get_node_block_max_size(),
-            Some(DEFAULT_CHUNK_MAX_SIZE)
+            Some(DEFAULT_MAX_CHUNK_SIZE)
         );
-        assert_eq!(store.get_raw_block_max_size(), Some(DEFAULT_CHUNK_MAX_SIZE));
+        assert_eq!(store.get_raw_block_max_size(), Some(DEFAULT_MAX_CHUNK_SIZE));
 
         Ok(())
     }

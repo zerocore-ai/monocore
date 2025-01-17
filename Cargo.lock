@@ -1932,6 +1932,7 @@ dependencies = [
  "libipld",
  "lru",
  "monoutils",
+ "rand",
  "serde",
  "serde_ipld_dagcbor",
  "thiserror 2.0.6",
