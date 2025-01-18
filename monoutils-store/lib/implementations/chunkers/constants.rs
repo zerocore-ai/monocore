@@ -2,16 +2,14 @@
 // Constants
 //--------------------------------------------------------------------------------------------------
 
-/// The default maximum chunk size is 512 KiB.
-pub const DEFAULT_MAX_CHUNK_SIZE: u64 = 512 * 1024; // TODO: 2KiB ???
+/// The default desired chunk size is 4 KiB.
+pub const DEFAULT_DESIRED_CHUNK_SIZE: u64 = 4 * 1024;
 
-/// The default minimum chunk size is 128 KiB.
-pub const DEFAULT_MIN_CHUNK_SIZE: u64 = 128 * 1024; // TODO: 4KiB ???
+/// The default minimum chunk size is 2 KiB.
+pub const DEFAULT_MIN_CHUNK_SIZE: u64 = 2 * 1024;
 
-/// The default desired chunk size is 256 KiB.
-pub const DEFAULT_DESIRED_CHUNK_SIZE: u64 = 256 * 1024; // TODO: 6MiB ???
-
-// const DEFAULT_ROLLING_HASH_MASK: u64 = 0x0000000000000000;
+/// The default maximum chunk size is 64 KiB.
+pub const DEFAULT_MAX_CHUNK_SIZE: u64 = 64 * 1024;
 
 /// The gear table is used to generate the rolling hash mask.
 #[rustfmt::skip]
