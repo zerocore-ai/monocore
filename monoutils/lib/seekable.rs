@@ -24,6 +24,7 @@ pub struct EmptySeekableWriter;
 /// A trait that extends the `AsyncRead` and `AsyncSeek` traits to allow for seeking.
 pub trait SeekableReader: AsyncRead + AsyncSeek {}
 
+/// A trait that extends the `AsyncWrite` and `AsyncSeek` traits to allow for seeking.
 pub trait SeekableWriter: AsyncWrite + AsyncSeek {}
 
 //--------------------------------------------------------------------------------------------------

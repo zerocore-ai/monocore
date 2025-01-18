@@ -79,6 +79,32 @@ impl GearCDC {
             desired_chunk_size,
         }
     }
+
+    /// Converts a desired chunk size to a bit mask where the lowest log2(size) bits are set to 1.
+    /// This mask is used to determine chunk boundaries in content-defined chunking.
+    ///
+    /// For example:
+    /// - If size is 8192 (2^13), returns a mask with 13 lowest bits set: 0x1FFF
+    /// - If size is 16384 (2^14), returns a mask with 14 lowest bits set: 0x3FFF
+    ///
+    /// # Panics
+    /// Panics if size is 0 or greater than 2^63 (as it would exceed u64 capacity)
+    pub fn size_to_mask(size: u64) -> u64 {
+        assert!(
+            size > 0 && size <= (1 << 63),
+            "size must be between 1 and 2^63"
+        );
+
+        // If size == 1, the doc/tests want 1 bit => 0b1 = 1, even though log2(1) = 0.
+        if size == 1 {
+            return 0b1;
+        }
+
+        // Round up to next power of two
+        let p = size.next_power_of_two(); // e.g. 7 -> 8, 9 -> 16, etc.
+        let bits = p.trailing_zeros(); // number of bits = log2(p)
+        (1 << bits) - 1
+    }
 }
 
 impl GearHasher {
@@ -99,26 +125,27 @@ impl GearHasher {
     ///
     /// Visually, the process looks like this:
     /// ```text
-    ///    Original hash:
-    ///    ┌─────────────────────────────────────────┐
-    ///    │ bits [63 .. 0]                          │
-    ///    └─────────────────────────────────────────┘
+    /// Original hash:
+    /// ┌─────────────────────────────────────────┐
+    /// │ bits [63 .. 0]                          │
+    /// └─────────────────────────────────────────┘
     ///
-    ///    After left shift (hash << 1):
-    ///    ┌─────────────────────────────────────────┐
-    ///    │ bits [62 .. 0] 0                        │ (the left bit is gone, the right is 0)
-    ///    └─────────────────────────────────────────┘
+    /// After left shift (hash << 1):
+    /// ┌─────────────────────────────────────────┐ (the left bit is gone,
+    /// │ bits [62 .. 0] 0                        │  the right is 0)
+    /// └─────────────────────────────────────────┘
     ///
-    ///    High bits feedback (hash >> 53):
-    ///    ┌─────────────────────────────────────────┐
-    ///    │ bits [63 .. 53] (rest are 0)            │ (~the top 11 bits)
-    ///    └─────────────────────────────────────────┘
+    /// High bits feedback (hash >> 53):
+    /// ┌─────────────────────────────────────────┐
+    /// │ bits [63 .. 53] (rest are 0)            │ (~the top 11 bits)
+    /// └─────────────────────────────────────────┘
     /// ```
     ///
     /// The feedback from high bits (component 3) is particularly important for handling
     /// repetitive data patterns. Without it, repeated sequences might not generate
     /// enough variation in the lower bits to create chunk boundaries at the desired
     /// frequency. This extra mixing ensures robust chunking even with non-random data.
+    #[inline]
     pub fn roll(&mut self, byte: u8) {
         self.hash = (self.hash << 1) ^ self.gear_table[byte as usize] ^ (self.hash >> 53);
     }
@@ -130,39 +157,10 @@ impl GearHasher {
 
     /// Checks if the current hash indicates a chunk boundary
     /// A chunk boundary is determined by checking if the lowest bits of the hash are all zeros
+    #[inline]
     pub fn boundary_check(&self, mask: u64) -> bool {
         (self.hash & mask) == 0
     }
-}
-
-//--------------------------------------------------------------------------------------------------
-// Functions
-//--------------------------------------------------------------------------------------------------
-
-/// Converts a desired chunk size to a bit mask where the lowest log2(size) bits are set to 1.
-/// This mask is used to determine chunk boundaries in content-defined chunking.
-///
-/// For example:
-/// - If size is 8192 (2^13), returns a mask with 13 lowest bits set: 0x1FFF
-/// - If size is 16384 (2^14), returns a mask with 14 lowest bits set: 0x3FFF
-///
-/// # Panics
-/// Panics if size is 0 or greater than 2^63 (as it would exceed u64 capacity)
-pub fn size_to_mask(size: u64) -> u64 {
-    assert!(
-        size > 0 && size <= (1 << 63),
-        "size must be between 1 and 2^63"
-    );
-
-    // If size == 1, the doc/tests want 1 bit => 0b1 = 1, even though log2(1) = 0.
-    if size == 1 {
-        return 0b1;
-    }
-
-    // Round up to next power of two
-    let p = size.next_power_of_two(); // e.g. 7 -> 8, 9 -> 16, etc.
-    let bits = p.trailing_zeros(); // number of bits = log2(p)
-    (1 << bits) - 1
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -174,7 +172,7 @@ impl Chunker for GearCDC {
         &self,
         reader: impl AsyncRead + Send + 'a,
     ) -> StoreResult<BoxStream<'a, StoreResult<Bytes>>> {
-        let mask = size_to_mask(self.desired_chunk_size);
+        let mask = Self::size_to_mask(self.desired_chunk_size);
         let gear_table = self.gear_table;
 
         let s = try_stream! {
@@ -239,31 +237,31 @@ mod tests {
     #[test]
     fn test_size_to_mask() {
         // Test powers of 2
-        assert_eq!(size_to_mask(8), 0b111); // 3 bits for size 8 (2^3)
-        assert_eq!(size_to_mask(16), 0b1111); // 4 bits for size 16 (2^4)
-        assert_eq!(size_to_mask(8192), 0x1FFF); // 13 bits for size 8192 (2^13)
-        assert_eq!(size_to_mask(16384), 0x3FFF); // 14 bits for size 16384 (2^14)
+        assert_eq!(GearCDC::size_to_mask(8), 0b111); // 3 bits for size 8 (2^3)
+        assert_eq!(GearCDC::size_to_mask(16), 0b1111); // 4 bits for size 16 (2^4)
+        assert_eq!(GearCDC::size_to_mask(8192), 0x1FFF); // 13 bits for size 8192 (2^13)
+        assert_eq!(GearCDC::size_to_mask(16384), 0x3FFF); // 14 bits for size 16384 (2^14)
 
         // Test non-powers of 2 (should round up to next power)
-        assert_eq!(size_to_mask(7), 0b111); // round up to 8 => 3 bits
-        assert_eq!(size_to_mask(9), 0b1111); // round up to 16 => 4 bits
-        assert_eq!(size_to_mask(8000), 0x1FFF); // round up to 8192 => 13 bits
+        assert_eq!(GearCDC::size_to_mask(7), 0b111); // round up to 8 => 3 bits
+        assert_eq!(GearCDC::size_to_mask(9), 0b1111); // round up to 16 => 4 bits
+        assert_eq!(GearCDC::size_to_mask(8000), 0x1FFF); // round up to 8192 => 13 bits
 
         // Test edge cases
-        assert_eq!(size_to_mask(1), 0b1); // special-cased => 1 bit
-        assert_eq!(size_to_mask(2), 0b1); // log2(2) => 1 bit
+        assert_eq!(GearCDC::size_to_mask(1), 0b1); // special-cased => 1 bit
+        assert_eq!(GearCDC::size_to_mask(2), 0b1); // log2(2) => 1 bit
     }
 
     #[test]
     #[should_panic(expected = "size must be between 1 and 2^63")]
     fn test_size_to_mask_zero() {
-        size_to_mask(0);
+        GearCDC::size_to_mask(0);
     }
 
     #[test]
     #[should_panic(expected = "size must be between 1 and 2^63")]
     fn test_size_to_mask_too_large() {
-        size_to_mask((1 << 63) + 1);
+        GearCDC::size_to_mask((1 << 63) + 1);
     }
 
     #[test]
