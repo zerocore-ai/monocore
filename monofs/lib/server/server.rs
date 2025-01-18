@@ -80,12 +80,7 @@ pub type DiskMonofsServer = MonofsServer<FlatFsStore>;
 /// - Directory listing
 /// - File attribute management
 /// - Symbolic link operations
-///
-/// # Type Parameters
-///
-/// * `S` - The type of content-addressed store to use. Must implement `IpldStore` and be
-///         both `Send` and `Sync` for thread safety.
-///
+/// 
 /// # Examples
 ///
 /// ```no_run
@@ -1392,7 +1387,7 @@ mod tests {
         let dir1 = filename3::from("dir1".as_bytes());
 
         let (_, _) = server.create(0, &file1, sattr3::default()).await.unwrap();
-        let (_, _) = server.create(0, &file2, sattr3::default()).await.unwrap();
+        let (file2_id, _) = server.create(0, &file2, sattr3::default()).await.unwrap();
         let (dir1_id, _) = server.mkdir(0, &dir1).await.unwrap();
 
         // Test 1: Read root directory
@@ -1441,24 +1436,24 @@ mod tests {
         assert_eq!(result.entries[0].fileid, subfile_id);
         assert!(matches!(result.entries[0].attr.ftype, ftype3::NF3REG));
 
-        // // Test 4: Handle deleted entries
-        // server.remove(0, &file1).await.unwrap();
-        // let result = server.readdir(0, 0, 10).await.unwrap();
-        // assert_eq!(result.entries.len(), 2); // file1 should be excluded
-        // assert!(result.end);
+        // Test 4: Handle deleted entries
+        server.remove(0, &file1).await.unwrap();
+        let result = server.readdir(0, 0, 10).await.unwrap();
+        assert_eq!(result.entries.len(), 2); // file1 should be excluded
+        assert!(result.end);
 
-        // // Test 5: Error cases
-        // // Non-existent directory
-        // assert!(matches!(
-        //     server.readdir(999, 0, 10).await,
-        //     Err(nfsstat3::NFS3ERR_NOENT)
-        // ));
+        // Test 5: Error cases
+        // Non-existent directory
+        assert!(matches!(
+            server.readdir(999, 0, 10).await,
+            Err(nfsstat3::NFS3ERR_NOENT)
+        ));
 
-        // // Not a directory
-        // assert!(matches!(
-        //     server.readdir(file2_id, 0, 10).await,
-        //     Err(nfsstat3::NFS3ERR_NOTDIR)
-        // ));
+        // Not a directory
+        assert!(matches!(
+            server.readdir(file2_id, 0, 10).await,
+            Err(nfsstat3::NFS3ERR_NOTDIR)
+        ));
     }
 
     #[tokio::test]

@@ -117,10 +117,18 @@ pub trait IpldStore: RawStore + Clone {
     /// Returns the number of blocks in the store.
     fn get_block_count(&self) -> impl Future<Output = StoreResult<u64>>;
 
-    // /// Attempts to remove a node and its dependencies from the store.
+    // /// Dereferences a CID and deletes its blocks if it is not referenced by any other CID.
     // ///
-    // /// Returns the number of nodes and blocks removed.
-    // fn remove(&self, cid: &Cid) -> impl Future<Output = StoreResult<usize>>;
+    // /// This can lead to a cascade of deletions if the referenced blocks are also not referenced by
+    // /// any other CID.
+    // ///
+    // /// Returns `true` if the CID was deleted, `false` otherwise.
+    // fn dereference(&self, cid: &Cid) -> impl Future<Output = StoreResult<bool>>;
+
+    // /// Attempts to remove unused blocks from the store.
+    // ///
+    // /// Returns `true` if any blocks were removed, `false` otherwise.
+    // fn gc(&self) -> impl Future<Output = StoreResult<bool>>;
 }
 
 /// A trait for stores that support raw blocks.
@@ -152,7 +160,7 @@ pub trait RawStore: Clone {
 
 /// Helper extension to the `IpldStore` trait.
 pub trait IpldStoreExt: IpldStore {
-    /// Reads all the bytes associated with the given `Cid` into a single `Bytes` type.
+    /// Reads all the bytes associated with the given CID into a single [`Bytes`] type.
     fn read_all(&self, cid: &Cid) -> impl Future<Output = StoreResult<Bytes>> {
         async {
             let mut reader = self.get_bytes(cid).await?;
@@ -170,7 +178,7 @@ pub trait IpldStoreExt: IpldStore {
 
 /// `IpldStoreSeekable` is a trait that extends the `IpldStore` trait to allow for seeking.
 pub trait IpldStoreSeekable: IpldStore {
-    /// Gets a seekable reader for the underlying bytes associated with the given `Cid`.
+    /// Gets a seekable reader for the underlying bytes associated with the given CID.
     fn get_seekable_bytes<'a>(
         &'a self,
         cid: &'a Cid,

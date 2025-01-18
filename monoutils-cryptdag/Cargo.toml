@@ -1,0 +1,14 @@
+[package]
+name = "monoutils-cryptdag"
+version = "0.1.0"
+description = "`monoutils-cryptdag` is a key generation library for data structures that can be represented as trees or DAGs"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[lib]
+name = "monoutils_cryptdag"
+path = "lib/lib.rs"
+
+[dependencies]

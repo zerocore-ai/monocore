@@ -8,6 +8,7 @@ members = [
     "monoutils-did",
     "monoutils-store",
     "monoutils-ucan",
+    "monoutils-cryptdag",
 ]
 resolver = "2"
 

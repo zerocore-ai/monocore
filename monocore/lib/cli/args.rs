@@ -343,30 +343,6 @@ pub enum MonocoreSubcommand {
         name: String,
     },
 
-    /// Analyze source directory and automatically create environment
-    #[command(name = "auto")]
-    Auto {
-        /// Run the project after creating components
-        #[arg(long)]
-        run: bool,
-
-        /// Source file path
-        #[arg(short, long)]
-        file: Option<Utf8UnixPathBuf>,
-
-        /// Source code string
-        #[arg(short, long)]
-        code: Option<String>,
-
-        /// Programming language for the source code
-        #[arg(long)]
-        lang: Option<String>,
-
-        /// Output path for generated files
-        #[arg(long)]
-        output: Option<Utf8UnixPathBuf>,
-    },
-
     /// Start or stop project sandboxes based on configuration
     #[command(name = "apply")]
     Apply,

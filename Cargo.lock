@@ -1936,6 +1936,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "monoutils-cryptdag"
+version = "0.1.0"
+
+[[package]]
 name = "monoutils-did"
 version = "0.1.0"
 
