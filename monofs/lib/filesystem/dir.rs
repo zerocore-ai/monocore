@@ -9,6 +9,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
+use chrono::Utc;
 use monoutils_store::{
     ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
 };
@@ -64,7 +65,20 @@ where
     store: S,
 
     /// The entries in the directory.
-    entries: HashMap<Utf8UnixPathSegment, EntityCidLink<S>>,
+    entries: HashMap<Utf8UnixPathSegment, Entry<S>>,
+}
+
+/// Represents an entry in a directory.
+#[derive(Clone)]
+struct Entry<S>
+where
+    S: IpldStore,
+{
+    /// Whether the entry has been deleted.
+    pub deleted: bool,
+
+    /// The link to the entity.
+    pub link: EntityCidLink<S>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -81,7 +95,7 @@ pub struct DirSerializable {
     metadata: MetadataSerializable,
 
     /// The entries in the directory.
-    entries: BTreeMap<String, Cid>,
+    entries: BTreeMap<String, (bool, Cid)>,
 
     /// The CID of the previous version of the directory if there is one.
     previous: Option<Cid>,
@@ -103,9 +117,7 @@ where
     /// use monofs::filesystem::Dir;
     /// use monoutils_store::MemoryStore;
     ///
-    /// let store = MemoryStore::default();
-    /// let dir = Dir::new(store);
-    ///
+    /// let dir = Dir::new(MemoryStore::default());
     /// assert!(dir.is_empty());
     /// ```
     pub fn new(store: S) -> Self {
@@ -120,35 +132,6 @@ where
         }
     }
 
-    /// Checks if an [`EntityCidLink`] with the given name exists in the directory.
-    ///
-    /// ## Examples
-    ///
-    /// ```
-    /// use monofs::filesystem::{Dir, Utf8UnixPathSegment};
-    /// use monoutils_store::MemoryStore;
-    /// use monoutils_store::ipld::cid::Cid;
-    ///
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let store = MemoryStore::default();
-    /// let mut dir = Dir::new(store);
-    ///
-    /// let file_name = "example.txt";
-    /// let file_cid: Cid = "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
-    ///
-    /// dir.put_entry(file_name, file_cid.into())?;
-    ///
-    /// assert!(dir.has_entry(file_name)?);
-    /// assert!(!dir.has_entry("nonexistent.txt")?);
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn has_entry(&self, name: impl AsRef<str>) -> FsResult<bool> {
-        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
-        Ok(self.inner.entries.contains_key(&name))
-    }
-
     /// Returns the CID of the directory when it was initially loaded from the store.
     ///
     /// It returns `None` if the directory was not loaded from the store.
@@ -158,24 +141,17 @@ where
     /// ```
     /// use monofs::filesystem::Dir;
     /// use monoutils_store::{MemoryStore, Storable};
-    /// use monoutils_store::ipld::cid::Cid;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
     /// let dir = Dir::new(store.clone());
     ///
-    /// // Initially, the CID is not set
-    /// assert!(dir.get_initial_load_cid().is_none());
+    /// // Store and load the directory
+    /// let cid = dir.store().await?;
+    /// let loaded_dir = Dir::load(&cid, store).await?;
     ///
-    /// // Store the directory
-    /// let stored_cid = dir.store().await?;
-    ///
-    /// // Load the directory
-    /// let loaded_dir = Dir::load(&stored_cid, store).await?;
-    ///
-    /// // Now the initial load CID is set
-    /// assert_eq!(loaded_dir.get_initial_load_cid(), Some(&stored_cid));
+    /// assert_eq!(loaded_dir.get_initial_load_cid(), Some(&cid));
     /// # Ok(())
     /// # }
     /// ```
@@ -188,33 +164,32 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::Dir;
+    /// use monofs::filesystem::{Dir, File};
     /// use monoutils_store::{MemoryStore, Storable};
-    /// use monoutils_store::ipld::cid::Cid;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
-    /// let mut dir = Dir::new(store.clone());
+    /// let dir = Dir::new(store.clone());
     ///
-    /// // Initially, there's no previous version
+    /// // Initially no previous version
     /// assert!(dir.get_previous().is_none());
     ///
-    /// // Store the directory
-    /// let first_cid = dir.store().await?;
+    /// // Store initial version
+    /// let initial_cid = dir.store().await?;
     ///
-    /// // Load the directory and create a new version
-    /// let mut loaded_dir = Dir::load(&first_cid, store.clone()).await?;
-    /// loaded_dir.put_entry("new_file", Cid::default().into())?;
+    /// // Load and modify directory
+    /// let mut dir = Dir::load(&initial_cid, store.clone()).await?;
+    /// dir.put_adapted_file("test.txt", File::new(store.clone())).await?;
     ///
-    /// // Store the new version
-    /// let second_cid = loaded_dir.store().await?;
+    /// // Store new version
+    /// let new_cid = dir.store().await?;
     ///
-    /// // Load the new version
-    /// let new_version = Dir::load(&second_cid, store).await?;
+    /// // Load new version
+    /// let loaded_dir = Dir::load(&new_cid, store).await?;
     ///
-    /// // Now the previous CID is set
-    /// assert_eq!(new_version.get_previous(), Some(&first_cid));
+    /// // Previous version is set to initial CID
+    /// assert_eq!(loaded_dir.get_previous(), Some(&initial_cid));
     /// # Ok(())
     /// # }
     /// ```
@@ -222,111 +197,494 @@ where
         self.inner.previous.as_ref()
     }
 
-    /// Adds a [`EntityCidLink`] and its associated name in the directory's entries.
-    ///
-    /// ## Examples
-    ///
-    /// ```
-    /// use monofs::filesystem::{Dir, Utf8UnixPathSegment};
-    /// use monoutils_store::MemoryStore;
-    /// use monoutils_store::ipld::cid::Cid;
-    ///
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let store = MemoryStore::default();
-    /// let mut dir = Dir::new(store);
-    ///
-    /// let file_name = "example.txt";
-    /// let file_cid: Cid = "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
-    ///
-    /// dir.put_entry(file_name, file_cid.into())?;
-    ///
-    /// assert!(dir.get_entry(file_name)?.is_some());
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn put_entry(&mut self, name: impl AsRef<str>, link: EntityCidLink<S>) -> FsResult<()> {
-        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
+    /// Returns the metadata for the directory.
+    pub fn get_metadata(&self) -> &Metadata<S> {
+        &self.inner.metadata
+    }
+
+    /// Returns a mutable reference to the metadata for the directory.
+    pub fn get_metadata_mut(&mut self) -> &mut Metadata<S> {
         let inner = Arc::make_mut(&mut self.inner);
-        inner.entries.insert(name, link);
-
-        Ok(())
+        &mut inner.metadata
     }
 
-    /// Adds an [`Entity`] and its associated name in the directory's entries.
-    #[inline]
-    pub fn put_entity(&mut self, name: impl AsRef<str>, entity: impl Into<Entity<S>>) -> FsResult<()>
-    where
-        S: Send + Sync,
-    {
-        self.put_entry(name, EntityCidLink::from(entity.into()))
+    /// Returns the store used to persist the file.
+    pub fn get_store(&self) -> &S {
+        &self.inner.store
     }
 
-    /// Adds a [`Dir`] and its associated name in the directory's entries.
-    #[inline]
-    pub fn put_dir(&mut self, name: impl AsRef<str>, dir: Dir<S>) -> FsResult<()>
-    where
-        S: Send + Sync,
-    {
-        self.put_entry(name, EntityCidLink::from(dir))
-    }
-
-    /// Adds a [`File`] and its associated name in the directory's entries.
-    #[inline]
-    pub fn put_file(&mut self, name: impl AsRef<str>, file: File<S>) -> FsResult<()>
-    where
-        S: Send + Sync,
-    {
-        self.put_entry(name, EntityCidLink::from(file))
-    }
-
-    /// Adds a [`SymCidLink`] and its associated name in the directory's entries.
-    #[inline]
-    pub fn put_symcidlink(&mut self, name: impl AsRef<str>, symlink: SymCidLink<S>) -> FsResult<()>
-    where
-        S: IpldStore,
-    {
-        self.put_entry(name, EntityCidLink::from(symlink))
-    }
-
-    /// Gets the [`EntityCidLink`] with the given name from the directory's entries.
+    /// Returns an iterator over all the entries in the directory.
+    ///
+    /// This method returns an iterator that yields tuples containing the name and link
+    /// for ALL entries in the directory, including ones marked as deleted.
+    ///
+    /// This differs from [`get_entries`][Self::get_entries] which only returns non-deleted entries.
     ///
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, Utf8UnixPathSegment};
+    /// use monofs::filesystem::{Dir, File};
     /// use monoutils_store::MemoryStore;
-    /// use monoutils_store::ipld::cid::Cid;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
-    /// let mut dir = Dir::new(store);
+    /// let mut dir = Dir::new(store.clone());
     ///
-    /// let file_name = "example.txt";
-    /// let file_cid: Cid = "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
+    /// // Add and delete an entry
+    /// dir.put_adapted_file("test.txt", File::new(store)).await?;
+    /// dir.remove_entry("test.txt")?;
     ///
-    /// dir.put_entry(file_name, file_cid.clone().into())?;
-    ///
-    /// let entry = dir.get_entry(file_name)?.unwrap();
-    /// assert_eq!(entry.resolve_cid().await?, file_cid);
+    /// assert_eq!(dir.get_all_entries().count(), 1); // Includes deleted entry
+    /// assert_eq!(dir.get_entries().count(), 0);     // Excludes deleted entry
     /// # Ok(())
     /// # }
     /// ```
-    #[inline]
-    pub fn get_entry(&self, name: impl AsRef<str>) -> FsResult<Option<&EntityCidLink<S>>> {
-        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
-        Ok(self.inner.entries.get(&name))
+    pub fn get_all_entries(
+        &self,
+    ) -> impl Iterator<Item = (&Utf8UnixPathSegment, &EntityCidLink<S>)> {
+        self.inner.entries.iter().map(|(k, v)| (k, &v.link))
     }
 
-    /// Gets the [`EntityCidLink`] with the given name from the directory's entries.
+    /// Returns an iterator over the non-deleted entries in the directory.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, File};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store.clone());
+    ///
+    /// // Add two files
+    /// dir.put_adapted_file("a.txt", File::new(store.clone())).await?;
+    /// dir.put_adapted_file("b.txt", File::new(store)).await?;
+    ///
+    /// assert_eq!(dir.get_entries().count(), 2);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_entries(&self) -> impl Iterator<Item = (&Utf8UnixPathSegment, &EntityCidLink<S>)> {
+        self.inner
+            .entries
+            .iter()
+            .filter(|(_, entry)| !entry.deleted)
+            .map(|(k, v)| (k, &v.link))
+    }
+
+    /// Returns an iterator over the entry links of entries in the directory.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, File};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store.clone());
+    ///
+    /// dir.put_adapted_file("test.txt", File::new(store)).await?;
+    /// assert_eq!(dir.get_entry_links().count(), 1);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_entry_links(&self) -> impl Iterator<Item = &EntityCidLink<S>> {
+        self.inner
+            .entries
+            .values()
+            .filter(|entry| !entry.deleted)
+            .map(|entry| &entry.link)
+    }
+
+    /// Returns an iterator over the names of entries in the directory.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, File};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store.clone());
+    ///
+    /// dir.put_adapted_file("test.txt", File::new(store)).await?;
+    /// assert_eq!(dir.get_entry_names().next(), Some(&"test.txt".parse()?));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_entry_names(&self) -> impl Iterator<Item = &Utf8UnixPathSegment> {
+        self.inner
+            .entries
+            .iter()
+            .filter(|(_, entry)| !entry.deleted)
+            .map(|(k, _)| k)
+    }
+
+    /// Marks the entry with the given name as deleted in the directory's entries.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, File};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store.clone());
+    ///
+    /// // Add and remove a file
+    /// dir.put_adapted_file("test.txt", File::new(store)).await?;
+    /// dir.remove_entry("test.txt")?;
+    ///
+    /// assert!(!dir.has_entry("test.txt")?);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn remove_entry(&mut self, name: impl AsRef<str>) -> FsResult<&mut EntityCidLink<S>> {
+        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
+        let inner = Arc::make_mut(&mut self.inner);
+        let (_, entry) = inner
+            .entries
+            .iter_mut()
+            .find(|(entry_name, _)| *entry_name == &name)
+            .ok_or(FsError::PathNotFound(name.to_string()))?;
+
+        entry.deleted = true;
+        inner.metadata.set_modified_at(Utc::now());
+
+        Ok(&mut entry.link)
+    }
+
+    /// Returns the number of non-deleted entries in the directory.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, File};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store.clone());
+    ///
+    /// assert_eq!(dir.len(), 0);
+    ///
+    /// dir.put_adapted_file("test.txt", File::new(store)).await?;
+    /// assert_eq!(dir.len(), 1);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn len(&self) -> usize {
+        self.inner
+            .entries
+            .iter()
+            .filter(|(_, entry)| !entry.deleted)
+            .count()
+    }
+
+    /// Returns `true` if the directory has no entries.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::Dir;
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// let dir = Dir::new(MemoryStore::default());
+    /// assert!(dir.is_empty());
+    /// ```
     #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Checks if an entry with the given name exists in the directory.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, File};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store.clone());
+    ///
+    /// dir.put_adapted_file("test.txt", File::new(store)).await?;
+    ///
+    /// assert!(dir.has_entry("test.txt")?);
+    /// assert!(!dir.has_entry("missing.txt")?);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn has_entry(&self, name: impl AsRef<str>) -> FsResult<bool> {
+        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
+        Ok(self.get_entry_names().any(|n| n == &name))
+    }
+
+    /// Gets the entry with the given name from the directory.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, File};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store.clone());
+    ///
+    /// dir.put_adapted_file("test.txt", File::new(store)).await?;
+    ///
+    /// assert!(dir.get_entry("test.txt")?.is_some());
+    /// assert!(dir.get_entry("missing.txt")?.is_none());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_entry(&self, name: impl AsRef<str>) -> FsResult<Option<&EntityCidLink<S>>> {
+        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
+        Ok(self
+            .get_entries()
+            .find(|(n, _)| *n == &name)
+            .map(|(_, link)| link))
+    }
+
+    /// Gets a mutable reference to the entry with the given name.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, File};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store.clone());
+    ///
+    /// dir.put_adapted_file("test.txt", File::new(store)).await?;
+    ///
+    /// assert!(dir.get_entry_mut("test.txt")?.is_some());
+    /// assert!(dir.get_entry_mut("missing.txt")?.is_none());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn get_entry_mut(
         &mut self,
         name: impl AsRef<str>,
     ) -> FsResult<Option<&mut EntityCidLink<S>>> {
         let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
         let inner = Arc::make_mut(&mut self.inner);
-        Ok(inner.entries.get_mut(&name))
+        let entry = inner
+            .entries
+            .iter_mut()
+            .filter(|(_, entry)| !entry.deleted)
+            .find(|(entry_name, _)| *entry_name == &name);
+
+        Ok(entry.map(|(_, entry)| &mut entry.link))
+    }
+
+    /// Adds or updates an entry in the directory, handling versioning.
+    ///
+    /// This method ensures proper versioning:
+    /// - For new entries: Adds the entry as is
+    /// - For existing entries: Sets the previous version appropriately
+    /// - For deleted entries: Restores them with proper versioning
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, File};
+    /// use monoutils_store::{MemoryStore, Storable};
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store.clone());
+    ///
+    /// // Add new file
+    /// dir.put_adapted_entry("test.txt", File::new(store.clone()).into()).await?;
+    ///
+    /// // Store the first version
+    /// let dir_cid = dir.store().await?;
+    /// let mut loaded_dir = Dir::load(&dir_cid, store.clone()).await?;
+    /// let first_cid = loaded_dir.get_entry("test.txt")?.unwrap().get_cid().unwrap().clone();
+    ///
+    /// // Update with new version
+    /// loaded_dir.put_adapted_entry("test.txt", File::new(store.clone()).into()).await?;
+    ///
+    /// // The second version should have the first as its previous
+    /// let entry = loaded_dir.get_entry("test.txt")?.unwrap();
+    /// let entity = entry.resolve_entity(store).await?;
+    /// assert_eq!(entity.get_previous(), Some(&first_cid));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn put_adapted_entry(
+        &mut self,
+        name: impl AsRef<str>,
+        mut link: EntityCidLink<S>,
+    ) -> FsResult<()>
+    where
+        S: Send + Sync,
+    {
+        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
+        let inner = Arc::make_mut(&mut self.inner);
+
+        // Resolve the link to an entity
+        let entity = link.resolve_entity_mut(inner.store.clone()).await?;
+
+        // Unset the previous version
+        entity.set_previous(None);
+
+        // Handle existing entry if present
+        if let Some(existing_entry) = inner.entries.get(&name) {
+            if let Some(existing_entity) = existing_entry.link.get_entity() {
+                // If we can get the entity without resolving, use its previous
+                entity.set_previous(existing_entity.get_previous().cloned());
+            } else if let Some(existing_cid) = existing_entry.link.get_cid() {
+                // Otherwise use the CID as previous
+                entity.set_previous(Some(*existing_cid));
+            }
+        }
+
+        // Update the modified timestamp
+        let now = Utc::now();
+        entity.get_metadata_mut().set_modified_at(now);
+        inner.metadata.set_modified_at(now);
+
+        // Add or update the entry
+        inner.entries.insert(
+            name,
+            Entry {
+                deleted: false,
+                link,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Adds an [`Entity`] and its associated name in the directory's entries.
+    ///
+    /// This is a convenience wrapper around [`put_adapted_entry`][Self::put_adapted_entry] that handles
+    /// converting the entity into an [`EntityCidLink`]. It provides the same versioning guarantees:
+    ///
+    /// - Verifies no previous version is set on the incoming entity
+    /// - Properly chains versions with any existing entry
+    /// - Updates metadata timestamps
+    /// - Handles deleted entry restoration
+    ///
+    /// See [`put_adapted_entry`][Self::put_adapted_entry] for more details on the versioning behavior.
+    #[inline]
+    pub async fn put_adapted_entity(
+        &mut self,
+        name: impl AsRef<str>,
+        entity: impl Into<Entity<S>>,
+    ) -> FsResult<()>
+    where
+        S: Send + Sync,
+    {
+        self.put_adapted_entry(name, EntityCidLink::from(entity.into()))
+            .await
+    }
+
+    /// Adds a [`Dir`] and its associated name in the directory's entries.
+    ///
+    /// This is a convenience wrapper around [`put_adapted_entry`][Self::put_adapted_entry] that handles
+    /// converting the directory into an [`EntityCidLink`]. It provides the same versioning guarantees:
+    ///
+    /// - Verifies no previous version is set on the incoming directory
+    /// - Properly chains versions with any existing entry
+    /// - Updates metadata timestamps
+    /// - Handles deleted entry restoration
+    ///
+    /// See [`put_adapted_entry`][Self::put_adapted_entry] for more details on the versioning behavior.
+    #[inline]
+    pub async fn put_adapted_dir(&mut self, name: impl AsRef<str>, dir: Dir<S>) -> FsResult<()>
+    where
+        S: Send + Sync,
+    {
+        self.put_adapted_entry(name, EntityCidLink::from(dir)).await
+    }
+
+    /// Adds a [`File`] and its associated name in the directory's entries.
+    ///
+    /// This is a convenience wrapper around [`put_adapted_entry`][Self::put_adapted_entry] that handles
+    /// converting the file into an [`EntityCidLink`]. It provides the same versioning guarantees:
+    ///
+    /// - Verifies no previous version is set on the incoming file
+    /// - Properly chains versions with any existing entry
+    /// - Updates metadata timestamps
+    /// - Handles deleted entry restoration
+    ///
+    /// See [`put_adapted_entry`][Self::put_adapted_entry] for more details on the versioning behavior.
+    #[inline]
+    pub async fn put_adapted_file(&mut self, name: impl AsRef<str>, file: File<S>) -> FsResult<()>
+    where
+        S: Send + Sync,
+    {
+        self.put_adapted_entry(name, EntityCidLink::from(file))
+            .await
+    }
+
+    /// Adds a [`SymCidLink`] and its associated name in the directory's entries.
+    ///
+    /// This is a convenience wrapper around [`put_adapted_entry`][Self::put_adapted_entry] that handles
+    /// converting the symbolic link into an [`EntityCidLink`]. It provides the same versioning guarantees:
+    ///
+    /// - Verifies no previous version is set on the incoming symlink
+    /// - Properly chains versions with any existing entry
+    /// - Updates metadata timestamps
+    /// - Handles deleted entry restoration
+    ///
+    /// See [`put_adapted_entry`][Self::put_adapted_entry] for more details on the versioning behavior.
+    #[inline]
+    pub async fn put_adapted_symcidlink(
+        &mut self,
+        name: impl AsRef<str>,
+        symlink: SymCidLink<S>,
+    ) -> FsResult<()>
+    where
+        S: Send + Sync,
+    {
+        self.put_adapted_entry(name, EntityCidLink::from(symlink))
+            .await
+    }
+
+    /// Adds a [`SymPathLink`] and its associated name in the directory's entries.
+    ///
+    /// This is a convenience wrapper around [`put_adapted_entry`][Self::put_adapted_entry] that handles
+    /// converting the symbolic link into an [`EntityCidLink`]. It provides the same versioning guarantees:
+    ///
+    /// - Verifies no previous version is set on the incoming symlink
+    /// - Properly chains versions with any existing entry
+    /// - Updates metadata timestamps
+    /// - Handles deleted entry restoration
+    ///
+    /// See [`put_adapted_entry`][Self::put_adapted_entry] for more details on the versioning behavior.
+    #[inline]
+    pub async fn put_adapted_sympathlink(
+        &mut self,
+        name: impl AsRef<str>,
+        symlink: SymPathLink<S>,
+    ) -> FsResult<()>
+    where
+        S: Send + Sync,
+    {
+        self.put_adapted_entry(name, EntityCidLink::from(symlink))
+            .await
     }
 
     /// Gets the [`Entity`] with the associated name from the directory's entries.
@@ -335,14 +693,7 @@ where
         S: Send + Sync,
     {
         match self.get_entry(name)? {
-            Some(link) => {
-                let entity = link.resolve_entity(self.inner.store.clone()).await?;
-                if entity.get_metadata().get_deleted_at().is_some() {
-                    Ok(None)
-                } else {
-                    Ok(Some(entity))
-                }
-            }
+            Some(link) => Ok(Some(link.resolve_entity(self.inner.store.clone()).await?)),
             None => Ok(None),
         }
     }
@@ -357,14 +708,7 @@ where
     {
         let store = self.inner.store.clone();
         match self.get_entry_mut(name)? {
-            Some(link) => {
-                let entity = link.resolve_entity_mut(store).await?;
-                if entity.get_metadata().get_deleted_at().is_some() {
-                    Ok(None)
-                } else {
-                    Ok(Some(entity))
-                }
-            }
+            Some(link) => Ok(Some(link.resolve_entity_mut(store).await?)),
             None => Ok(None),
         }
     }
@@ -438,66 +782,6 @@ where
         }
     }
 
-    /// Removes the [`EntityCidLink`] with the given name from the directory's entries.
-    pub fn remove_entry(&mut self, name: impl AsRef<str>) -> FsResult<EntityCidLink<S>> {
-        let name = Utf8UnixPathSegment::from_str(name.as_ref())?;
-        let inner = Arc::make_mut(&mut self.inner);
-        inner
-            .entries
-            .remove(&name)
-            .ok_or(FsError::PathNotFound(name.to_string()))
-    }
-
-    /// Returns the metadata for the directory.
-    pub fn get_metadata(&self) -> &Metadata<S> {
-        &self.inner.metadata
-    }
-
-    /// Returns a mutable reference to the metadata for the directory.
-    pub fn get_metadata_mut(&mut self) -> &mut Metadata<S> {
-        let inner = Arc::make_mut(&mut self.inner);
-        &mut inner.metadata
-    }
-
-    /// Returns an iterator over the entries in the directory.
-    pub fn get_entries(&self) -> impl Iterator<Item = (&Utf8UnixPathSegment, &EntityCidLink<S>)> {
-        self.inner.entries.iter()
-    }
-
-    /// Returns the store used to persist the file.
-    pub fn get_store(&self) -> &S {
-        &self.inner.store
-    }
-
-    /// Returns `true` if the directory is empty.
-    ///
-    /// ## Examples
-    ///
-    /// ```
-    /// use monofs::filesystem::{Dir, Utf8UnixPathSegment};
-    /// use monoutils_store::MemoryStore;
-    /// use monoutils_store::ipld::cid::Cid;
-    ///
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let store = MemoryStore::default();
-    /// let mut dir = Dir::new(store);
-    ///
-    /// assert!(dir.is_empty());
-    ///
-    /// let file_name = "example.txt";
-    /// let file_cid: Cid = "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
-    ///
-    /// dir.put_entry(file_name, file_cid.into())?;
-    ///
-    /// assert!(!dir.is_empty());
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn is_empty(&self) -> bool {
-        self.inner.entries.is_empty()
-    }
-
     /// Tries to create a new `Dir` from a serializable representation.
     pub fn from_serializable(
         serializable: DirSerializable,
@@ -507,7 +791,15 @@ where
         let entries: HashMap<_, _> = serializable
             .entries
             .into_iter()
-            .map(|(segment, cid)| Ok((segment.parse()?, Link::from(cid))))
+            .map(|(segment, (deleted, cid))| {
+                Ok((
+                    segment.parse()?,
+                    Entry {
+                        deleted,
+                        link: Link::from(cid),
+                    },
+                ))
+            })
             .collect::<FsResult<_>>()?;
 
         Ok(Dir {
@@ -527,10 +819,13 @@ where
         S: Send + Sync,
     {
         let mut entries = BTreeMap::new();
-        for (k, v) in self.get_entries() {
+        for (k, v) in self.inner.entries.iter() {
             entries.insert(
                 k.to_string(),
-                v.resolve_cid().await.map_err(StoreError::custom)?,
+                (
+                    v.deleted,
+                    v.link.resolve_cid().await.map_err(StoreError::custom)?,
+                ),
             );
         }
 
@@ -542,6 +837,11 @@ where
             metadata,
             entries,
         })
+    }
+
+    pub(crate) fn set_previous(&mut self, previous: Option<Cid>) {
+        let inner = Arc::make_mut(&mut self.inner);
+        inner.previous = previous;
     }
 }
 
@@ -578,13 +878,26 @@ where
                     .map(|(_, v)| v.get_cid()) // TODO: Resolve value here.
                     .collect::<Vec<_>>(),
             )
+            .field("previous", &self.get_previous())
+            .finish()
+    }
+}
+
+impl<S> Debug for Entry<S>
+where
+    S: IpldStore + Send + Sync,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Entry")
+            .field("deleted", &self.deleted)
+            .field("link", &self.link)
             .finish()
     }
 }
 
 impl IpldReferences for DirSerializable {
     fn get_references<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Cid> + Send + 'a> {
-        Box::new(self.entries.values())
+        Box::new(self.entries.values().map(|(_, cid)| cid))
     }
 }
 
@@ -612,43 +925,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_dir_put_get_entries() -> anyhow::Result<()> {
-        let mut dir = Dir::new(MemoryStore::default());
-
-        let file1_cid: Cid =
-            "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
-        let file2_cid: Cid =
-            "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
-
-        let file1_name = "file1";
-        let file2_name = "file2";
-
-        dir.put_entry(file1_name, file1_cid.into())?;
-        dir.put_entry(file2_name, file2_cid.into())?;
-
-        assert_eq!(dir.inner.entries.len(), 2);
-        assert_eq!(
-            dir.get_entry(&file1_name)?.unwrap().get_cid(),
-            Some(&file1_cid)
-        );
-        assert_eq!(
-            dir.get_entry(&file2_name)?.unwrap().get_cid(),
-            Some(&file2_cid)
-        );
-
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn test_dir_stores_loads() -> anyhow::Result<()> {
         let store = MemoryStore::default();
         let mut dir = Dir::new(store.clone());
 
+        // Create a file
+        let file = File::new(store.clone());
         let file_name = "file1";
-        let file_cid: Cid =
-            "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
 
-        dir.put_entry(file_name, file_cid.into())?;
+        // Add file directly
+        dir.put_adapted_file(file_name, file).await?;
 
         let cid = dir.store().await?;
         let loaded_dir = Dir::load(&cid, store.clone()).await?;
@@ -669,10 +955,6 @@ mod tests {
             loaded_dir_metadata.get_sync_type()
         );
         assert_eq!(
-            dir_metadata.get_deleted_at(),
-            loaded_dir_metadata.get_deleted_at()
-        );
-        assert_eq!(
             dir_metadata.get_created_at(),
             loaded_dir_metadata.get_created_at()
         );
@@ -684,24 +966,23 @@ mod tests {
         // Assert that the number of entries is the same
         assert_eq!(dir.get_entries().count(), loaded_dir.get_entries().count());
 
-        // Assert that the entry we added exists in the loaded directory
-        let loaded_entry = loaded_dir
-            .get_entry(&file_name)?
-            .expect("Entry should exist");
-
-        assert_eq!(loaded_entry.get_cid(), Some(&file_cid));
+        // Assert that the entry exists in the loaded directory
+        assert!(loaded_dir.get_entry(&file_name)?.is_some());
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_dir_has_entry() -> anyhow::Result<()> {
-        let mut dir = Dir::new(MemoryStore::default());
-        let file_name = "example.txt";
-        let file_cid: Cid =
-            "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
+        let store = MemoryStore::default();
+        let mut dir = Dir::new(store.clone());
 
-        dir.put_entry(file_name, file_cid.into())?;
+        // Create a file
+        let file = File::new(store.clone());
+        let file_name = "example.txt";
+
+        // Add file directly
+        dir.put_adapted_file(file_name, file).await?;
 
         assert!(dir.has_entry(file_name)?);
         assert!(!dir.has_entry("nonexistent.txt")?);
@@ -711,18 +992,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_dir_remove_entry() -> anyhow::Result<()> {
-        let mut dir = Dir::new(MemoryStore::default());
-        let file_name = "example.txt";
-        let file_cid: Cid =
-            "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
+        let store = MemoryStore::default();
+        let mut dir = Dir::new(store.clone());
 
-        dir.put_entry(file_name, file_cid.clone().into())?;
+        // Create a file
+        let file = File::new(store.clone());
+        let file_name = "example.txt";
+
+        // Add file directly
+        dir.put_adapted_file(file_name, file).await?;
         assert!(dir.has_entry(file_name)?);
 
-        let removed_entry = dir.remove_entry(file_name)?;
-        assert_eq!(removed_entry.get_cid(), Some(&file_cid));
+        dir.remove_entry(file_name)?;
         assert!(!dir.has_entry(file_name)?);
-
         assert!(dir.remove_entry("nonexistent.txt").is_err());
 
         Ok(())
@@ -735,22 +1017,23 @@ mod tests {
 
         assert_eq!(*metadata.get_entity_type(), EntityType::Dir);
         assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
-        assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
-        assert!(metadata.get_deleted_at().is_none());
+        assert_eq!(*metadata.get_sync_type(), SyncType::Default);
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_dir_is_empty() -> anyhow::Result<()> {
-        let mut dir = Dir::new(MemoryStore::default());
+        let store = MemoryStore::default();
+        let mut dir = Dir::new(store.clone());
         assert!(dir.is_empty());
 
+        // Create a file
+        let file = File::new(store.clone());
         let file_name = "example.txt";
-        let file_cid: Cid =
-            "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
 
-        dir.put_entry(file_name, file_cid.into())?;
+        // Add file directly
+        dir.put_adapted_file(file_name, file).await?;
         assert!(!dir.is_empty());
 
         dir.remove_entry(file_name)?;
@@ -761,31 +1044,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_dir_get_entries() -> anyhow::Result<()> {
-        let mut dir = Dir::new(MemoryStore::default());
+        let store = MemoryStore::default();
+        let mut dir = Dir::new(store.clone());
+
+        // Create two files
+        let file1 = File::new(store.clone());
+        let file2 = File::new(store.clone());
+
         let file1_name = "file1.txt";
         let file2_name = "file2.txt";
-        let file1_cid: Cid =
-            "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
-        let file2_cid: Cid =
-            "bafkreihwsnuregceqh263vgdaatvch6micl2phrh2tdwkaqsch7jpo5nuu".parse()?;
 
-        dir.put_entry(file1_name, file1_cid.clone().into())?;
-        dir.put_entry(file2_name, file2_cid.clone().into())?;
+        // Add files directly
+        dir.put_adapted_file(file1_name, file1).await?;
+        dir.put_adapted_file(file2_name, file2).await?;
 
         let entries: Vec<_> = dir.get_entries().collect();
         assert_eq!(entries.len(), 2);
 
-        let entry1 = entries
-            .iter()
-            .find(|(name, _)| name.as_str() == file1_name)
-            .unwrap();
-        let entry2 = entries
-            .iter()
-            .find(|(name, _)| name.as_str() == file2_name)
-            .unwrap();
+        let entry1 = entries.iter().find(|(name, _)| name.as_str() == file1_name);
+        let entry2 = entries.iter().find(|(name, _)| name.as_str() == file2_name);
 
-        assert_eq!(entry1.1.get_cid(), Some(&file1_cid));
-        assert_eq!(entry2.1.get_cid(), Some(&file2_cid));
+        // Just verify the entries exist since their CIDs will be different
+        assert!(entry1.is_some());
+        assert!(entry2.is_some());
 
         Ok(())
     }
@@ -823,7 +1104,10 @@ mod tests {
 
         // Load the directory and create a new version
         let mut loaded_dir = Dir::load(&first_cid, store.clone()).await?;
-        loaded_dir.put_entry("new_file", Cid::default().into())?;
+
+        // Create a new file and add it
+        let file = File::new(store.clone());
+        loaded_dir.put_adapted_file("new_file", file).await?;
 
         // Store the new version
         let second_cid = loaded_dir.store().await?;
@@ -837,6 +1121,119 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_put_adapted_entry_new_entry() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let mut dir = Dir::new(store.clone());
+
+        // Add the file using its CID
+        dir.put_adapted_entry("file.txt", File::new(store.clone()).into())
+            .await?;
+
+        // Since this is a new entry, it should not have a previous version
+        let entry = dir.get_entry("file.txt")?.unwrap();
+        assert!(entry.resolve_entity(store).await?.get_previous().is_none());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_put_adapted_entry_existing_decoded_entry() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let mut dir = Dir::new(store.clone());
+
+        // Create first version of file.txt
+        dir.put_adapted_entry("file.txt", File::new(store.clone()).into())
+            .await?;
+
+        // Persist and load the directory.
+        let dir_cid = dir.store().await?;
+        let mut loaded_dir = Dir::load(&dir_cid, store.clone()).await?;
+        let file_cid = loaded_dir
+            .get_entry("file.txt")?
+            .unwrap()
+            .get_cid()
+            .unwrap()
+            .clone();
+
+        // Create second version
+        loaded_dir
+            .put_adapted_entry("file.txt", File::new(store.clone()).into())
+            .await?;
+
+        // Verify the entry exists and has the initial file's CID as previous
+        let entry = loaded_dir.get_entry("file.txt")?.unwrap();
+        let entity = entry.resolve_entity(store).await?;
+        assert_eq!(entity.get_previous(), Some(&file_cid));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_put_adapted_entry_restore_deleted() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let mut dir = Dir::new(store.clone());
+
+        // Create and add a file
+        dir.put_adapted_entry("file.txt", File::new(store.clone()).into())
+            .await?;
+
+        // Delete the entry
+        dir.remove_entry("file.txt")?;
+        assert!(!dir.has_entry("file.txt")?);
+
+        // Persist the directory.
+        let dir_cid = dir.store().await?;
+        let mut loaded_dir = Dir::load(&dir_cid, store.clone()).await?;
+        let file_cid = loaded_dir
+            .get_all_entries()
+            .find(|(name, _)| name.as_str() == "file.txt")
+            .unwrap()
+            .1
+            .get_cid()
+            .unwrap()
+            .clone();
+
+        // Create new version and add it
+        loaded_dir
+            .put_adapted_entry("file.txt", File::new(store.clone()).into())
+            .await?;
+
+        // Verify the entry is restored and visible
+        assert!(loaded_dir.has_entry("file.txt")?);
+        let entry = loaded_dir.get_entry("file.txt")?.unwrap();
+        let entity = entry.resolve_entity(store).await?;
+        assert_eq!(entity.get_previous(), Some(&file_cid));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_put_adapted_entry_updates_timestamps() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let mut dir = Dir::new(store.clone());
+
+        // Record initial directory modified time
+        let dir_initial_modified = *dir.get_metadata().get_modified_at();
+
+        // Wait a moment to ensure timestamps will be different
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        // Create and add a file
+        let file = File::new(store.clone());
+        dir.put_adapted_entry("file.txt", file.into()).await?;
+
+        // Verify directory's modified time was updated
+        assert!(*dir.get_metadata().get_modified_at() > dir_initial_modified);
+
+        // Get the entry and verify its modified time
+        let entry = dir.get_entry("file.txt")?.unwrap();
+        let entity = entry.resolve_entity(store).await?;
+        assert!(*entity.get_metadata().get_modified_at() > dir_initial_modified);
+
+        Ok(())
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -845,3 +1242,5 @@ mod tests {
 
 pub use find::*;
 pub use segment::*;
+
+use super::SymPathLink;

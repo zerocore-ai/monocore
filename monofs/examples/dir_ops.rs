@@ -38,8 +38,12 @@ async fn main() -> FsResult<()> {
     let mut root = Dir::new(store.clone());
     println!("Created root directory: {:?}", root);
 
-    // Find or create a file
-    let file = root.find_or_create("docs/readme.md", true).await?;
+    // Create a directory
+    let dir = root.create_dir("docs").await?;
+    println!("Created directory: {:?}", dir);
+
+    // Create a file
+    let file = root.create_file("docs/readme.md").await?;
     println!("Created file: {:?}", file);
 
     // Find or create a directory
@@ -63,11 +67,13 @@ async fn main() -> FsResult<()> {
     println!("Removed 'docs/readme.md'");
 
     // Create and add a subdirectory
-    root.put_dir("subdir", Dir::new(store.clone()))?;
+    root.put_adapted_dir("subdir", Dir::new(store.clone()))
+        .await?;
     println!("Added subdirectory 'subdir'");
 
     // Create and add a file to the root directory
-    root.put_file("example.txt", File::new(store.clone()))?;
+    root.put_adapted_file("example.txt", File::new(store.clone()))
+        .await?;
     println!("Added file 'example.txt' to root");
 
     // List entries in the root directory
@@ -82,7 +88,9 @@ async fn main() -> FsResult<()> {
 
     // Get and modify a subdirectory
     if let Some(subdir) = root.get_dir_mut("subdir").await? {
-        subdir.put_file("subdir_file.txt", File::new(store.clone()))?;
+        subdir
+            .put_adapted_file("subdir_file.txt", File::new(store.clone()))
+            .await?;
         println!("Added 'subdir_file.txt' to 'subdir'");
     }
 

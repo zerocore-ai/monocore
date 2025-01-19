@@ -6,6 +6,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
+use chrono::Utc;
 use monoutils_store::{
     ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
 };
@@ -145,6 +146,7 @@ where
     pub fn set_target_path(&mut self, target_path: impl AsRef<str>) {
         let inner = Arc::make_mut(&mut self.inner);
         inner.target_path = Utf8UnixPathBuf::from(target_path.as_ref());
+        inner.metadata.set_modified_at(Utc::now());
     }
 
     /// Tries to create a new `SymPathLink` from a serializable representation.
@@ -180,6 +182,11 @@ where
             previous: self.inner.initial_load_cid.get().cloned(),
         })
     }
+
+    pub(crate) fn set_previous(&mut self, previous: Option<Cid>) {
+        let inner = Arc::make_mut(&mut self.inner);
+        inner.previous = previous;
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -209,6 +216,7 @@ where
         f.debug_struct("SymPathLink")
             .field("metadata", &self.inner.metadata)
             .field("target_path", &self.inner.target_path)
+            .field("previous", &self.inner.previous)
             .finish()
     }
 }

@@ -116,6 +116,10 @@ pub enum FsError {
     /// Broken symbolic CID link.
     #[error("Broken symbolic CID link: {0}")]
     BrokenSymCidLink(Cid),
+
+    /// Invalid operation.
+    #[error("Invalid operation: {0}")]
+    InvalidOperation(String),
 }
 
 /// An error that can represent any error.

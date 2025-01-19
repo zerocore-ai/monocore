@@ -195,13 +195,13 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Encoded { identifier, cached } => f
-                .debug_struct("CidLink")
+                .debug_struct("CidLink::Encoded")
                 .field("identifier", &identifier)
                 .field("cached", &cached.get())
                 .finish(),
             Self::Decoded(value) => f
-                .debug_struct("CidLink")
-                .field("identifier", &value)
+                .debug_tuple("CidLink::Decoded")
+                .field(&value)
                 .finish(),
         }
     }

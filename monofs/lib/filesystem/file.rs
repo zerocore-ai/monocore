@@ -382,6 +382,11 @@ where
             previous: self.inner.initial_load_cid.get().cloned(),
         })
     }
+
+    pub(crate) fn set_previous(&mut self, previous: Option<Cid>) {
+        let inner = Arc::make_mut(&mut self.inner);
+        inner.previous = previous;
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -411,6 +416,7 @@ where
         f.debug_struct("File")
             .field("metadata", &self.inner.metadata)
             .field("content", &self.inner.content)
+            .field("previous", &self.inner.previous)
             .finish()
     }
 }
