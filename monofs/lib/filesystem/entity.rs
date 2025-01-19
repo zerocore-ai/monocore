@@ -145,6 +145,15 @@ where
             Entity::SymPathLink(symlink) => symlink.get_store(),
         }
     }
+
+    pub(crate) fn set_previous(&mut self, previous: Option<Cid>) {
+        match self {
+            Entity::File(file) => file.set_previous(previous),
+            Entity::Dir(dir) => dir.set_previous(previous),
+            Entity::SymCidLink(symlink) => symlink.set_previous(previous),
+            Entity::SymPathLink(symlink) => symlink.set_previous(previous),
+        }
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -184,7 +193,7 @@ where
 
 impl<S> Debug for Entity<S>
 where
-    S: IpldStore,
+    S: IpldStore + Send + Sync,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

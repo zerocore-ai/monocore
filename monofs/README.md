@@ -83,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
 #### Working with Directories
 
 ```rust
-use monofs::filesystem::{Dir, File, FsResult};
+use monofs::filesystem::{Dir, FsResult};
 use monoutils_store::{MemoryStore, Storable};
 
 #[tokio::main]
@@ -94,10 +94,10 @@ async fn main() -> FsResult<()> {
     let mut root = Dir::new(store.clone());
 
     // Create a file in the directory
-    root.put_file("example.txt", File::new(store.clone()))?;
+    root.create_file("example.txt").await?;
 
     // Create a subdirectory
-    root.put_dir("subdir", Dir::new(store.clone()))?;
+    root.create_dir("subdir").await?;
 
     // List directory contents
     for (name, entity) in root.get_entries() {

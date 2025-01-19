@@ -27,9 +27,6 @@ pub const ENTITY_TYPE_KEY: &str = "monofs.entity_type";
 /// The key for the modified at field in the metadata.
 pub const MODIFIED_AT_KEY: &str = "monofs.modified_at";
 
-/// The key for the deleted at field in the metadata.
-pub const DELETED_AT_KEY: &str = "monofs.deleted_at";
-
 /// The key for the symbolic link depth field in the metadata.
 pub const SYMLINK_DEPTH_KEY: &str = "monofs.symlink_depth";
 
@@ -57,7 +54,7 @@ pub const SYNC_TYPE_KEY: &str = "monofs.sync_type";
 /// let metadata = Metadata::new(EntityType::File, store);
 ///
 /// assert_eq!(*metadata.get_entity_type(), EntityType::File);
-/// assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
+/// assert_eq!(*metadata.get_sync_type(), SyncType::Default);
 /// assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
 /// ```
 #[derive(Clone, Serialize, Deserialize, Getters)]
@@ -73,10 +70,7 @@ where
     created_at: DateTime<Utc>,
 
     /// The time of the last modification of the entity.
-    modified_at: Option<DateTime<Utc>>,
-
-    /// Whether the entity has been deleted.
-    deleted_at: Option<DateTime<Utc>>,
+    modified_at: DateTime<Utc>,
 
     /// The maximum depth of a symbolic link.
     symlink_depth: u32,
@@ -93,12 +87,16 @@ where
 }
 
 /// The type of sync used for the entity.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SyncType {
+    /// Use the configured default method
+    #[default]
+    Default,
+
     /// Use the [RAFT consensus algorithm][raft] to sync the entity.
     ///
     /// [raft]: https://raft.github.io/
-    RAFT,
+    Raft,
 
     /// Use [Merkle-CRDT][merkle-crdt] as the method of syncing.
     ///
@@ -125,10 +123,9 @@ pub struct ExtendedAttributes<S> {
 pub struct MetadataSerializable {
     entity_type: EntityType,
     created_at: DateTime<Utc>,
-    modified_at: Option<DateTime<Utc>>,
+    modified_at: DateTime<Utc>,
     symlink_depth: u32,
     sync_type: SyncType,
-    deleted_at: Option<DateTime<Utc>>,
     extended_attrs: Option<Cid>,
 }
 
@@ -146,13 +143,13 @@ where
 {
     /// Creates a new metadata instance with the given entity type and store.
     pub fn new(entity_type: EntityType, store: S) -> Self {
+        let now = Utc::now();
         Self {
             entity_type,
-            created_at: Utc::now(),
-            modified_at: None,
-            deleted_at: None,
+            created_at: now,
+            modified_at: now,
             symlink_depth: DEFAULT_SYMLINK_DEPTH,
-            sync_type: SyncType::RAFT,
+            sync_type: SyncType::default(),
             extended_attrs: None,
             store,
         }
@@ -164,7 +161,6 @@ where
             entity_type: serializable.entity_type,
             created_at: serializable.created_at,
             modified_at: serializable.modified_at,
-            deleted_at: serializable.deleted_at,
             symlink_depth: serializable.symlink_depth,
             sync_type: serializable.sync_type,
             extended_attrs: serializable
@@ -189,7 +185,6 @@ where
             entity_type: self.entity_type,
             created_at: self.created_at,
             modified_at: self.modified_at,
-            deleted_at: self.deleted_at,
             symlink_depth: self.symlink_depth,
             sync_type: self.sync_type,
             extended_attrs,
@@ -295,14 +290,19 @@ where
         self.symlink_depth = depth;
     }
 
-    /// Sets the deleted_at timestamp.
-    pub fn set_deleted_at(&mut self, timestamp: Option<DateTime<Utc>>) {
-        self.deleted_at = timestamp;
-    }
-
     /// Sets the sync type.
     pub fn set_sync_type(&mut self, sync_type: SyncType) {
         self.sync_type = sync_type;
+    }
+
+    /// Sets the modified timestamp.
+    pub fn set_modified_at(&mut self, modified_at: DateTime<Utc>) {
+        self.modified_at = modified_at;
+    }
+
+    /// Sets the created timestamp.
+    pub fn set_created_at(&mut self, created_at: DateTime<Utc>) {
+        self.created_at = created_at;
     }
 }
 
@@ -364,7 +364,6 @@ where
             .field("entity_type", &self.entity_type)
             .field("created_at", &self.created_at)
             .field("modified_at", &self.modified_at)
-            .field("deleted_at", &self.deleted_at)
             .field("symlink_depth", &self.symlink_depth)
             .field("sync_type", &self.sync_type)
             .field(
@@ -401,9 +400,8 @@ mod tests {
         let metadata = Metadata::new(EntityType::File, store);
 
         assert_eq!(*metadata.get_entity_type(), EntityType::File);
-        assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
+        assert_eq!(*metadata.get_sync_type(), SyncType::Default);
         assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
-        assert!(metadata.get_deleted_at().is_none());
     }
 
     #[test]
@@ -412,9 +410,8 @@ mod tests {
         let metadata = Metadata::new(EntityType::File, store);
 
         assert_eq!(*metadata.get_entity_type(), EntityType::File);
-        assert_eq!(*metadata.get_sync_type(), SyncType::RAFT);
+        assert_eq!(*metadata.get_sync_type(), SyncType::Default);
         assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
-        assert!(metadata.get_deleted_at().is_none());
     }
 
     #[tokio::test]
@@ -426,9 +423,8 @@ mod tests {
         let loaded = Metadata::load(&cid, store).await?;
 
         assert_eq!(*loaded.get_entity_type(), EntityType::File);
-        assert_eq!(*loaded.get_sync_type(), SyncType::RAFT);
+        assert_eq!(*loaded.get_sync_type(), SyncType::Default);
         assert_eq!(*loaded.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
-        assert!(loaded.get_deleted_at().is_none());
 
         Ok(())
     }

@@ -175,7 +175,7 @@ where
 
             for segment in components {
                 let new_dir = Dir::new(dir.get_store().clone());
-                dir.put_dir(segment.clone(), new_dir)?;
+                dir.put_adapted_dir(segment.clone(), new_dir).await?;
                 dir = dir.get_dir_mut(&segment).await?.unwrap();
             }
 
@@ -229,16 +229,16 @@ mod tests {
             let file2 = File::new(store.clone());
 
             let file1_cid = file1.store().await?;
-            subdir1.put_entry("file1.txt", file1_cid.into())?;
+            subdir1.put_adapted_entry("file1.txt", file1_cid.into()).await?;
 
             let file2_cid = file2.store().await?;
-            subdir2.put_entry("file2.txt", file2_cid.into())?;
+            subdir2.put_adapted_entry("file2.txt", file2_cid.into()).await?;
 
             let subdir2_cid = subdir2.store().await?;
-            subdir1.put_entry("subdir2", subdir2_cid.into())?;
+            subdir1.put_adapted_entry("subdir2", subdir2_cid.into()).await?;
 
             let subdir1_cid = subdir1.store().await?;
-            root.put_entry("subdir1", subdir1_cid.into())?;
+            root.put_adapted_entry("subdir1", subdir1_cid.into()).await?;
 
             Ok(root)
         }

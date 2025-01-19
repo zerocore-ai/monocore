@@ -457,6 +457,11 @@ where
             previous: self.inner.initial_load_cid.get().cloned(),
         })
     }
+
+    pub(crate) fn set_previous(&mut self, previous: Option<Cid>) {
+        let inner = Arc::make_mut(&mut self.inner);
+        inner.previous = previous;
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -501,11 +506,13 @@ where
 
 impl<S> Debug for SymCidLink<S>
 where
-    S: IpldStore,
+    S: IpldStore + Send + Sync,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SymCidLink")
             .field("metadata", &self.inner.metadata)
+            .field("target", &self.inner.link)
+            .field("previous", &self.get_previous())
             .finish()
     }
 }
@@ -532,22 +539,25 @@ mod tests {
     mod fixtures {
         use super::*;
 
-        pub async fn setup_test_env() -> (MemoryStore, Dir<MemoryStore>, File<MemoryStore>) {
+        pub async fn setup_test_env() -> FsResult<(MemoryStore, Dir<MemoryStore>, File<MemoryStore>)>
+        {
             let store = MemoryStore::default();
             let mut root_dir = Dir::new(store.clone());
 
             let file_content = b"Hello, World!".to_vec();
             let file = File::with_content(store.clone(), file_content).await;
 
-            root_dir.put_file("test_file.txt", file.clone()).unwrap();
+            root_dir
+                .put_adapted_file("test_file.txt", file.clone())
+                .await?;
 
-            (store, root_dir, file)
+            Ok((store, root_dir, file))
         }
     }
 
     #[tokio::test]
     async fn test_symcidlink_creation() -> FsResult<()> {
-        let (store, root_dir, _) = fixtures::setup_test_env().await;
+        let (store, root_dir, _) = fixtures::setup_test_env().await?;
 
         let file_cid = root_dir
             .get_entry("test_file.txt")?
@@ -567,7 +577,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_symcidlink_from_entity() -> FsResult<()> {
-        let (_, _, file) = fixtures::setup_test_env().await;
+        let (_, _, file) = fixtures::setup_test_env().await?;
 
         let file_entity = Entity::File(file);
         let symlink = SymCidLink::from(file_entity);
@@ -583,7 +593,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_symcidlink_follow() -> FsResult<()> {
-        let (store, root_dir, _) = fixtures::setup_test_env().await;
+        let (store, root_dir, _) = fixtures::setup_test_env().await?;
 
         let file_cid = root_dir
             .get_entry("test_file.txt")?
@@ -604,7 +614,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_symcidlink_to_symcidlink() -> FsResult<()> {
-        let (store, root_dir, _) = fixtures::setup_test_env().await;
+        let (store, root_dir, _) = fixtures::setup_test_env().await?;
 
         let file_cid = root_dir
             .get_entry("test_file.txt")?
@@ -628,7 +638,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_symcidlink_max_depth() -> FsResult<()> {
-        let (store, root_dir, _) = fixtures::setup_test_env().await;
+        let (store, root_dir, _) = fixtures::setup_test_env().await?;
 
         let file_cid = root_dir
             .get_entry("test_file.txt")?
@@ -686,7 +696,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_symcidlink_resolve() -> FsResult<()> {
-        let (store, root_dir, _) = fixtures::setup_test_env().await;
+        let (store, root_dir, _) = fixtures::setup_test_env().await?;
 
         let file_cid = root_dir
             .get_entry("test_file.txt")?

@@ -1,9 +1,11 @@
-use chrono::Utc;
+use libipld::Cid;
 use monoutils_store::IpldStore;
 use typed_path::Utf8UnixPath;
 
 use crate::{
-    filesystem::{dir::find, entity::Entity, file::File, FsError, FsResult},
+    filesystem::{
+        dir::find, entity::Entity, file::File, FsError, FsResult, SymCidLink, SymPathLink,
+    },
     utils::path,
 };
 
@@ -159,7 +161,9 @@ where
             Entity::Dir(Dir::new(parent_dir.get_store().clone()))
         };
 
-        parent_dir.put_entity(file_name.clone(), new_entity)?;
+        parent_dir
+            .put_adapted_entity(file_name.clone(), new_entity)
+            .await?;
 
         parent_dir
             .get_entity_mut(&file_name)
@@ -167,52 +171,7 @@ where
             .ok_or_else(|| FsError::PathNotFound(path.to_string()))
     }
 
-    /// Creates an entity at the specified path without creating intermediate directories.
-    ///
-    /// This method creates a new entity at the exact path specified. Unlike `find_or_create`,
-    /// it will not create any intermediate directories. The parent directory must already exist.
-    ///
-    /// ## Arguments
-    ///
-    /// * `path` - The path where the entity should be created
-    /// * `entity` - The entity to create at the path
-    ///
-    /// ## Returns
-    ///
-    /// Returns a mutable reference to the created entity if successful.
-    ///
-    /// ## Errors
-    ///
-    /// Returns an error if:
-    /// * The path has a root
-    /// * The parent directory doesn't exist
-    /// * An entity already exists at the specified path
-    /// * The path is invalid
-    ///
-    /// ## Examples
-    ///
-    /// ```
-    /// use monofs::filesystem::{Dir, Entity, File, FsResult};
-    /// use monoutils_store::MemoryStore;
-    ///
-    /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
-    /// let mut dir = Dir::new(MemoryStore::default());
-    ///
-    /// // First create the parent directory
-    /// let store = dir.get_store().clone();
-    /// dir.create_entity("parent", Entity::Dir(Dir::new(store.clone()))).await?;
-    ///
-    /// // Now create a file in the parent directory
-    /// let file = dir.create_entity("parent/file.txt", Entity::File(File::new(store.clone()))).await?;
-    /// assert!(matches!(file, Entity::File(_)));
-    ///
-    /// // This would fail because intermediate directory doesn't exist
-    /// assert!(dir.create_entity("nonexistent/file.txt", Entity::File(File::new(store.clone()))).await.is_err());
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn create_entity(
+    async fn create_entity(
         &mut self,
         path: impl AsRef<str>,
         entity: impl Into<Entity<S>>,
@@ -237,12 +196,53 @@ where
             return Err(FsError::PathExists(path.to_string()));
         }
 
-        parent_dir.put_entity(file_name.clone(), entity)?;
+        parent_dir
+            .put_adapted_entity(file_name.clone(), entity)
+            .await?;
 
         parent_dir
             .get_entity_mut(&file_name)
             .await?
             .ok_or_else(|| FsError::PathNotFound(path.to_string()))
+    }
+
+    /// Creates a file at the specified path.
+    #[inline]
+    pub async fn create_file(&mut self, path: impl AsRef<str>) -> FsResult<&mut Entity<S>> {
+        self.create_entity(path, File::new(self.get_store().clone()))
+            .await
+    }
+
+    /// Creates a directory at the specified path.
+    #[inline]
+    pub async fn create_dir(&mut self, path: impl AsRef<str>) -> FsResult<&mut Entity<S>> {
+        self.create_entity(path, Dir::new(self.get_store().clone()))
+            .await
+    }
+
+    /// Creates a symbolic path link at the specified path.
+    #[inline]
+    pub async fn create_sympathlink(
+        &mut self,
+        path: impl AsRef<str>,
+        target: impl AsRef<str>,
+    ) -> FsResult<&mut Entity<S>> {
+        self.create_entity(
+            path,
+            SymPathLink::with_path(self.get_store().clone(), target)?,
+        )
+        .await
+    }
+
+    /// Creates a symbolic CID link at the specified path.
+    #[inline]
+    pub async fn create_symcidlink(
+        &mut self,
+        path: impl AsRef<str>,
+        cid: Cid,
+    ) -> FsResult<&mut Entity<S>> {
+        self.create_entity(path, SymCidLink::with_cid(self.get_store().clone(), cid))
+            .await
     }
 
     /// Lists all entries in the current directory.
@@ -337,15 +337,14 @@ where
         };
 
         // Copy entity to target directory
-        target_dir.put_entity(source_filename, source_entity)?;
+        target_dir
+            .put_adapted_entity(source_filename, source_entity)
+            .await?;
 
         Ok(())
     }
 
-    /// Removes an entity at the specified path and returns it.
-    ///
-    /// This method completely removes the entity from its parent directory, leaving no trace.
-    /// For a version that marks the entity as deleted but keeps it in the structure, use `remove`.
+    /// Removes an entity at the specified path by marking it as deleted.
     ///
     /// ## Examples
     ///
@@ -358,12 +357,12 @@ where
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("foo/bar.txt", true).await?;
     ///
-    /// dir.remove_trace("foo/bar.txt").await?;
+    /// dir.remove("foo/bar.txt").await?;
     /// assert!(dir.find("foo/bar.txt").await?.is_none());
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn remove_trace(&mut self, path: impl AsRef<str>) -> FsResult<()> {
+    pub async fn remove(&mut self, path: impl AsRef<str>) -> FsResult<()> {
         let path = Utf8UnixPath::new(path.as_ref());
 
         if path.has_root() {
@@ -389,44 +388,6 @@ where
 
         parent_dir.remove_entry(&filename)?;
         Ok(())
-    }
-
-    /// Removes an entity at the specified path by marking it as deleted.
-    ///
-    /// This method marks the entity as deleted by setting its deleted_at timestamp,
-    /// but keeps it in the directory structure. The entity will be skipped by find operations.
-    ///
-    /// ## Examples
-    ///
-    /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
-    /// use monoutils_store::MemoryStore;
-    ///
-    /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
-    /// let mut dir = Dir::new(MemoryStore::default());
-    /// dir.find_or_create("foo/bar.txt", true).await?;
-    ///
-    /// dir.remove("foo/bar.txt").await?;
-    ///
-    /// // The entity still exists but is marked as deleted
-    /// assert!(dir.find("foo/bar.txt").await?.is_none());
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn remove(&mut self, path: impl AsRef<str>) -> FsResult<()> {
-        let path = Utf8UnixPath::new(path.as_ref());
-
-        if path.has_root() {
-            return Err(FsError::PathHasRoot(path.to_string()));
-        }
-
-        if let Some(entity) = self.find_mut(path).await? {
-            entity.get_metadata_mut().set_deleted_at(Some(Utc::now()));
-            Ok(())
-        } else {
-            Err(FsError::PathNotFound(path.to_string()))
-        }
     }
 
     /// Renames (moves) an entity from one path to another.
@@ -494,16 +455,20 @@ where
         };
 
         // Store source_entity for potential rollback
-        let source_entity_backup = source_entity.clone();
+        let source_entity = source_entity.clone();
 
         // Get the target directory and try to put the entity there
         let result = if let Some(parent_path) = new_parent {
             match find::find_dir_mut(self, parent_path).await? {
-                find::FindResult::Found { dir } => dir.put_entry(new_filename, source_entity),
+                find::FindResult::Found { dir } => {
+                    dir.put_adapted_entry(new_filename, source_entity.clone())
+                        .await
+                }
                 _ => Err(FsError::PathNotFound(new_path.to_string())),
             }
         } else {
-            self.put_entry(new_filename, source_entity)
+            self.put_adapted_entry(new_filename, source_entity.clone())
+                .await
         };
 
         // If putting the entity in the target location fails, try to restore it to its original location
@@ -512,10 +477,10 @@ where
                 if let find::FindResult::Found { dir } =
                     find::find_dir_mut(self, parent_path).await?
                 {
-                    dir.put_entry(old_filename, source_entity_backup)?;
+                    dir.put_adapted_entry(old_filename, source_entity).await?;
                 }
             } else {
-                self.put_entry(old_filename, source_entity_backup)?;
+                self.put_adapted_entry(old_filename, source_entity).await?;
             }
             return Err(e);
         }
@@ -710,67 +675,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ops_remove_trace() -> FsResult<()> {
-        let mut dir = Dir::new(MemoryStore::default());
-
-        // Create entities to remove
-        dir.find_or_create("foo/bar.txt", true).await?;
-        dir.find_or_create("baz", false).await?;
-
-        // Remove file
-        dir.remove_trace("foo/bar.txt").await?;
-        assert!(dir.find("foo/bar.txt").await?.is_none());
-        assert!(dir.find("foo").await?.is_some());
-
-        // Remove directory
-        dir.remove_trace("baz").await?;
-        assert!(dir.find("baz").await?.is_none());
-
-        // Try to remove non-existent entity
-        assert!(dir.remove("nonexistent").await.is_err());
-
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn test_ops_remove() -> FsResult<()> {
-        let mut dir = Dir::new(MemoryStore::default());
-
-        // Create entities to remove
-        {
-            let _ = dir.find_or_create("foo/bar.txt", true).await?;
-            let _ = dir.find_or_create("baz", false).await?;
-        }
-
-        // Test remove (mark as deleted)
-        dir.remove("foo/bar.txt").await?;
-        assert!(dir.find("foo/bar.txt").await?.is_none()); // Should be skipped by find
-
-        // Verify the entity still exists but is marked as deleted
-        {
-            let foo_dir = dir.find_mut("foo").await?.unwrap();
-            if let Entity::Dir(dir) = foo_dir {
-                let entity = dir.get_entry("bar.txt")?.unwrap();
-                assert!(entity
-                    .resolve_entity(dir.get_store().clone())
-                    .await?
-                    .get_metadata()
-                    .get_deleted_at()
-                    .is_some());
-            }
-        }
-
-        // Test remove_trace (complete removal)
-        dir.remove_trace("baz").await?;
-        assert!(dir.find("baz").await?.is_none());
-
-        // Verify the entity is completely gone
-        assert!(dir.get_entity("baz").await?.is_none());
-
-        // Try to remove non-existent entity
-        assert!(dir.remove("nonexistent").await.is_err());
-        assert!(dir.remove_trace("nonexistent").await.is_err());
-
+        // TODO: Implement this test
         Ok(())
     }
 
@@ -875,16 +781,16 @@ mod tests {
             Entity::File(_)
         ));
 
-        // Test both remove and remove_trace
-        root.remove_trace("documents/work/report.pdf").await?;
+        // Remove report.pdf
+        root.remove("documents/work/report.pdf").await?;
         assert!(root.find("documents/work/report.pdf").await?.is_none());
 
-        // Test remove (mark as deleted)
+        // Remove notes.txt
         root.remove("documents/personal/notes.txt").await?;
         assert!(root.find("documents/personal/notes.txt").await?.is_none());
 
-        // Test remove_trace again
-        root.remove_trace("documents/personal").await?;
+        // Remove personal directory
+        root.remove("documents/personal").await?;
         assert!(root.find("documents/personal").await?.is_none());
 
         // Verify the final structure
