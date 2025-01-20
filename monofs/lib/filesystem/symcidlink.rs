@@ -6,6 +6,7 @@ use std::{
 };
 
 use async_recursion::async_recursion;
+use chrono::Utc;
 use monoutils_store::{
     ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
 };
@@ -214,6 +215,42 @@ where
         &self.inner.store
     }
 
+    /// Creates a checkpoint of the current symlink state.
+    ///
+    /// This is equivalent to storing the symlink and loading it back,
+    /// which is a common pattern when working with versioned symlinks.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::SymCidLink;
+    /// use monoutils_store::{MemoryStore, Storable};
+    /// use monoutils_store::ipld::cid::Cid;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let target_cid: Cid = "bafkreidgvpkjawlxz6sffxzwgooowe5yt7i6wsyg236mfoks77nywkptdq".parse()?;
+    /// let mut symlink = SymCidLink::with_cid(store.clone(), target_cid);
+    ///
+    /// // Store and checkpoint the symlink
+    /// let cid = symlink.checkpoint().await?;
+    ///
+    /// assert_eq!(symlink.get_initial_load_cid(), Some(&cid));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn checkpoint(&mut self) -> StoreResult<Cid>
+    where
+        S: Send + Sync,
+    {
+        let cid = self.store().await?;
+        let store = self.inner.store.clone();
+        let loaded = Self::load(&cid, store).await?;
+        self.inner = loaded.inner;
+        Ok(cid)
+    }
+
     /// Gets the [`EntityCidLink`] of the target of the symlink.
     pub fn get_link(&self) -> &EntityCidLink<S> {
         &self.inner.link
@@ -223,6 +260,7 @@ where
     pub fn set_link(&mut self, link: EntityCidLink<S>) {
         let inner = Arc::make_mut(&mut self.inner);
         inner.link = link;
+        inner.metadata.set_modified_at(Utc::now());
     }
 
     /// Sets the CID of the target of the symlink.

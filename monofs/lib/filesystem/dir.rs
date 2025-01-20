@@ -145,18 +145,52 @@ where
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
-    /// let dir = Dir::new(store.clone());
+    /// let mut dir = Dir::new(store.clone());
     ///
-    /// // Store and load the directory
-    /// let cid = dir.store().await?;
-    /// let loaded_dir = Dir::load(&cid, store).await?;
+    /// // Store and checkpoint the directory
+    /// let cid = dir.checkpoint().await?;
     ///
-    /// assert_eq!(loaded_dir.get_initial_load_cid(), Some(&cid));
+    /// assert_eq!(dir.get_initial_load_cid(), Some(&cid));
     /// # Ok(())
     /// # }
     /// ```
     pub fn get_initial_load_cid(&self) -> Option<&Cid> {
         self.inner.initial_load_cid.get()
+    }
+
+    /// Creates a checkpoint of the current directory state.
+    ///
+    /// This is equivalent to storing the directory and loading it back,
+    /// which is a common pattern when working with versioned directories.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Dir, File};
+    /// use monoutils_store::{MemoryStore, Storable};
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut dir = Dir::new(store.clone());
+    ///
+    /// // Add a file and checkpoint
+    /// dir.put_adapted_file("test.txt", File::new(store.clone())).await?;
+    /// let cid = dir.checkpoint().await?;
+    ///
+    /// assert_eq!(dir.get_initial_load_cid(), Some(&cid));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn checkpoint(&mut self) -> StoreResult<Cid>
+    where
+        S: Send + Sync,
+    {
+        let cid = self.store().await?;
+        let store = self.inner.store.clone();
+        let loaded = Self::load(&cid, store).await?;
+        self.inner = loaded.inner;
+        Ok(cid)
     }
 
     /// Returns the CID of the previous version of the directory if there is one.
@@ -170,26 +204,23 @@ where
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
-    /// let dir = Dir::new(store.clone());
+    /// let mut dir = Dir::new(store.clone());
     ///
     /// // Initially no previous version
     /// assert!(dir.get_previous().is_none());
     ///
     /// // Store initial version
-    /// let initial_cid = dir.store().await?;
+    /// let initial_cid = dir.checkpoint().await?;
     ///
-    /// // Load and modify directory
-    /// let mut dir = Dir::load(&initial_cid, store.clone()).await?;
-    /// dir.put_adapted_file("test.txt", File::new(store.clone())).await?;
+    /// // Create a new file and add it
+    /// let file = File::new(store.clone());
+    /// dir.put_adapted_file("test.txt", file).await?;
     ///
     /// // Store new version
-    /// let new_cid = dir.store().await?;
-    ///
-    /// // Load new version
-    /// let loaded_dir = Dir::load(&new_cid, store).await?;
+    /// let new_cid = dir.checkpoint().await?;
     ///
     /// // Previous version is set to initial CID
-    /// assert_eq!(loaded_dir.get_previous(), Some(&initial_cid));
+    /// assert_eq!(dir.get_previous(), Some(&initial_cid));
     /// # Ok(())
     /// # }
     /// ```
@@ -1074,19 +1105,16 @@ mod tests {
     #[tokio::test]
     async fn test_dir_get_initial_load_cid() -> anyhow::Result<()> {
         let store = MemoryStore::default();
-        let dir = Dir::new(store.clone());
+        let mut dir = Dir::new(store.clone());
 
         // Initially, the CID is not set
         assert!(dir.get_initial_load_cid().is_none());
 
-        // Store the directory
-        let stored_cid = dir.store().await?;
-
-        // Load the directory
-        let loaded_dir = Dir::load(&stored_cid, store).await?;
+        // Store and checkpoint the directory
+        let stored_cid = dir.checkpoint().await?;
 
         // Now the initial load CID is set
-        assert_eq!(loaded_dir.get_initial_load_cid(), Some(&stored_cid));
+        assert_eq!(dir.get_initial_load_cid(), Some(&stored_cid));
 
         Ok(())
     }
@@ -1094,30 +1122,24 @@ mod tests {
     #[tokio::test]
     async fn test_dir_get_previous() -> anyhow::Result<()> {
         let store = MemoryStore::default();
-        let dir = Dir::new(store.clone());
+        let mut dir = Dir::new(store.clone());
 
         // Initially, there's no previous version
         assert!(dir.get_previous().is_none());
 
-        // Store the directory
-        let first_cid = dir.store().await?;
-
-        // Load the directory and create a new version
-        let mut loaded_dir = Dir::load(&first_cid, store.clone()).await?;
+        // Store initial version
+        let first_cid = dir.checkpoint().await?;
 
         // Create a new file and add it
         let file = File::new(store.clone());
-        loaded_dir.put_adapted_file("new_file", file).await?;
+        dir.put_adapted_file("new_file", file).await?;
 
         // Store the new version
-        let second_cid = loaded_dir.store().await?;
-
-        // Load the new version
-        let new_version = Dir::load(&second_cid, store).await?;
+        let second_cid = dir.checkpoint().await?;
 
         // Now the previous and initial load CIDs are set
-        assert_eq!(new_version.get_previous(), Some(&first_cid));
-        assert_eq!(new_version.get_initial_load_cid(), Some(&second_cid));
+        assert_eq!(dir.get_previous(), Some(&first_cid));
+        assert_eq!(dir.get_initial_load_cid(), Some(&second_cid));
 
         Ok(())
     }
@@ -1147,10 +1169,9 @@ mod tests {
         dir.put_adapted_entry("file.txt", File::new(store.clone()).into())
             .await?;
 
-        // Persist and load the directory.
-        let dir_cid = dir.store().await?;
-        let mut loaded_dir = Dir::load(&dir_cid, store.clone()).await?;
-        let file_cid = loaded_dir
+        // Persist the directory
+        dir.checkpoint().await?;
+        let file_cid = dir
             .get_entry("file.txt")?
             .unwrap()
             .get_cid()
@@ -1158,12 +1179,11 @@ mod tests {
             .clone();
 
         // Create second version
-        loaded_dir
-            .put_adapted_entry("file.txt", File::new(store.clone()).into())
+        dir.put_adapted_entry("file.txt", File::new(store.clone()).into())
             .await?;
 
         // Verify the entry exists and has the initial file's CID as previous
-        let entry = loaded_dir.get_entry("file.txt")?.unwrap();
+        let entry = dir.get_entry("file.txt")?.unwrap();
         let entity = entry.resolve_entity(store).await?;
         assert_eq!(entity.get_previous(), Some(&file_cid));
 
@@ -1183,10 +1203,9 @@ mod tests {
         dir.remove_entry("file.txt")?;
         assert!(!dir.has_entry("file.txt")?);
 
-        // Persist the directory.
-        let dir_cid = dir.store().await?;
-        let mut loaded_dir = Dir::load(&dir_cid, store.clone()).await?;
-        let file_cid = loaded_dir
+        // Persist the directory
+        dir.checkpoint().await?;
+        let file_cid = dir
             .get_all_entries()
             .find(|(name, _)| name.as_str() == "file.txt")
             .unwrap()
@@ -1196,13 +1215,12 @@ mod tests {
             .clone();
 
         // Create new version and add it
-        loaded_dir
-            .put_adapted_entry("file.txt", File::new(store.clone()).into())
+        dir.put_adapted_entry("file.txt", File::new(store.clone()).into())
             .await?;
 
         // Verify the entry is restored and visible
-        assert!(loaded_dir.has_entry("file.txt")?);
-        let entry = loaded_dir.get_entry("file.txt")?.unwrap();
+        assert!(dir.has_entry("file.txt")?);
+        let entry = dir.get_entry("file.txt")?.unwrap();
         let entity = entry.resolve_entity(store).await?;
         assert_eq!(entity.get_previous(), Some(&file_cid));
 

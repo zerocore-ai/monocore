@@ -6,6 +6,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use chrono::Utc;
 use monoutils_store::{
     ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
 };
@@ -260,6 +261,7 @@ where
     pub fn set_content(&mut self, content: Option<Cid>) {
         let inner = Arc::make_mut(&mut self.inner);
         inner.content = content;
+        inner.metadata.set_modified_at(Utc::now());
     }
 
     /// Returns the metadata for the file.
@@ -304,6 +306,40 @@ where
     /// ```
     pub fn get_store(&self) -> &S {
         &self.inner.store
+    }
+
+    /// Creates a checkpoint of the current file state.
+    ///
+    /// This is equivalent to storing the file and loading it back,
+    /// which is a common pattern when working with versioned files.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::File;
+    /// use monoutils_store::{MemoryStore, Storable};
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut file = File::with_content(store.clone(), b"Hello, World!".to_vec()).await;
+    ///
+    /// // Store and checkpoint the file
+    /// let cid = file.checkpoint().await?;
+    ///
+    /// assert_eq!(file.get_initial_load_cid(), Some(&cid));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn checkpoint(&mut self) -> StoreResult<Cid>
+    where
+        S: Send + Sync,
+    {
+        let cid = self.store().await?;
+        let store = self.inner.store.clone();
+        let loaded = Self::load(&cid, store).await?;
+        self.inner = loaded.inner;
+        Ok(cid)
     }
 
     /// Returns `true` if the file is empty.

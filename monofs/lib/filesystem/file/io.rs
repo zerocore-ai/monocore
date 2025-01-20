@@ -4,6 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
+use chrono::Utc;
 use futures::Future;
 use monoutils::{EmptySeekableReader, SeekableReader};
 use monoutils_store::{IpldStore, IpldStoreSeekable};
@@ -72,6 +73,7 @@ where
             let store = self.file.get_store();
             let cid = store.put_bytes(&self.buffer[..]).await.map(Into::into)?;
             self.file.set_content(Some(cid));
+            self.file.get_metadata_mut().set_modified_at(Utc::now());
             self.buffer.clear();
         }
         Ok(())

@@ -444,20 +444,21 @@ where
             return Err(FsError::PathExists(new_path.to_string()));
         }
 
-        // Get the source entity
+        // Get the source entity without removing it
         let source_entity = if let Some(parent_path) = old_parent {
-            match find::find_dir_mut(self, parent_path).await? {
-                find::FindResult::Found { dir } => dir.remove_entry(&old_filename)?,
+            match find::find_dir(self, parent_path).await? {
+                find::FindResult::Found { dir } => dir.get_entry(&old_filename)?,
                 _ => return Err(FsError::PathNotFound(old_path.to_string())),
             }
         } else {
-            self.remove_entry(&old_filename)?
+            self.get_entry(&old_filename)?
         };
 
-        // Store source_entity for potential rollback
-        let source_entity = source_entity.clone();
+        let source_entity = source_entity
+            .ok_or_else(|| FsError::PathNotFound(old_path.to_string()))?
+            .clone();
 
-        // Get the target directory and try to put the entity there
+        // Add the entity to the new location
         let result = if let Some(parent_path) = new_parent {
             match find::find_dir_mut(self, parent_path).await? {
                 find::FindResult::Found { dir } => {
@@ -471,21 +472,19 @@ where
                 .await
         };
 
-        // If putting the entity in the target location fails, try to restore it to its original location
-        if let Err(e) = result {
+        // Only remove from old location if adding to new location succeeded
+        if result.is_ok() {
             if let Some(parent_path) = old_parent {
-                if let find::FindResult::Found { dir } =
-                    find::find_dir_mut(self, parent_path).await?
-                {
-                    dir.put_adapted_entry(old_filename, source_entity).await?;
-                }
+                match find::find_dir_mut(self, parent_path).await? {
+                    find::FindResult::Found { dir } => dir.remove_entry(&old_filename)?,
+                    _ => return Err(FsError::PathNotFound(old_path.to_string())),
+                };
             } else {
-                self.put_adapted_entry(old_filename, source_entity).await?;
+                self.remove_entry(&old_filename)?;
             }
-            return Err(e);
         }
 
-        Ok(())
+        result
     }
 }
 

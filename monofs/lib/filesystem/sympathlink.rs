@@ -13,9 +13,7 @@ use monoutils_store::{
 use serde::{Deserialize, Serialize};
 use typed_path::Utf8UnixPathBuf;
 
-use crate::filesystem::{
-    FsResult, Metadata, MetadataSerializable,
-};
+use crate::filesystem::{FsResult, Metadata, MetadataSerializable};
 
 use super::kind::EntityType;
 
@@ -135,6 +133,40 @@ where
     /// Returns the store used to persist the symlink.
     pub fn get_store(&self) -> &S {
         &self.inner.store
+    }
+
+    /// Creates a checkpoint of the current symlink state.
+    ///
+    /// This is equivalent to storing the symlink and loading it back,
+    /// which is a common pattern when working with versioned symlinks.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::SymPathLink;
+    /// use monoutils_store::{MemoryStore, Storable};
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let mut symlink = SymPathLink::with_path(store.clone(), "test_file.txt")?;
+    ///
+    /// // Store and checkpoint the symlink
+    /// let cid = symlink.checkpoint().await?;
+    ///
+    /// assert_eq!(symlink.get_initial_load_cid(), Some(&cid));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn checkpoint(&mut self) -> StoreResult<Cid>
+    where
+        S: Send + Sync,
+    {
+        let cid = self.store().await?;
+        let store = self.inner.store.clone();
+        let loaded = Self::load(&cid, store).await?;
+        self.inner = loaded.inner;
+        Ok(cid)
     }
 
     /// Gets the target path that this symlink points to.
