@@ -22,17 +22,16 @@ use crate::{IpldStore, Layout, LayoutError, LayoutSeekable, MerkleNode, StoreErr
 /// A layout that organizes data into a flat array of chunks with a single merkle node parent.
 ///
 /// ```txt
-///                              ┌──────────────────┐
-///                              │   Merkle Node    │
-///                              └─────────┬────────┘
-///                                        │
-///     ┌──────────────────┬───────────────┼────────────────┬─────────────────┐
-///     │                  │               │                │                 │
-/// Chunk 0            Chunk 1          Chunk 2         Chunk 3           Chunk 4
-/// ┌──────────┐      ┌──────────┐    ┌──────────┐    ┌──────────┐      ┌──────────┐
-/// │ 00 01 02 │      │ 03 04 05 │    │ 06 07 08 │    │ 09 10 11 │      │ 12 13 14 │
-/// └──────────┘      └──────────┘    └──────────┘    └──────────┘      └──────────┘
-///     3 bytes          3 bytes         3 bytes         3 bytes           3 bytes
+///                      ┌──────────────────┐
+///                      │   Merkle Node    │
+///                      └─────────┬────────┘
+///                                │
+///   ┌────────┬────────────┬──────┴──┬─────────┬──────────┬──────┐
+///   │        │            │         │         │          │      │
+/// ┌─┴─┐┌─────┴─────┐┌─────┴─────┐┌──┴──┐┌─────┴───────┐┌─┴─┐┌───┴───┐
+/// │ 0 ││ 1 2 3 4 5 ││ 6 7 8 9 A ││ B C ││ D E F G H I ││ J ││ K L M │
+/// └───┘└───────────┘└───────────┘└─────┘└─────────────┘└───┘└───────┘
+/// 1 byte   5 bytes     5 bytes   2 byte   6 bytes      1 byte  3 bytes
 /// ```
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct FlatLayout {}
@@ -50,18 +49,15 @@ pub struct FlatLayout {}
 /// chunk array.
 ///
 /// ```txt
-///                           Chunk Index = 1
-///                           Chunk Distance = 3
-///                                 │
-///                                 ▼
-///                   Chunk 0            Chunk 1             Chunk 2
-///              ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-///              │ 00  01  02   │   │ 03  04  05   │   │ 06  07  08   │
-///              └──────────────┘   └──────────────┘   └──────────────┘
-///                                        ▲
-///                                        │
-///                                        │
-///                                  Byte Cursor = 4
+///             Chunk Index = 2
+///             Chunk Distance = 6
+///                   │
+/// ┌───┐┌───────────┐▼─────────────┐┌───────┐
+/// │ A ││ B C D E F ││ G H I J K L ││ M N O │
+/// └───┘└───────────┘└───────▲─────┘└───────┘
+///                           │
+///                           │
+///                    Byte Cursor = 9
 /// ```
 pub struct FlatLayoutReader<S>
 where
@@ -235,8 +231,8 @@ where
                     continue;
                 }
                 Ordering::Greater => {
-                    self.chunk_distance -= self.node.children[self.chunk_index as usize].1 as u64;
                     self.chunk_index -= 1;
+                    self.chunk_distance -= self.node.children[self.chunk_index as usize].1 as u64;
 
                     continue;
                 }
@@ -270,6 +266,10 @@ impl Layout for FlatLayout {
                 yield cid;
             }
 
+            if children.is_empty() {
+                Err(StoreError::from(LayoutError::EmptyStream))?;
+            }
+
             let node = MerkleNode::new(children);
             let cid = store.put_node(&node).await?;
 
@@ -287,6 +287,11 @@ impl Layout for FlatLayout {
         let node = store.get_node(cid).await?;
         let reader = FlatLayoutReader::new(node, store)?;
         Ok(Box::pin(reader))
+    }
+
+    async fn get_size(&self, cid: &Cid, store: impl IpldStore + Send + Sync) -> StoreResult<u64> {
+        let node: MerkleNode = store.get_node(cid).await?;
+        Ok(node.size as u64)
     }
 }
 
@@ -391,7 +396,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use futures::TryStreamExt;
+    use futures::{stream, TryStreamExt};
     use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
     use crate::MemoryStore;
@@ -410,6 +415,10 @@ mod tests {
         // Get the CID of the merkle node.
         let cids = cid_stream.try_collect::<Vec<_>>().await?;
         let cid = cids.last().unwrap();
+
+        // Verify the size matches the original data
+        let size = layout.get_size(cid, store.clone()).await?;
+        assert_eq!(size, data.len() as u64);
 
         // Case: fill buffer automatically with `read_to_end`
         let mut reader = layout.retrieve(cid, store.clone()).await?;
@@ -439,69 +448,123 @@ mod tests {
     #[tokio::test]
     async fn test_flat_layout_seek() -> anyhow::Result<()> {
         let store = MemoryStore::default();
-        let (_, chunks, chunk_stream) = fixtures::data_and_chunk_stream();
+        let (data, _, chunk_stream) = fixtures::data_and_chunk_stream();
 
         // Organize chunks into a DAG.
         let layout = FlatLayout::default();
         let cid_stream = layout.organize(chunk_stream, store.clone()).await?;
 
-        // Get the CID of the first chunk.
+        // Get the CID of the merkle node.
         let cids = cid_stream.try_collect::<Vec<_>>().await?;
         let cid = cids.last().unwrap();
 
         // Get seekable reader.
         let mut reader = layout.retrieve_seekable(cid, store).await?;
 
-        // Case: read the first chunk.
-        let mut buf = vec![0; 5];
-        reader.read(&mut buf).await?;
-
-        assert_eq!(buf, chunks[0]);
-
-        // Case: skip a chunk by seeking from current and have cursor be at boundary of chunk.
-        let mut buf = vec![0; 5];
-        reader.seek(SeekFrom::Current(5)).await?;
-        reader.read(&mut buf).await?;
-
-        assert_eq!(buf, chunks[2]);
-
-        // Case: seek to the next chunk from current and have cursor be in the middle of chunk.
+        // Case: read from start
         let mut buf = vec![0; 3];
-        reader.seek(SeekFrom::Current(3)).await?;
-        reader.read(&mut buf).await?;
+        reader.read_exact(&mut buf).await?;
+        assert_eq!(&buf, &data[..3]); // "Lor"
 
-        assert_eq!(buf, chunks[3][3..]);
+        // Case: seek to arbitrary position and read across chunk boundary
+        reader.seek(SeekFrom::Start(10)).await?;
+        let mut buf = vec![0; 8];
+        reader.read_exact(&mut buf).await?;
+        assert_eq!(&buf, &data[10..18]); // "dolor sit"
 
-        // Case: Seek to some chunk before end.
+        // Case: seek forward from current position to middle of data
+        reader.seek(SeekFrom::Current(7)).await?;
+        let mut buf = vec![0; 6];
+        reader.read_exact(&mut buf).await?;
+        assert_eq!(&buf, &data[25..31]); // "consec"
+
+        // Case: seek backwards from current position
+        reader.seek(SeekFrom::Current(-10)).await?;
+        let mut buf = vec![0; 4];
+        reader.read_exact(&mut buf).await?;
+        assert_eq!(&buf, &data[21..25]); // "met,"
+
+        // Case: seek from end and read
+        reader.seek(SeekFrom::End(-8)).await?;
         let mut buf = vec![0; 5];
-        reader.seek(SeekFrom::End(-5)).await?;
-        reader.read(&mut buf).await?;
+        reader.read_exact(&mut buf).await?;
+        assert_eq!(&buf, &data[data.len() - 8..data.len() - 3]); // "g eli"
 
-        assert_eq!(buf, chunks[9]);
+        // Case: seek to start
+        reader.seek(SeekFrom::Start(0)).await?;
+        let mut buf = vec![0; 4];
+        reader.read_exact(&mut buf).await?;
+        assert_eq!(&buf, &data[..4]); // "Lore"
 
-        // Case: Seek to some chunk after start.
-        let mut buf = vec![0; 5];
-        reader.seek(SeekFrom::Start(5)).await?;
-        reader.read(&mut buf).await?;
-
-        assert_eq!(buf, chunks[1]);
-
-        // Case: Fail: Seek beyond end.
-        let result = reader.seek(SeekFrom::End(5)).await;
+        // Case: Fail: Seek beyond end
+        let result = reader.seek(SeekFrom::End(1)).await;
         assert!(result.is_err());
 
         let result = reader.seek(SeekFrom::End(0)).await;
         assert!(result.is_err());
 
-        let result = reader.seek(SeekFrom::Start(100)).await;
+        let result = reader.seek(SeekFrom::Start(data.len() as u64 + 1)).await;
         assert!(result.is_err());
 
-        let result = reader.seek(SeekFrom::Current(100)).await;
+        // Case: Fail: Seek before start
+        let _ = reader.seek(SeekFrom::Start(0)).await?;
+        let result = reader.seek(SeekFrom::Current(-1)).await;
         assert!(result.is_err());
 
-        // Case: Fail: Seek before start.
-        let result = reader.seek(SeekFrom::Current(-100)).await;
+        // Case: Fail: Read beyond end
+        reader.seek(SeekFrom::End(-2)).await?;
+        let mut buf = vec![0; 3];
+        let result = reader.read_exact(&mut buf).await;
         assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_flat_layout_sizes() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let layout = FlatLayout::default();
+
+        // Test empty data
+        let empty_stream = Box::pin(stream::iter(vec![Ok(Bytes::new())]));
+        let cid_stream = layout.organize(empty_stream, store.clone()).await?;
+        let empty_cid = cid_stream.try_collect::<Vec<_>>().await?.pop().unwrap();
+        let size = layout.get_size(&empty_cid, store.clone()).await?;
+        assert_eq!(size, 0);
+
+        // Test single chunk data
+        let single_chunk = Bytes::from("small data");
+        let single_stream = Box::pin(stream::iter(vec![Ok(single_chunk.clone())]));
+        let cid_stream = layout.organize(single_stream, store.clone()).await?;
+        let single_cid = cid_stream.try_collect::<Vec<_>>().await?.pop().unwrap();
+        let size = layout.get_size(&single_cid, store.clone()).await?;
+        assert_eq!(size, single_chunk.len() as u64);
+
+        // Test multi-chunk data
+        let (data, _, chunk_stream) = fixtures::data_and_chunk_stream();
+        let cid_stream = layout.organize(chunk_stream, store.clone()).await?;
+        let multi_cid = cid_stream.try_collect::<Vec<_>>().await?.pop().unwrap();
+        let size = layout.get_size(&multi_cid, store.clone()).await?;
+        assert_eq!(size, data.len() as u64);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_flat_layout_empty_stream() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let layout = FlatLayout::default();
+
+        // Create an empty stream
+        let empty_stream = Box::pin(stream::iter(Vec::<StoreResult<Bytes>>::new()));
+        let cid_stream = layout.organize(empty_stream, store.clone()).await?;
+
+        // Collecting the stream should fail with EmptyStream error
+        let result = cid_stream.try_collect::<Vec<_>>().await;
+        assert!(matches!(
+            result,
+            Err(StoreError::LayoutError(LayoutError::EmptyStream))
+        ));
 
         Ok(())
     }
@@ -521,16 +584,16 @@ mod fixtures {
         let data = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit.".to_owned();
 
         let chunks = vec![
-            Bytes::from("Lorem"),
-            Bytes::from(" ipsu"),
-            Bytes::from("m dol"),
-            Bytes::from("or sit"),
-            Bytes::from(" amet,"),
-            Bytes::from(" conse"),
-            Bytes::from("ctetur"),
-            Bytes::from(" adipi"),
-            Bytes::from("scing "),
-            Bytes::from("elit."),
+            Bytes::from("L"),               // 1 byte
+            Bytes::from("orem "),           // 5 bytes
+            Bytes::from("ipsum dol"),       // 9 bytes
+            Bytes::from("or"),              // 2 bytes
+            Bytes::from(" sit amet, cons"), // 14 bytes
+            Bytes::from("ectetur adi"),     // 10 bytes
+            Bytes::from("p"),               // 1 byte
+            Bytes::from("iscing"),          // 6 bytes
+            Bytes::from(" eli"),            // 4 bytes
+            Bytes::from("t."),              // 2 bytes
         ];
 
         let chunks_result = chunks

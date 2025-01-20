@@ -1932,6 +1932,7 @@ dependencies = [
  "libipld",
  "lru",
  "monoutils",
+ "pretty-error-debug",
  "rand",
  "serde",
  "serde_ipld_dagcbor",

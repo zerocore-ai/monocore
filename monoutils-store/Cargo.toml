@@ -19,6 +19,7 @@ async-stream.workspace = true
 bytes.workspace = true
 futures.workspace = true
 hex = "0.4.3"
+pretty-error-debug.workspace = true
 libipld = { workspace = true, features = ["serde-codec"] }
 lru = "0.12.3"
 serde = { workspace = true, features = ["derive"] }

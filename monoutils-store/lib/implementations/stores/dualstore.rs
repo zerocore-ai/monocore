@@ -5,7 +5,7 @@ use libipld::Cid;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::io::AsyncRead;
 
-use crate::{Codec, IpldReferences, IpldStore, StoreError, StoreResult};
+use crate::{Codec, IpldReferences, IpldStore, RawStore, StoreError, StoreResult};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -77,6 +77,14 @@ where
         match choice {
             Choice::A => self.store_a.get_bytes(cid).await,
             Choice::B => self.store_b.get_bytes(cid).await,
+        }
+    }
+
+    /// Gets the size of all the blocks associated with the given `Cid` in bytes.
+    pub async fn get_bytes_size_from(&self, cid: &Cid, choice: Choice) -> StoreResult<u64> {
+        match choice {
+            Choice::A => self.store_a.get_bytes_size(cid).await,
+            Choice::B => self.store_b.get_bytes_size(cid).await,
         }
     }
 
@@ -162,10 +170,6 @@ where
         self.put_bytes_into(bytes, self.config.default).await
     }
 
-    async fn put_raw_block(&self, bytes: impl Into<Bytes> + Send) -> StoreResult<Cid> {
-        self.put_raw_block_into(bytes, self.config.default).await
-    }
-
     async fn get_node<D>(&self, cid: &Cid) -> StoreResult<D>
     where
         D: DeserializeOwned + Send,
@@ -194,15 +198,8 @@ where
         }
     }
 
-    async fn get_raw_block(&self, cid: &Cid) -> StoreResult<Bytes> {
-        match self.get_raw_block_from(cid, self.config.default).await {
-            Ok(bytes) => Ok(bytes),
-            Err(StoreError::BlockNotFound(_)) => {
-                let choice = self.config.default.other();
-                self.get_raw_block_from(cid, choice).await
-            }
-            Err(err) => Err(err),
-        }
+    async fn get_bytes_size(&self, cid: &Cid) -> StoreResult<u64> {
+        self.get_bytes_size_from(cid, self.config.default).await
     }
 
     async fn has(&self, cid: &Cid) -> bool {
@@ -226,18 +223,39 @@ where
             .max(self.store_b.get_node_block_max_size())
     }
 
-    fn get_raw_block_max_size(&self) -> Option<u64> {
-        self.store_a
-            .get_raw_block_max_size()
-            .max(self.store_b.get_raw_block_max_size())
-    }
-
     async fn is_empty(&self) -> StoreResult<bool> {
         Ok(self.store_a.is_empty().await? && self.store_b.is_empty().await?)
     }
 
     async fn get_block_count(&self) -> StoreResult<u64> {
         Ok(self.store_a.get_block_count().await? + self.store_b.get_block_count().await?)
+    }
+}
+
+impl<A, B> RawStore for DualStore<A, B>
+where
+    A: IpldStore + Sync,
+    B: IpldStore + Sync,
+{
+    async fn put_raw_block(&self, bytes: impl Into<Bytes> + Send) -> StoreResult<Cid> {
+        self.put_raw_block_into(bytes, self.config.default).await
+    }
+
+    async fn get_raw_block(&self, cid: &Cid) -> StoreResult<Bytes> {
+        match self.get_raw_block_from(cid, self.config.default).await {
+            Ok(bytes) => Ok(bytes),
+            Err(StoreError::BlockNotFound(_)) => {
+                let choice = self.config.default.other();
+                self.get_raw_block_from(cid, choice).await
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn get_raw_block_max_size(&self) -> Option<u64> {
+        self.store_a
+            .get_raw_block_max_size()
+            .max(self.store_b.get_raw_block_max_size())
     }
 }
 

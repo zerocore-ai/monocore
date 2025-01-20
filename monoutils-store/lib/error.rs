@@ -16,7 +16,7 @@ use super::Codec;
 pub type StoreResult<T> = Result<T, StoreError>;
 
 /// An error that occurred during a file system operation.
-#[derive(Debug, Error, PartialEq)]
+#[derive(pretty_error_debug::Debug, Error, PartialEq)]
 pub enum StoreError {
     /// The block was not found.
     #[error("Block not found: {0}")]
@@ -53,6 +53,10 @@ pub enum LayoutError {
     /// No leaf block found.
     #[error("No leaf block found")]
     NoLeafBlock,
+
+    /// Empty stream.
+    #[error("Empty stream")]
+    EmptyStream,
 }
 
 /// An error that can represent any error.

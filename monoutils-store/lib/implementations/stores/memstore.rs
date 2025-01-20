@@ -13,7 +13,7 @@ use tokio::{io::AsyncRead, sync::RwLock};
 
 use crate::{
     utils, Chunker, Codec, FixedSizeChunker, FlatLayout, IpldReferences, IpldStore,
-    IpldStoreSeekable, Layout, LayoutSeekable, StoreError, StoreResult,
+    IpldStoreSeekable, Layout, LayoutSeekable, RawStore, StoreError, StoreResult,
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -26,7 +26,7 @@ use crate::{
 /// determine when a block can be safely removed from the store.
 #[derive(Debug, Clone)]
 // TODO: Use `BalancedDagLayout` as default
-// TODO: Use `RabinChunker` as default
+// TODO: Use `FastCDCChunker` as default chunker
 pub struct MemoryStore<C = FixedSizeChunker, L = FlatLayout>
 where
     C: Chunker,
@@ -142,17 +142,6 @@ where
         Ok(cid)
     }
 
-    async fn put_raw_block(&self, bytes: impl Into<Bytes>) -> StoreResult<Cid> {
-        let bytes = bytes.into();
-        if let Some(max_size) = self.get_raw_block_max_size() {
-            if bytes.len() as u64 > max_size {
-                return Err(StoreError::RawBlockTooLarge(bytes.len() as u64, max_size));
-            }
-        }
-
-        Ok(self.store_raw(bytes, Codec::Raw).await)
-    }
-
     async fn get_node<T>(&self, cid: &Cid) -> StoreResult<T>
     where
         T: DeserializeOwned,
@@ -178,15 +167,8 @@ where
         self.layout.retrieve(cid, self.clone()).await
     }
 
-    async fn get_raw_block(&self, cid: &Cid) -> StoreResult<Bytes> {
-        let blocks = self.blocks.read().await;
-        match blocks.get(cid) {
-            Some((_, bytes)) => match cid.codec().try_into()? {
-                Codec::Raw => Ok(bytes.clone()),
-                codec => Err(StoreError::UnexpectedBlockCodec(Codec::Raw, codec)),
-            },
-            None => Err(StoreError::BlockNotFound(*cid)),
-        }
+    async fn get_bytes_size(&self, cid: &Cid) -> StoreResult<u64> {
+        self.layout.get_size(cid, self.clone()).await
     }
 
     #[inline]
@@ -207,13 +189,41 @@ where
         self.chunker.chunk_max_size()
     }
 
+    async fn get_block_count(&self) -> StoreResult<u64> {
+        Ok(self.blocks.read().await.len() as u64)
+    }
+}
+
+impl<C, L> RawStore for MemoryStore<C, L>
+where
+    C: Chunker + Clone + Send + Sync,
+    L: Layout + Clone + Send + Sync,
+{
+    async fn put_raw_block(&self, bytes: impl Into<Bytes>) -> StoreResult<Cid> {
+        let bytes = bytes.into();
+        if let Some(max_size) = self.get_raw_block_max_size() {
+            if bytes.len() as u64 > max_size {
+                return Err(StoreError::RawBlockTooLarge(bytes.len() as u64, max_size));
+            }
+        }
+
+        Ok(self.store_raw(bytes, Codec::Raw).await)
+    }
+
+    async fn get_raw_block(&self, cid: &Cid) -> StoreResult<Bytes> {
+        let blocks = self.blocks.read().await;
+        match blocks.get(cid) {
+            Some((_, bytes)) => match cid.codec().try_into()? {
+                Codec::Raw => Ok(bytes.clone()),
+                codec => Err(StoreError::UnexpectedBlockCodec(Codec::Raw, codec)),
+            },
+            None => Err(StoreError::BlockNotFound(*cid)),
+        }
+    }
+
     #[inline]
     fn get_raw_block_max_size(&self) -> Option<u64> {
         self.chunker.chunk_max_size()
-    }
-
-    async fn get_block_count(&self) -> StoreResult<u64> {
-        Ok(self.blocks.read().await.len() as u64)
     }
 }
 
@@ -278,9 +288,16 @@ mod tests {
     async fn test_memory_store_bytes() -> anyhow::Result<()> {
         let store = MemoryStore::default();
 
-        // Store bytes using a reader
-        let data = b"Hello from a reader!".to_vec();
+        // Generate data larger than the default chunk size to trigger chunking
+        let data: Vec<u8> = (0..(DEFAULT_MAX_CHUNK_SIZE * 3) as usize)
+            .map(|i| (i % 255) as u8)
+            .collect();
+
         let cid = store.put_bytes(&data[..]).await?;
+
+        // Verify the size matches
+        let size = store.get_bytes_size(&cid).await?;
+        assert_eq!(size, data.len() as u64);
 
         // Read it back using get_bytes
         let mut reader = store.get_bytes(&cid).await?;

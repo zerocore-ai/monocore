@@ -3,7 +3,7 @@ use std::{collections::HashSet, pin::Pin};
 use bytes::Bytes;
 use monoutils_store::{
     ipld::cid::Cid, Codec, DualStore, DualStoreConfig, IpldReferences, IpldStore, MemoryStore,
-    StoreResult,
+    RawStore, StoreResult,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::io::AsyncRead;
@@ -66,10 +66,6 @@ where
         self.inner.put_bytes(reader).await
     }
 
-    async fn put_raw_block(&self, bytes: impl Into<Bytes> + Send) -> StoreResult<Cid> {
-        self.inner.put_raw_block(bytes).await
-    }
-
     async fn get_node<T>(&self, cid: &Cid) -> StoreResult<T>
     where
         T: DeserializeOwned + Send,
@@ -84,8 +80,8 @@ where
         self.inner.get_bytes(cid).await
     }
 
-    async fn get_raw_block(&self, cid: &Cid) -> StoreResult<Bytes> {
-        self.inner.get_raw_block(cid).await
+    async fn get_bytes_size(&self, cid: &Cid) -> StoreResult<u64> {
+        self.inner.get_bytes_size(cid).await
     }
 
     #[inline]
@@ -102,12 +98,25 @@ where
         self.inner.get_node_block_max_size()
     }
 
+    async fn get_block_count(&self) -> StoreResult<u64> {
+        self.inner.get_block_count().await
+    }
+}
+
+impl<S> RawStore for MemoryBufferStore<S>
+where
+    S: IpldStore + Sync,
+{
+    async fn put_raw_block(&self, bytes: impl Into<Bytes> + Send) -> StoreResult<Cid> {
+        self.inner.put_raw_block(bytes).await
+    }
+
+    async fn get_raw_block(&self, cid: &Cid) -> StoreResult<Bytes> {
+        self.inner.get_raw_block(cid).await
+    }
+
     #[inline]
     fn get_raw_block_max_size(&self) -> Option<u64> {
         self.inner.get_raw_block_max_size()
-    }
-
-    async fn get_block_count(&self) -> StoreResult<u64> {
-        self.inner.get_block_count().await
     }
 }
