@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
     drop(reader); // Drop reader to free up the input stream ref to the file
 
     // Check if the file is empty
-    println!("File is empty: {}", file.is_empty());
+    println!("File is empty: {}", file.is_empty().await?);
 
     // Get and print file metadata
     let metadata = file.get_metadata();
@@ -74,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
     // Truncate the file
     file.truncate();
     println!("Truncated file");
-    println!("File is empty after truncation: {}", file.is_empty());
+    println!("File is empty after truncation: {}", file.is_empty().await?);
 
     Ok(())
 }

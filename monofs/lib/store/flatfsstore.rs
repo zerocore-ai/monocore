@@ -9,7 +9,7 @@ use libipld::{
 use monoutils::SeekableReader;
 use monoutils_store::{
     Chunker, Codec, FixedSizeChunker, FlatLayout, IpldReferences, IpldStore, IpldStoreSeekable,
-    Layout, LayoutSeekable, StoreError, StoreResult,
+    Layout, LayoutSeekable, RawStore, StoreError, StoreResult,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::fs::{create_dir_all, File};
@@ -69,6 +69,18 @@ pub enum DirLevels {
 /// - Zero levels: All blocks stored directly in the root directory
 /// - One level (default): Blocks stored in subdirectories based on the first two characters of the CID digest
 /// - Two levels: Blocks stored in nested subdirectories based on the first four characters of the CID digest
+///
+/// Example directory structure (using one-level organization):
+/// ```text
+/// store_root/
+/// ├── 00/
+/// │   ├── 001234567890abcdef...  (block file)
+/// │   └── 00fedcba987654321...  (block file)
+/// ├── a1/
+/// │   └── a1b2c3d4e5f67890...   (block file)
+/// └── ff/
+///     └── ff0123456789abcd...   (block file)
+/// ```
 ///
 /// The default one-level structure is the most common approach, used by systems like IPFS and Git,
 /// providing a good balance between directory depth and file distribution (1024 possible subdirectories).
@@ -235,26 +247,6 @@ where
         Ok(cid)
     }
 
-    async fn put_raw_block(&self, bytes: impl Into<Bytes>) -> StoreResult<Cid> {
-        let bytes = bytes.into();
-        if let Some(max_size) = self.get_raw_block_max_size() {
-            if bytes.len() as u64 > max_size {
-                return Err(StoreError::RawBlockTooLarge(bytes.len() as u64, max_size));
-            }
-        }
-
-        let cid = self.make_cid(Codec::Raw, bytes.as_ref());
-        let block_path = self.get_block_path(&cid);
-
-        self.ensure_directories(&block_path).await?;
-        let mut file = File::create(&block_path)
-            .await
-            .map_err(StoreError::custom)?;
-        file.write_all(&bytes).await.map_err(StoreError::custom)?;
-
-        Ok(cid)
-    }
-
     async fn get_node<T>(&self, cid: &Cid) -> StoreResult<T>
     where
         T: DeserializeOwned,
@@ -276,16 +268,8 @@ where
         self.layout.retrieve(cid, self.clone()).await
     }
 
-    async fn get_raw_block(&self, cid: &Cid) -> StoreResult<Bytes> {
-        let block_path = self.get_block_path(cid);
-        let mut file = File::open(&block_path)
-            .await
-            .map_err(|_| StoreError::BlockNotFound(*cid))?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)
-            .await
-            .map_err(StoreError::custom)?;
-        Ok(bytes.into())
+    async fn get_bytes_size(&self, cid: &Cid) -> StoreResult<u64> {
+        self.layout.get_size(cid, self.clone()).await
     }
 
     async fn has(&self, cid: &Cid) -> bool {
@@ -300,10 +284,6 @@ where
     }
 
     fn get_node_block_max_size(&self) -> Option<u64> {
-        self.chunker.chunk_max_size()
-    }
-
-    fn get_raw_block_max_size(&self) -> Option<u64> {
         self.chunker.chunk_max_size()
     }
 
@@ -374,6 +354,48 @@ where
     }
 }
 
+impl<C, L> RawStore for FlatFsStore<C, L>
+where
+    C: Chunker + Clone + Send + Sync,
+    L: Layout + Clone + Send + Sync,
+{
+    async fn put_raw_block(&self, bytes: impl Into<Bytes>) -> StoreResult<Cid> {
+        let bytes = bytes.into();
+        if let Some(max_size) = self.get_raw_block_max_size() {
+            if bytes.len() as u64 > max_size {
+                return Err(StoreError::RawBlockTooLarge(bytes.len() as u64, max_size));
+            }
+        }
+
+        let cid = self.make_cid(Codec::Raw, bytes.as_ref());
+        let block_path = self.get_block_path(&cid);
+
+        self.ensure_directories(&block_path).await?;
+        let mut file = File::create(&block_path)
+            .await
+            .map_err(StoreError::custom)?;
+        file.write_all(&bytes).await.map_err(StoreError::custom)?;
+
+        Ok(cid)
+    }
+
+    async fn get_raw_block(&self, cid: &Cid) -> StoreResult<Bytes> {
+        let block_path = self.get_block_path(cid);
+        let mut file = File::open(&block_path)
+            .await
+            .map_err(|_| StoreError::BlockNotFound(*cid))?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .await
+            .map_err(StoreError::custom)?;
+        Ok(bytes.into())
+    }
+
+    fn get_raw_block_max_size(&self) -> Option<u64> {
+        self.chunker.chunk_max_size()
+    }
+}
+
 impl<C, L> IpldStoreSeekable for FlatFsStore<C, L>
 where
     C: Chunker + Clone + Send + Sync,
@@ -427,9 +449,16 @@ mod tests {
         for dir_level in [DirLevels::Zero, DirLevels::One, DirLevels::Two] {
             let (store, _temp) = fixtures::setup_store(dir_level).await;
 
-            // Store bytes using a reader
-            let data = b"Hello from a reader!".to_vec();
+            // Generate data larger than the default chunk size to trigger chunking
+            let data: Vec<u8> = (0..(DEFAULT_MAX_CHUNK_SIZE * 3) as usize)
+                .map(|i| (i % 255) as u8)
+                .collect();
+
             let cid = store.put_bytes(&data[..]).await?;
+
+            // Verify the size matches
+            let size = store.get_bytes_size(&cid).await?;
+            assert_eq!(size, data.len() as u64);
 
             // Read it back using get_bytes
             let mut reader = store.get_bytes(&cid).await?;

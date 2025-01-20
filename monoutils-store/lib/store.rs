@@ -51,7 +51,7 @@ pub enum Codec {
 ///
 // TODO: Add support for deleting blocks with `derefence` method.
 // TODO: Add support for specifying hash type.
-pub trait IpldStore: Clone {
+pub trait IpldStore: RawStore + Clone {
     /// Saves an IPLD serializable object to the store and returns the `Cid` to it.
     ///
     /// ## Errors
@@ -74,17 +74,6 @@ pub trait IpldStore: Clone {
         reader: impl AsyncRead + Send + Sync + 'a,
     ) -> impl Future<Output = StoreResult<Cid>> + 'a;
 
-    /// Tries to save `bytes` as a single block to the store. Unlike `put_bytes`, this method does
-    /// not chunk the data and does not create intermediate merkle nodes.
-    ///
-    /// ## Errors
-    ///
-    /// If the bytes are too large, `StoreError::RawBlockTooLarge` error is returned.
-    fn put_raw_block(
-        &self,
-        bytes: impl Into<Bytes> + Send,
-    ) -> impl Future<Output = StoreResult<Cid>> + Send;
-
     /// Gets a type stored as an IPLD data from the store by its `Cid`.
     ///
     /// ## Errors
@@ -104,15 +93,8 @@ pub trait IpldStore: Clone {
         cid: &'a Cid,
     ) -> impl Future<Output = StoreResult<Pin<Box<dyn AsyncRead + Send + Sync + 'a>>>> + 'a;
 
-    /// Retrieves raw bytes of a single block from the store by its `Cid`.
-    ///
-    /// Unlike `get_stream`, this method does not expect chunked data and does not have to retrieve
-    /// intermediate merkle nodes.
-    ///
-    /// ## Errors
-    ///
-    /// If the block is not found, `StoreError::BlockNotFound` error is returned.
-    fn get_raw_block(&self, cid: &Cid) -> impl Future<Output = StoreResult<Bytes>> + Send + Sync;
+    /// Gets the size of all the blocks associated with the given `Cid` in bytes.
+    fn get_bytes_size(&self, cid: &Cid) -> impl Future<Output = StoreResult<u64>>;
 
     /// Checks if the store has a block with the given `Cid`.
     fn has(&self, cid: &Cid) -> impl Future<Output = bool>;
@@ -123,9 +105,6 @@ pub trait IpldStore: Clone {
     /// Returns the allowed maximum block size for IPLD and merkle nodes.
     /// If there is no limit, `None` is returned.
     fn get_node_block_max_size(&self) -> Option<u64>;
-
-    /// Returns the allowed maximum block size for raw bytes. If there is no limit, `None` is returned.
-    fn get_raw_block_max_size(&self) -> Option<u64>;
 
     /// Checks if the store is empty.
     fn is_empty(&self) -> impl Future<Output = StoreResult<bool>> {
@@ -142,6 +121,33 @@ pub trait IpldStore: Clone {
     // ///
     // /// Returns the number of nodes and blocks removed.
     // fn remove(&self, cid: &Cid) -> impl Future<Output = StoreResult<usize>>;
+}
+
+/// A trait for stores that support raw blocks.
+pub trait RawStore: Clone {
+    /// Tries to save `bytes` as a single block to the store. Unlike `put_bytes`, this method does
+    /// not chunk the data and does not create intermediate merkle nodes.
+    ///
+    /// ## Errors
+    ///
+    /// If the bytes are too large, `StoreError::RawBlockTooLarge` error is returned.
+    fn put_raw_block(
+        &self,
+        bytes: impl Into<Bytes> + Send,
+    ) -> impl Future<Output = StoreResult<Cid>> + Send;
+
+    /// Retrieves raw bytes of a single block from the store by its `Cid`.
+    ///
+    /// Unlike `get_stream`, this method does not expect chunked data and does not have to retrieve
+    /// intermediate merkle nodes.
+    ///
+    /// ## Errors
+    ///
+    /// If the block is not found, `StoreError::BlockNotFound` error is returned.
+    fn get_raw_block(&self, cid: &Cid) -> impl Future<Output = StoreResult<Bytes>> + Send + Sync;
+
+    /// Returns the allowed maximum block size for raw bytes. If there is no limit, `None` is returned.
+    fn get_raw_block_max_size(&self) -> Option<u64>;
 }
 
 /// Helper extension to the `IpldStore` trait.

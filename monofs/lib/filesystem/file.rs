@@ -5,12 +5,12 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use bytes::Bytes;
 use chrono::Utc;
 use monoutils_store::{
     ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
 };
 use serde::{Deserialize, Serialize};
+use tokio::io::AsyncRead;
 
 use crate::filesystem::{kind::EntityType, FsResult, Metadata, MetadataSerializable};
 
@@ -98,10 +98,14 @@ where
     /// use monofs::filesystem::File;
     /// use monoutils_store::MemoryStore;
     ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
     /// let file = File::new(store);
     ///
-    /// assert!(file.is_empty());
+    /// assert!(file.is_empty().await?);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn new(store: S) -> Self {
         Self {
@@ -126,17 +130,17 @@ where
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
-    /// let file = File::with_content(store, b"Hello, World!".to_vec()).await;
+    /// let file = File::with_content(store, b"Hello, World!".as_slice()).await?;
     ///
-    /// assert!(!file.is_empty());
+    /// assert!(!file.is_empty().await?);
     /// assert!(file.get_content().is_some());
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn with_content(store: S, content: impl Into<Bytes> + Send) -> Self {
-        let cid = store.put_raw_block(content).await.unwrap();
+    pub async fn with_content(store: S, content: impl AsyncRead + Send + Sync) -> FsResult<Self> {
+        let cid = store.put_bytes(content).await?;
 
-        Self {
+        Ok(Self {
             inner: Arc::new(FileInner {
                 initial_load_cid: OnceLock::new(),
                 previous: None,
@@ -144,7 +148,7 @@ where
                 content: Some(cid),
                 store,
             }),
-        }
+        })
     }
 
     /// Returns the CID of the file when it was initially loaded from the store.
@@ -198,21 +202,12 @@ where
     /// // Initially, there's no previous version
     /// assert!(file.get_previous().is_none());
     ///
-    /// // Store the file
-    /// let first_cid = file.store().await?;
-    ///
-    /// // Load the file and create a new version
-    /// let mut loaded_file = File::load(&first_cid, store.clone()).await?;
-    /// loaded_file.set_content(Some(Cid::default()));
-    ///
-    /// // Store the new version
-    /// let second_cid = loaded_file.store().await?;
-    ///
-    /// // Load the new version
-    /// let new_version = File::load(&second_cid, store).await?;
+    /// // Checkpoint the file multiple times
+    /// let v1_cid = file.checkpoint().await?;
+    /// let _ = file.checkpoint().await?;
     ///
     /// // Now the previous CID is set
-    /// assert_eq!(new_version.get_previous(), Some(&first_cid));
+    /// assert_eq!(file.get_previous(), Some(&v1_cid));
     /// # Ok(())
     /// # }
     /// ```
@@ -231,7 +226,7 @@ where
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
-    /// let file = File::with_content(store, b"Hello, World!".to_vec()).await;
+    /// let file = File::with_content(store, b"Hello, World!".as_slice()).await?;
     ///
     /// assert!(file.get_content().is_some());
     /// # Ok(())
@@ -239,29 +234,6 @@ where
     /// ```
     pub fn get_content(&self) -> Option<&Cid> {
         self.inner.content.as_ref()
-    }
-
-    /// Sets the content of the file.
-    ///
-    /// ## Examples
-    ///
-    /// ```
-    /// use monofs::filesystem::File;
-    /// use monoutils_store::{MemoryStore, ipld::cid::Cid};
-    ///
-    /// let store = MemoryStore::default();
-    /// let mut file = File::new(store);
-    ///
-    /// let content_cid = Cid::default();
-    /// file.set_content(Some(content_cid));
-    ///
-    /// assert!(!file.is_empty());
-    /// assert_eq!(file.get_content(), Some(&content_cid));
-    /// ```
-    pub fn set_content(&mut self, content: Option<Cid>) {
-        let inner = Arc::make_mut(&mut self.inner);
-        inner.content = content;
-        inner.metadata.set_modified_at(Utc::now());
     }
 
     /// Returns the metadata for the file.
@@ -322,7 +294,7 @@ where
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
-    /// let mut file = File::with_content(store.clone(), b"Hello, World!".to_vec()).await;
+    /// let mut file = File::with_content(store.clone(), b"Hello, World!".as_slice()).await?;
     ///
     /// // Store and checkpoint the file
     /// let cid = file.checkpoint().await?;
@@ -331,7 +303,7 @@ where
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn checkpoint(&mut self) -> StoreResult<Cid>
+    pub async fn checkpoint(&mut self) -> FsResult<Cid>
     where
         S: Send + Sync,
     {
@@ -342,6 +314,31 @@ where
         Ok(cid)
     }
 
+    /// Returns the size of the file in bytes.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::File;
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let file = File::with_content(store, b"Hello, World!".as_slice()).await?;
+    ///
+    /// assert_eq!(file.get_size().await?, 13);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_size(&self) -> FsResult<u64> {
+        if let Some(cid) = self.get_content() {
+            Ok(self.get_store().get_bytes_size(cid).await?)
+        } else {
+            Ok(0)
+        }
+    }
+
     /// Returns `true` if the file is empty.
     ///
     /// ## Examples
@@ -350,13 +347,18 @@ where
     /// use monofs::filesystem::File;
     /// use monoutils_store::MemoryStore;
     ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
     /// let file = File::new(store);
     ///
-    /// assert!(file.is_empty());
+    /// assert!(file.is_empty().await?);
+    /// # Ok(())
+    /// # }
     /// ```
-    pub fn is_empty(&self) -> bool {
-        self.inner.content.is_none()
+    #[inline]
+    pub async fn is_empty(&self) -> FsResult<bool> {
+        Ok(self.get_size().await? == 0)
     }
 
     /// Truncates the file to zero bytes.
@@ -370,13 +372,13 @@ where
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
-    /// let mut file = File::with_content(store, b"Hello, World!".to_vec()).await;
+    /// let mut file = File::with_content(store.clone(), b"Hello, World!".as_slice()).await?;
     ///
-    /// assert!(!file.is_empty());
+    /// assert!(!file.is_empty().await?);
     ///
     /// file.truncate();
     ///
-    /// assert!(file.is_empty());
+    /// assert!(file.is_empty().await?);
     /// assert!(file.get_content().is_none());
     /// # Ok(())
     /// # }
@@ -417,6 +419,12 @@ where
             content: self.inner.content,
             previous: self.inner.initial_load_cid.get().cloned(),
         })
+    }
+
+    pub(crate) fn set_content(&mut self, content: Option<Cid>) {
+        let inner = Arc::make_mut(&mut self.inner);
+        inner.content = content;
+        inner.metadata.set_modified_at(Utc::now());
     }
 
     pub(crate) fn set_previous(&mut self, previous: Option<Cid>) {
@@ -473,73 +481,95 @@ impl IpldReferences for FileSerializable {
 #[cfg(test)]
 mod tests {
     use monoutils_store::{MemoryStore, Storable};
+    use tokio::io::AsyncReadExt;
 
     use super::*;
 
-    #[test]
-    fn test_file_new() {
+    #[tokio::test]
+    async fn test_file_new() -> anyhow::Result<()> {
         let file = File::new(MemoryStore::default());
 
-        assert!(file.is_empty());
+        assert!(file.is_empty().await?);
         assert_eq!(file.get_metadata().get_entity_type(), &EntityType::File);
         assert!(file.get_content().is_none());
+
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_file_with_content() -> anyhow::Result<()> {
         let store = MemoryStore::default();
-        let file = File::with_content(store.clone(), b"Hello, World!".to_vec()).await;
-        assert!(!file.is_empty());
+        let file = File::with_content(store.clone(), b"Hello, World!".as_slice()).await?;
+        assert!(!file.is_empty().await?);
 
         let content_cid = file.get_content().unwrap();
-        assert_eq!(
-            store.get_raw_block(content_cid).await?,
-            Bytes::from(b"Hello, World!".to_vec())
-        );
+        let mut content = Vec::new();
+        store
+            .get_bytes(&content_cid)
+            .await?
+            .read_to_end(&mut content)
+            .await?;
+
+        assert_eq!(content, b"Hello, World!");
 
         Ok(())
     }
 
-    #[test]
-    fn test_file_set_content() {
-        let mut file = File::new(MemoryStore::default());
+    #[tokio::test]
+    async fn test_file_set_content() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let mut file = File::new(store.clone());
+        assert_eq!(file.get_size().await?, 0);
 
-        let content_cid = Cid::default();
+        // Store some example bytes and get the CID
+        let content_cid = store.put_bytes(b"Hello, World!".as_slice()).await?;
         file.set_content(Some(content_cid));
 
-        assert!(!file.is_empty());
+        assert!(!file.is_empty().await?);
         assert_eq!(file.get_content(), Some(&content_cid));
-    }
-
-    #[test]
-    fn test_file_truncate() {
-        let mut file = File::new(MemoryStore::default());
-
-        let content_cid = Cid::default();
-        file.set_content(Some(content_cid));
-        assert!(!file.is_empty());
-
-        file.truncate();
-        assert!(file.is_empty());
-        assert!(file.get_content().is_none());
+        assert_eq!(file.get_size().await?, 13);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_file_store_and_load() {
+    async fn test_file_truncate() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+        let mut file = File::new(store.clone());
+        assert_eq!(file.get_size().await?, 0);
+
+        // Store some example bytes and get the CID
+        let content_cid = store.put_bytes(b"Hello, World!".as_slice()).await?;
+
+        file.set_content(Some(content_cid));
+        assert!(!file.is_empty().await?);
+        assert_eq!(file.get_size().await?, 13);
+
+        file.truncate();
+        assert!(file.is_empty().await?);
+        assert!(file.get_content().is_none());
+        assert_eq!(file.get_size().await?, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_file_store_and_load() -> anyhow::Result<()> {
         let store = MemoryStore::default();
         let mut file = File::new(store.clone());
 
         let content_cid = Cid::default();
         file.set_content(Some(content_cid));
 
-        let stored_cid = file.store().await.unwrap();
-        let loaded_file = File::load(&stored_cid, store).await.unwrap();
+        let stored_cid = file.store().await?;
+        let loaded_file = File::load(&stored_cid, store).await?;
 
         assert_eq!(file.get_content(), loaded_file.get_content());
         assert_eq!(
             file.get_metadata().get_serializable().await.unwrap(),
             loaded_file.get_metadata().get_serializable().await.unwrap()
-        )
+        );
+
+        Ok(())
     }
 
     #[tokio::test]

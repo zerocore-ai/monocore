@@ -352,7 +352,7 @@ where
     /// let store = MemoryStore::default();
     ///
     /// // Create a file
-    /// let file = File::with_content(store.clone(), b"Hello, World!".to_vec()).await;
+    /// let file = File::with_content(store.clone(), b"Hello, World!".as_slice()).await?;
     /// let file_cid = file.store().await?;
     ///
     /// // Create a symlink to the file
@@ -433,7 +433,7 @@ where
     /// let store = MemoryStore::default();
     ///
     /// // Create a file
-    /// let file = File::with_content(store.clone(), b"Hello, World!".to_vec()).await;
+    /// let file = File::with_content(store.clone(), b"Hello, World!".as_slice()).await?;
     /// let file_cid = file.store().await?;
     ///
     /// // Create a symlink to the file
@@ -582,8 +582,7 @@ mod tests {
             let store = MemoryStore::default();
             let mut root_dir = Dir::new(store.clone());
 
-            let file_content = b"Hello, World!".to_vec();
-            let file = File::with_content(store.clone(), file_content).await;
+            let file = File::with_content(store.clone(), b"Hello, World!".as_slice()).await?;
 
             root_dir
                 .put_adapted_file("test_file.txt", file.clone())

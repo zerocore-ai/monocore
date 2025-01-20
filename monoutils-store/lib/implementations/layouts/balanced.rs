@@ -38,4 +38,8 @@ impl Layout for BalancedDagLayout {
     ) -> StoreResult<Pin<Box<dyn AsyncRead + Send + Sync + 'a>>> {
         todo!() // TODO: To be implemented
     }
+
+    async fn get_size(&self, _cid: &Cid, _store: impl IpldStore + Send + Sync) -> StoreResult<u64> {
+        todo!() // TODO: To be implemented
+    }
 }

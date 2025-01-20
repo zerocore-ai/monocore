@@ -160,7 +160,7 @@ where
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = MemoryStore::default();
-    /// let file = File::with_content(store.clone(), b"Hello, World!".to_vec()).await;
+    /// let file = File::with_content(store.clone(), b"Hello, World!".as_slice()).await?;
     /// let mut entity = Entity::File(file);
     ///
     /// // Store and checkpoint the entity

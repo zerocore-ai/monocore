@@ -15,7 +15,13 @@ use super::{
 // Types
 //--------------------------------------------------------------------------------------------------
 
-/// A rolling hash implementation used by [`FastCDC`] to identify chunk boundaries.
+/// A rolling hash implementation used by [`FastCDCChunker`] to identify chunk boundaries.
+///
+/// The FastHasher uses a gear table of pseudo-random values to compute a rolling hash
+/// over a sequence of bytes. The hash has the following properties:
+/// - It can be updated efficiently as new bytes are processed
+/// - It provides good distribution of values for chunk boundary detection
+/// - It is position-sensitive within a 64-byte window
 pub struct FastHasher {
     /// The gear table maps each possible byte value to a pseudo-random 64-bit number.
     gear_table: [u64; 256],
@@ -24,8 +30,35 @@ pub struct FastHasher {
     hash: u64,
 }
 
-/// A chunker that splits data into variable-size chunks using the FastCDC algorithm.
-pub struct FastCDC {
+/// A chunker that splits data into variable-size chunks based on the [`FastCDC`][fastcdc] algorithm.
+///
+/// FastCDC (Fast Content-Defined Chunking) is an efficient algorithm for splitting data into
+/// variable-sized chunks based on content. It uses a rolling hash function to identify natural
+/// chunk boundaries in the data, which helps maintain consistent chunking even when data is
+/// modified.
+///
+/// # Features
+/// - Content-defined boundaries that are stable across insertions and deletions
+/// - Adjustable chunk sizes with minimum, maximum, and target size controls
+/// - Efficient rolling hash implementation optimized for streaming data
+/// - Normalized chunk sizes that tend toward the desired size
+///
+/// # How it works
+/// 1. Data is processed byte by byte using a rolling hash function
+/// 2. The hash is compared against different masks depending on the current chunk size:
+///    - Below desired size: Uses a larger mask to reduce cut point probability
+///    - Above desired size: Uses a smaller mask to increase cut point probability
+///    - At desired size: Uses the normal mask
+/// 3. Chunk boundaries are created when the hash matches the mask pattern
+/// 4. Minimum and maximum size constraints are enforced
+///
+/// # References
+/// - [FastCDC paper][fastcdc]: Original algorithm description and analysis
+/// - [FastCDC blog post][joshleeb]: Detailed implementation walkthrough
+///
+/// [fastcdc]: https://www.usenix.org/system/files/conference/atc16/atc16-paper-xia.pdf
+/// [joshleeb]: https://joshleeb.com/posts/fastcdc.html
+pub struct FastCDCChunker {
     /// The gear table.
     gear_table: [u64; 256],
 
@@ -53,10 +86,17 @@ impl FastHasher {
     }
 
     /// Updates the rolling hash with a new byte.
+    ///
+    /// The rolling hash is computed using a combination of:
+    /// - Left shift to incorporate position sensitivity
+    /// - XOR with right shift to maintain good bit distribution
+    /// - Addition of gear value to mix in byte content
     #[inline]
     pub fn roll(&mut self, byte: u8) {
-        self.hash =
-            (self.hash << 1).wrapping_add(self.gear_table[byte as usize]) ^ (self.hash >> 53);
+        let shifted = self.hash.wrapping_shl(1);
+        let gear = self.gear_table[byte as usize];
+        let mixed = shifted.wrapping_add(gear);
+        self.hash = mixed ^ (self.hash >> 53);
     }
 
     /// Returns the current hash value
@@ -69,10 +109,25 @@ impl FastHasher {
     pub fn boundary_check(&self, mask: u64) -> bool {
         (self.hash & mask) == 0
     }
+
+    /// Resets the hasher state to its initial value.
+    ///
+    /// This can be used to reuse a hasher instance for a new sequence of bytes
+    /// without allocating a new hasher.
+    #[inline]
+    pub fn reset(&mut self) {
+        self.hash = 0;
+    }
 }
 
-impl FastCDC {
-    /// Creates a new `FastCDC` with the given parameters.
+impl FastCDCChunker {
+    /// Creates a new `FastCDCChunker` with the given parameters.
+    ///
+    /// # Arguments
+    /// * `desired_chunk_size` - The target chunk size that the chunker will aim for
+    /// * `min_chunk_size` - The minimum allowed chunk size (except for the final chunk)
+    /// * `max_chunk_size` - The maximum allowed chunk size
+    /// * `gear_table` - Table of 256 pseudo-random values used by the rolling hash
     ///
     /// # Panics
     /// Panics if the chunk size parameters don't satisfy:
@@ -102,7 +157,7 @@ impl FastCDC {
         }
     }
 
-    /// Converts a desired chunk size to a bit mask for FastCDC.
+    /// Converts a desired chunk size to a bit mask for FastCDCChunker.
     ///
     /// This function creates a mask with bits evenly distributed across the most significant
     /// 48 bits, leaving the lower 16 bits as zero. The number of bits set to 1 is determined
@@ -178,7 +233,7 @@ impl Default for FastHasher {
     }
 }
 
-impl Default for FastCDC {
+impl Default for FastCDCChunker {
     fn default() -> Self {
         Self::new(
             DEFAULT_DESIRED_CHUNK_SIZE,
@@ -189,13 +244,13 @@ impl Default for FastCDC {
     }
 }
 
-impl Chunker for FastCDC {
+impl Chunker for FastCDCChunker {
     async fn chunk<'a>(
         &self,
         reader: impl AsyncRead + Send + 'a,
     ) -> StoreResult<BoxStream<'a, StoreResult<Bytes>>> {
-        let mask_d = FastCDC::size_to_mask(self.desired_chunk_size);
-        let (mask_s, mask_l) = FastCDC::derive_masks(self.desired_chunk_size);
+        let mask_d = FastCDCChunker::size_to_mask(self.desired_chunk_size);
+        let (mask_s, mask_l) = FastCDCChunker::derive_masks(self.desired_chunk_size);
         let gear_table = self.gear_table;
         let min_size = self.min_chunk_size;
         let max_size = self.max_chunk_size;
@@ -271,7 +326,7 @@ mod tests {
     #[test]
     fn test_fastcdc_size_to_mask() {
         // Test 4KiB (2^12) case
-        let mask_4k = FastCDC::size_to_mask(4096);
+        let mask_4k = FastCDCChunker::size_to_mask(4096);
         println!("mask_4k: {:064b}", mask_4k);
         assert_eq!(
             mask_4k,
@@ -282,7 +337,7 @@ mod tests {
         assert_eq!(mask_4k & 0xFFFF, 0);
 
         // Test 8KiB (2^13) case
-        let mask_8k = FastCDC::size_to_mask(8192);
+        let mask_8k = FastCDCChunker::size_to_mask(8192);
         println!("mask_8k: {:064b}", mask_8k);
         assert_eq!(
             mask_8k,
@@ -291,11 +346,11 @@ mod tests {
         assert_eq!(mask_8k & 0xFFFF, 0);
 
         // Test edge cases
-        let mask_1 = FastCDC::size_to_mask(1);
+        let mask_1 = FastCDCChunker::size_to_mask(1);
         assert_eq!(mask_1, 1u64 << 63); // Only MSB set
         assert_eq!(mask_1 & 0xFFFF, 0); // Lower 16 bits are zero
 
-        let mask_2 = FastCDC::size_to_mask(2);
+        let mask_2 = FastCDCChunker::size_to_mask(2);
         assert_eq!(
             mask_2,
             0b1000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000
@@ -306,7 +361,7 @@ mod tests {
     #[test]
     fn test_fastcdc_valid_chunk_sizes() {
         // Test valid chunk size combinations
-        FastCDC::new(
+        FastCDCChunker::new(
             8192,  // desired
             4096,  // min
             16384, // max
@@ -314,7 +369,7 @@ mod tests {
         );
 
         // Test edge case where min = desired = max
-        FastCDC::new(
+        FastCDCChunker::new(
             8192, // all sizes equal
             8192,
             8192,
@@ -322,7 +377,7 @@ mod tests {
         );
 
         // Test with large (but valid) sizes
-        FastCDC::new(
+        FastCDCChunker::new(
             1 << 30, // ~1GB desired
             1 << 20, // ~1MB min
             1 << 48, // max possible size
@@ -335,7 +390,7 @@ mod tests {
         expected = "chunk sizes must satisfy: 0 < min (0) ≤ desired (8192) ≤ max (16384) ≤ 2^48"
     )]
     fn test_fastcdc_invalid_chunk_sizes() {
-        FastCDC::new(
+        FastCDCChunker::new(
             8192,  // desired
             0,     // min - invalid!
             16384, // max
@@ -348,7 +403,7 @@ mod tests {
         expected = "chunk sizes must satisfy: 0 < min (16384) ≤ desired (8192) ≤ max (32768) ≤ 2^48"
     )]
     fn test_fastcdc_min_greater_than_desired() {
-        FastCDC::new(
+        FastCDCChunker::new(
             8192,  // desired
             16384, // min - invalid!
             32768, // max
@@ -361,7 +416,7 @@ mod tests {
         expected = "chunk sizes must satisfy: 0 < min (8192) ≤ desired (16384) ≤ max (8192) ≤ 2^48"
     )]
     fn test_fastcdc_desired_greater_than_max() {
-        FastCDC::new(
+        FastCDCChunker::new(
             16384, // desired
             8192,  // min
             8192,  // max - invalid!
@@ -374,7 +429,7 @@ mod tests {
         expected = "chunk sizes must satisfy: 0 < min (4096) ≤ desired (8192) ≤ max (281474976710657) ≤ 2^48"
     )]
     fn test_fastcdc_max_too_large() {
-        FastCDC::new(
+        FastCDCChunker::new(
             8192,
             4096,
             (1u64 << 48) + 1, // max - invalid!
@@ -385,26 +440,26 @@ mod tests {
     #[test]
     #[should_panic(expected = "size must be between 1 and 2^48")]
     fn test_fastcdc_size_to_mask_zero() {
-        FastCDC::size_to_mask(0);
+        FastCDCChunker::size_to_mask(0);
     }
 
     #[test]
     #[should_panic(expected = "size must be between 1 and 2^48")]
     fn test_fastcdc_size_to_mask_too_large() {
-        FastCDC::size_to_mask((1 << 48) + 1);
+        FastCDCChunker::size_to_mask((1 << 48) + 1);
     }
 
     #[test]
     fn test_fastcdc_derive_masks() {
         let desired_size = 4096; // 4KiB
-        let mask_d = FastCDC::size_to_mask(desired_size);
-        let (mask_s, mask_l) = FastCDC::derive_masks(desired_size);
+        let mask_d = FastCDCChunker::size_to_mask(desired_size);
+        let (mask_s, mask_l) = FastCDCChunker::derive_masks(desired_size);
 
         // Count bits in each mask
         let count_bits = |x: u64| x.count_ones();
         let bits_d = count_bits(mask_d);
-        let bits_s = count_bits(FastCDC::size_to_mask(desired_size << 2)); // 16KiB
-        let bits_l = count_bits(FastCDC::size_to_mask(desired_size >> 2)); // 1KiB
+        let bits_s = count_bits(FastCDCChunker::size_to_mask(desired_size << 2)); // 16KiB
+        let bits_l = count_bits(FastCDCChunker::size_to_mask(desired_size >> 2)); // 1KiB
 
         // Print masks for visual inspection
         println!(
@@ -429,30 +484,30 @@ mod tests {
         // Verify masks are derived from adjusted chunk sizes
         assert_eq!(
             mask_s,
-            FastCDC::size_to_mask(desired_size << 2),
+            FastCDCChunker::size_to_mask(desired_size << 2),
             "mask_s should be derived from size {} (desired * 4)",
             desired_size << 2
         );
         assert_eq!(
             mask_l,
-            FastCDC::size_to_mask(desired_size >> 2),
+            FastCDCChunker::size_to_mask(desired_size >> 2),
             "mask_l should be derived from size {} (desired / 4)",
             desired_size >> 2
         );
 
         // Test with other sizes to ensure the pattern holds
         for size in [8192, 16384, 32768] {
-            let (mask_s, mask_l) = FastCDC::derive_masks(size);
+            let (mask_s, mask_l) = FastCDCChunker::derive_masks(size);
             assert_eq!(
                 mask_s,
-                FastCDC::size_to_mask(size << 2),
+                FastCDCChunker::size_to_mask(size << 2),
                 "size {}: mask_s should be derived from size {}",
                 size,
                 size << 2
             );
             assert_eq!(
                 mask_l,
-                FastCDC::size_to_mask(size >> 2),
+                FastCDCChunker::size_to_mask(size >> 2),
                 "size {}: mask_l should be derived from size {}",
                 size,
                 size >> 2
@@ -472,7 +527,7 @@ mod tests {
             gear_table[i] = i as u64;
         }
 
-        let chunker = FastCDC::new(16, 8, 32, gear_table); // Small size for testing
+        let chunker = FastCDCChunker::new(16, 8, 32, gear_table); // Small size for testing
         let mut chunk_stream = chunker.chunk(&data[..]).await?;
         let mut chunks = Vec::new();
 
@@ -494,7 +549,7 @@ mod tests {
     #[tokio::test]
     async fn test_fastcdc_empty_input() -> anyhow::Result<()> {
         let data = b"";
-        let chunker = FastCDC::default();
+        let chunker = FastCDCChunker::default();
         let mut chunk_stream = chunker.chunk(&data[..]).await?;
 
         assert!(
@@ -507,7 +562,7 @@ mod tests {
     #[tokio::test]
     async fn test_fastcdc_single_byte() -> anyhow::Result<()> {
         let data = b"a";
-        let chunker = FastCDC::default();
+        let chunker = FastCDCChunker::default();
         let mut chunk_stream = chunker.chunk(&data[..]).await?;
 
         let chunk = chunk_stream.next().await.unwrap()?;
@@ -541,7 +596,7 @@ mod tests {
 
         for (data_type, data) in test_cases {
             println!("data_type: {:?}", data_type);
-            let chunker = FastCDC::new(1024, 512, 2048, DEFAULT_GEAR_TABLE);
+            let chunker = FastCDCChunker::new(1024, 512, 2048, DEFAULT_GEAR_TABLE);
             let mut chunk_stream = chunker.chunk(&data[..]).await?;
             let mut chunk_sizes = Vec::new();
 

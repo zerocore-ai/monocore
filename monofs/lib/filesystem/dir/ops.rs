@@ -495,6 +495,7 @@ where
 #[cfg(test)]
 mod tests {
     use monoutils_store::{ipld::cid::Cid, MemoryStore, Storable};
+    use tokio::io::AsyncReadExt;
 
     use crate::filesystem::{
         symcidlink::SymCidLink, sympathlink::SymPathLink, Dir, Entity, File, FsError,
@@ -546,7 +547,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ops_find_mut() -> FsResult<()> {
+    async fn test_ops_find_mut() -> anyhow::Result<()> {
         let mut dir = Dir::new(MemoryStore::default());
 
         // Create a file and a subdirectory
@@ -566,7 +567,7 @@ mod tests {
         // Test modifying a found file
         if let Some(Entity::File(file)) = dir.find_mut("foo/bar.txt").await? {
             let content = "Hello, World!".as_bytes();
-            let content_cid = file.get_store().put_raw_block(content).await?;
+            let content_cid = file.get_store().put_bytes(content).await?;
             file.set_content(Some(content_cid));
             file.store().await?;
             assert_eq!(file.get_content(), Some(&content_cid));
@@ -577,7 +578,12 @@ mod tests {
         // Verify the modification persists
         if let Some(Entity::File(file)) = dir.find("foo/bar.txt").await? {
             let content_cid = file.get_content().expect("File should have content");
-            let content = file.get_store().get_raw_block(content_cid).await?;
+            let mut content = Vec::new();
+            file.get_store()
+                .get_bytes(&content_cid)
+                .await?
+                .read_to_end(&mut content)
+                .await?;
             assert_eq!(content, "Hello, World!".as_bytes());
         } else {
             panic!("Expected to find a file");
@@ -714,7 +720,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ops_complex_nested_hierarchy() -> FsResult<()> {
+    async fn test_ops_complex_nested_hierarchy() -> anyhow::Result<()> {
         let mut root = fixtures::setup_test_filesystem().await?;
 
         // Verify the structure
@@ -753,7 +759,7 @@ mod tests {
         // Modify a file
         if let Some(Entity::File(index_file)) = root.find_mut("projects/web/index.html").await? {
             let content = "<html><body>Hello, World!</body></html>".as_bytes();
-            let content_cid = index_file.get_store().put_raw_block(content).await?;
+            let content_cid = index_file.get_store().put_bytes(content).await?;
             index_file.set_content(Some(content_cid));
             index_file.store().await?;
         } else {
@@ -763,7 +769,13 @@ mod tests {
         // Verify the modification
         if let Some(Entity::File(index_file)) = root.find("projects/web/index.html").await? {
             let content_cid = index_file.get_content().expect("File should have content");
-            let content = index_file.get_store().get_raw_block(content_cid).await?;
+            let mut content = Vec::new();
+            index_file
+                .get_store()
+                .get_bytes(&content_cid)
+                .await?
+                .read_to_end(&mut content)
+                .await?;
             assert_eq!(
                 content,
                 "<html><body>Hello, World!</body></html>".as_bytes()
@@ -811,7 +823,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ops_rename() -> FsResult<()> {
+    async fn test_ops_rename() -> anyhow::Result<()> {
         let mut dir = Dir::new(MemoryStore::default());
 
         // Test 1: Basic file rename to new location
@@ -841,7 +853,7 @@ mod tests {
         // Add some content to verify it's preserved
         if let Some(Entity::File(file)) = dir.find_mut("olddir/subdir/file1.txt").await? {
             let content = "test content".as_bytes();
-            let content_cid = file.get_store().put_raw_block(content).await?;
+            let content_cid = file.get_store().put_bytes(content).await?;
             file.set_content(Some(content_cid));
             file.store().await?;
         }
@@ -863,7 +875,12 @@ mod tests {
         // Verify content was preserved
         if let Some(Entity::File(file)) = dir.find("newdir/subdir/file1.txt").await? {
             let content_cid = file.get_content().expect("File should have content");
-            let content = file.get_store().get_raw_block(content_cid).await?;
+            let mut content = Vec::new();
+            file.get_store()
+                .get_bytes(&content_cid)
+                .await?
+                .read_to_end(&mut content)
+                .await?;
             assert_eq!(content, "test content".as_bytes());
         }
 
@@ -922,7 +939,7 @@ mod tests {
 
         if let Some(Entity::File(file)) = dir.find_mut("state_test/source/file.txt").await? {
             let content = "store state test".as_bytes();
-            let content_cid = file.get_store().put_raw_block(content).await?;
+            let content_cid = file.get_store().put_bytes(content).await?;
             file.set_content(Some(content_cid));
             file.store().await?;
         }
@@ -936,7 +953,12 @@ mod tests {
         // Verify store state after rename
         if let Some(Entity::File(file)) = dir.find("state_test/target/renamed.txt").await? {
             let content_cid = file.get_content().expect("File should have content");
-            let content = file.get_store().get_raw_block(content_cid).await?;
+            let mut content = Vec::new();
+            file.get_store()
+                .get_bytes(&content_cid)
+                .await?
+                .read_to_end(&mut content)
+                .await?;
             assert_eq!(content, "store state test".as_bytes());
         }
 
@@ -1012,11 +1034,16 @@ mod tests {
         // Test 9: Verify entity metadata is preserved
         let mut file = File::new(store.clone());
         let content = "test content".as_bytes();
-        let content_cid = file.get_store().put_raw_block(content).await?;
+        let content_cid = file.get_store().put_bytes(content).await?;
         file.set_content(Some(content_cid));
         let created_file = dir.create_entity("content.txt", file).await?;
         if let Entity::File(file) = created_file {
-            let stored_content = file.get_store().get_raw_block(&content_cid).await?;
+            let mut stored_content = Vec::new();
+            file.get_store()
+                .get_bytes(&content_cid)
+                .await?
+                .read_to_end(&mut stored_content)
+                .await?;
             assert_eq!(stored_content, content);
         }
 

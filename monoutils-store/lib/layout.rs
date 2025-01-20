@@ -33,6 +33,13 @@ pub trait Layout {
         cid: &Cid,
         store: impl IpldStore + Send + Sync + 'a,
     ) -> impl Future<Output = StoreResult<Pin<Box<dyn AsyncRead + Send + Sync + 'a>>>> + Send;
+
+    /// Returns the size of the underlying byte chunks associated with a given `Cid`.
+    fn get_size(
+        &self,
+        cid: &Cid,
+        store: impl IpldStore + Send + Sync,
+    ) -> impl Future<Output = StoreResult<u64>> + Send;
 }
 
 /// A trait that extends the `Layout` trait to allow for seeking.

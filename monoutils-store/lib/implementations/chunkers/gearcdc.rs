@@ -27,7 +27,7 @@ use super::{DEFAULT_DESIRED_CHUNK_SIZE, DEFAULT_GEAR_TABLE};
 ///
 /// The average chunk size is controlled by the `desired_chunk_size` parameter, though actual
 /// chunk sizes will vary based on content.
-pub struct GearCDC {
+pub struct GearCDCChunker {
     /// The gear table used to generate pseudo-random values for each byte.
     /// Each byte maps to a 64-bit value that contributes to the rolling hash.
     gear_table: [u64; 256],
@@ -37,7 +37,7 @@ pub struct GearCDC {
     desired_chunk_size: u64,
 }
 
-/// A rolling hash implementation used by [`GearCDC`] to identify chunk boundaries.
+/// A rolling hash implementation used by [`GearCDCChunker`] to identify chunk boundaries.
 ///
 /// The gear hash maintains a running hash value that is efficiently updated as new bytes
 /// are processed. It uses a pre-computed gear table to map each input byte to a pseudo-random
@@ -71,8 +71,8 @@ pub struct GearHasher {
 // Methods
 //--------------------------------------------------------------------------------------------------
 
-impl GearCDC {
-    /// Creates a new `GearCDC` with the given `desired_chunk_size`.
+impl GearCDCChunker {
+    /// Creates a new `GearCDCChunker` with the given `desired_chunk_size`.
     pub fn new(desired_chunk_size: u64, gear_table: [u64; 256]) -> Self {
         Self {
             gear_table,
@@ -167,7 +167,7 @@ impl GearHasher {
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
-impl Chunker for GearCDC {
+impl Chunker for GearCDCChunker {
     async fn chunk<'a>(
         &self,
         reader: impl AsyncRead + Send + 'a,
@@ -213,7 +213,7 @@ impl Chunker for GearCDC {
     }
 }
 
-impl Default for GearCDC {
+impl Default for GearCDCChunker {
     fn default() -> Self {
         Self::new(DEFAULT_DESIRED_CHUNK_SIZE, DEFAULT_GEAR_TABLE)
     }
@@ -237,31 +237,31 @@ mod tests {
     #[test]
     fn test_size_to_mask() {
         // Test powers of 2
-        assert_eq!(GearCDC::size_to_mask(8), 0b111); // 3 bits for size 8 (2^3)
-        assert_eq!(GearCDC::size_to_mask(16), 0b1111); // 4 bits for size 16 (2^4)
-        assert_eq!(GearCDC::size_to_mask(8192), 0x1FFF); // 13 bits for size 8192 (2^13)
-        assert_eq!(GearCDC::size_to_mask(16384), 0x3FFF); // 14 bits for size 16384 (2^14)
+        assert_eq!(GearCDCChunker::size_to_mask(8), 0b111); // 3 bits for size 8 (2^3)
+        assert_eq!(GearCDCChunker::size_to_mask(16), 0b1111); // 4 bits for size 16 (2^4)
+        assert_eq!(GearCDCChunker::size_to_mask(8192), 0x1FFF); // 13 bits for size 8192 (2^13)
+        assert_eq!(GearCDCChunker::size_to_mask(16384), 0x3FFF); // 14 bits for size 16384 (2^14)
 
         // Test non-powers of 2 (should round up to next power)
-        assert_eq!(GearCDC::size_to_mask(7), 0b111); // round up to 8 => 3 bits
-        assert_eq!(GearCDC::size_to_mask(9), 0b1111); // round up to 16 => 4 bits
-        assert_eq!(GearCDC::size_to_mask(8000), 0x1FFF); // round up to 8192 => 13 bits
+        assert_eq!(GearCDCChunker::size_to_mask(7), 0b111); // round up to 8 => 3 bits
+        assert_eq!(GearCDCChunker::size_to_mask(9), 0b1111); // round up to 16 => 4 bits
+        assert_eq!(GearCDCChunker::size_to_mask(8000), 0x1FFF); // round up to 8192 => 13 bits
 
         // Test edge cases
-        assert_eq!(GearCDC::size_to_mask(1), 0b1); // special-cased => 1 bit
-        assert_eq!(GearCDC::size_to_mask(2), 0b1); // log2(2) => 1 bit
+        assert_eq!(GearCDCChunker::size_to_mask(1), 0b1); // special-cased => 1 bit
+        assert_eq!(GearCDCChunker::size_to_mask(2), 0b1); // log2(2) => 1 bit
     }
 
     #[test]
     #[should_panic(expected = "size must be between 1 and 2^63")]
     fn test_size_to_mask_zero() {
-        GearCDC::size_to_mask(0);
+        GearCDCChunker::size_to_mask(0);
     }
 
     #[test]
     #[should_panic(expected = "size must be between 1 and 2^63")]
     fn test_size_to_mask_too_large() {
-        GearCDC::size_to_mask((1 << 63) + 1);
+        GearCDCChunker::size_to_mask((1 << 63) + 1);
     }
 
     #[test]
@@ -323,7 +323,7 @@ mod tests {
             gear_table[i] = i as u64;
         }
 
-        let chunker = GearCDC::new(16, gear_table); // Small size for testing
+        let chunker = GearCDCChunker::new(16, gear_table); // Small size for testing
         let mut chunk_stream = chunker.chunk(&data[..]).await?;
         let mut chunks = Vec::new();
 
@@ -345,7 +345,7 @@ mod tests {
     #[tokio::test]
     async fn test_gearcdc_empty_input() -> anyhow::Result<()> {
         let data = b"";
-        let chunker = GearCDC::default();
+        let chunker = GearCDCChunker::default();
         let mut chunk_stream = chunker.chunk(&data[..]).await?;
 
         assert!(
@@ -358,7 +358,7 @@ mod tests {
     #[tokio::test]
     async fn test_gearcdc_single_byte() -> anyhow::Result<()> {
         let data = b"a";
-        let chunker = GearCDC::default();
+        let chunker = GearCDCChunker::default();
         let mut chunk_stream = chunker.chunk(&data[..]).await?;
 
         let chunk = chunk_stream.next().await.unwrap()?;
@@ -391,7 +391,7 @@ mod tests {
         ];
 
         for (data_type, data) in test_cases {
-            let chunker = GearCDC::new(1024, DEFAULT_GEAR_TABLE);
+            let chunker = GearCDCChunker::new(1024, DEFAULT_GEAR_TABLE);
             let mut chunk_stream = chunker.chunk(&data[..]).await?;
             let mut chunk_sizes = Vec::new();
 
