@@ -681,7 +681,69 @@ mod tests {
 
     #[tokio::test]
     async fn test_ops_remove() -> FsResult<()> {
-        // TODO: Implement this test
+        let mut dir = Dir::new(MemoryStore::default());
+
+        // Test 1: Remove a file from root directory
+        dir.find_or_create("file1.txt", true).await?;
+        assert!(dir.find("file1.txt").await?.is_some());
+        dir.remove("file1.txt").await?;
+        assert!(dir.find("file1.txt").await?.is_none());
+
+        // Test 2: Remove a file from nested directory
+        dir.find_or_create("nested/file2.txt", true).await?;
+        assert!(dir.find("nested/file2.txt").await?.is_some());
+        dir.remove("nested/file2.txt").await?;
+        assert!(dir.find("nested/file2.txt").await?.is_none());
+        // Parent directory should still exist
+        assert!(matches!(dir.find("nested").await?, Some(Entity::Dir(_))));
+
+        // Test 3: Remove an empty directory
+        dir.find_or_create("empty_dir", false).await?;
+        assert!(dir.find("empty_dir").await?.is_some());
+        dir.remove("empty_dir").await?;
+        assert!(dir.find("empty_dir").await?.is_none());
+
+        // Test 4: Remove a directory with contents
+        dir.find_or_create("dir/subdir/file3.txt", true).await?;
+        dir.find_or_create("dir/file4.txt", true).await?;
+        assert!(dir.find("dir").await?.is_some());
+        dir.remove("dir").await?;
+        assert!(dir.find("dir").await?.is_none());
+        assert!(dir.find("dir/subdir/file3.txt").await?.is_none());
+        assert!(dir.find("dir/file4.txt").await?.is_none());
+
+        // Test 5: Attempt to remove non-existent path
+        assert!(matches!(
+            dir.remove("nonexistent.txt").await,
+            Err(FsError::PathNotFound(_))
+        ));
+
+        // Test 6: Attempt to remove with root path
+        assert!(matches!(
+            dir.remove("/file.txt").await,
+            Err(FsError::PathHasRoot(_))
+        ));
+
+        // Test 7: Remove symlinks
+        let target_cid = Cid::default();
+        dir.create_symcidlink("cid_link", target_cid).await?;
+        dir.create_sympathlink("path_link", "target/path").await?;
+
+        assert!(matches!(
+            dir.find("cid_link").await?,
+            Some(Entity::SymCidLink(_))
+        ));
+        assert!(matches!(
+            dir.find("path_link").await?,
+            Some(Entity::SymPathLink(_))
+        ));
+
+        dir.remove("cid_link").await?;
+        dir.remove("path_link").await?;
+
+        assert!(dir.find("cid_link").await?.is_none());
+        assert!(dir.find("path_link").await?.is_none());
+
         Ok(())
     }
 
