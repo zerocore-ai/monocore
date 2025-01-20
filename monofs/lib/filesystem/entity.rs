@@ -146,6 +146,41 @@ where
         }
     }
 
+    /// Creates a checkpoint of the current entity state.
+    ///
+    /// This is equivalent to storing the entity and loading it back,
+    /// which is a common pattern when working with versioned entities.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use monofs::filesystem::{Entity, File};
+    /// use monoutils_store::{MemoryStore, Storable};
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let store = MemoryStore::default();
+    /// let file = File::with_content(store.clone(), b"Hello, World!".to_vec()).await;
+    /// let mut entity = Entity::File(file);
+    ///
+    /// // Store and checkpoint the entity
+    /// let cid = entity.checkpoint().await?;
+    ///
+    /// assert_eq!(entity.get_initial_load_cid(), Some(&cid));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn checkpoint(&mut self) -> StoreResult<Cid>
+    where
+        S: Send + Sync,
+    {
+        let cid = self.store().await?;
+        let store = self.get_store().clone();
+        let loaded = Self::load(&cid, store).await?;
+        *self = loaded;
+        Ok(cid)
+    }
+
     pub(crate) fn set_previous(&mut self, previous: Option<Cid>) {
         match self {
             Entity::File(file) => file.set_previous(previous),

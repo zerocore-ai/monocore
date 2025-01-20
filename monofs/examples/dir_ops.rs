@@ -23,7 +23,7 @@
 //! ```
 
 use monofs::filesystem::{Dir, File, FsResult};
-use monoutils_store::{MemoryStore, Storable};
+use monoutils_store::MemoryStore;
 
 //--------------------------------------------------------------------------------------------------
 // Function: main
@@ -101,13 +101,9 @@ async fn main() -> FsResult<()> {
     // Check if the directory is empty
     println!("Root directory is empty: {}", root.is_empty());
 
-    // Store the root directory
-    let root_cid = root.store().await?;
-    println!("Stored root directory with CID: {}", root_cid);
-
-    // Load the root directory
-    let loaded_root = Dir::load(&root_cid, store).await?;
-    println!("Loaded root directory: {:?}", loaded_root);
+    // Checkpoint the root directory
+    root.checkpoint().await?;
+    println!("Checkpoint root directory: {:?}", root);
 
     Ok(())
 }
