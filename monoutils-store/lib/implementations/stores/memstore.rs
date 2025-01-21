@@ -7,7 +7,7 @@ use std::{
 
 use bytes::Bytes;
 use futures::StreamExt;
-use libipld::Cid;
+use ipld_core::cid::Cid;
 use monoutils::SeekableReader;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::{io::AsyncRead, sync::RwLock};
@@ -262,7 +262,7 @@ mod tests {
 
     use super::fixtures::TestNode;
     use super::*;
-    use libipld::multihash::{Code, MultihashDigest};
+    use multihash_codetable::{Code, MultihashDigest};
     use tokio::io::AsyncReadExt;
 
     #[tokio::test]

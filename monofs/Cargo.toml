@@ -34,6 +34,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 nfsserve = "0.10"
 intaglio = "1.10"
-libipld.workspace = true
 hex.workspace = true
 tempfile.workspace = true
+
+[dev-dependencies]
+test-log.workspace = true

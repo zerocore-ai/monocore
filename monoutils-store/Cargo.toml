@@ -20,7 +20,9 @@ bytes.workspace = true
 futures.workspace = true
 hex = "0.4.3"
 pretty-error-debug.workspace = true
-libipld = { workspace = true, features = ["serde-codec"] }
+ipld-core.workspace = true
+multihash.workspace = true
+multihash-codetable = { workspace = true, features = ["blake3"] }
 lru = "0.12.3"
 serde = { workspace = true, features = ["derive"] }
 serde_ipld_dagcbor.workspace = true

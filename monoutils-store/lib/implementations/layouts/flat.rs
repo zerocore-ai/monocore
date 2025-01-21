@@ -9,7 +9,7 @@ use aliasable::boxed::AliasableBox;
 use async_stream::try_stream;
 use bytes::Bytes;
 use futures::{ready, stream::BoxStream, Future, StreamExt};
-use libipld::Cid;
+use ipld_core::cid::Cid;
 use monoutils::SeekableReader;
 use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
 

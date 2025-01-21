@@ -1,4 +1,4 @@
-use libipld::Cid;
+use ipld_core::cid::Cid;
 use serde::{Deserialize, Serialize};
 
 use super::IpldReferences;

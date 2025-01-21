@@ -1,7 +1,5 @@
-use libipld::{
-    multihash::{Code, MultihashDigest},
-    Cid,
-};
+use ipld_core::cid::Cid;
+use multihash_codetable::{Code, MultihashDigest};
 
 use super::Codec;
 

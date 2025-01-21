@@ -1,7 +1,7 @@
 use std::{collections::HashSet, future::Future, pin::Pin};
 
 use bytes::Bytes;
-use libipld::Cid;
+use ipld_core::cid::Cid;
 use monoutils::SeekableReader;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -38,13 +38,11 @@ pub enum Codec {
 /// It can store raw bytes of data and structured data stored as IPLD. Stored data can be fetched
 /// by their [`CID`s (Content Identifier)][cid] which is represents the fingerprint of the data.
 ///
-/// ## Important
+/// ## Implementation Note
 ///
-/// It is highly recommended to implement `Clone` with inexpensive cloning semantics. This is because
-/// `IpldStore`s are usually passed around a lot and cloned to be used in different parts of the
-/// application.
-///
-/// An implementation is responsible for how it stores, encodes and chunks data into blocks.
+/// It is advisable that the type implementing `IpldStore` implements cheap clone semantics (e.g.,
+/// using `Arc`) since several operations on `IpldStore` require cloning the store. Using types with
+/// expensive clone operations may impact performance.
 ///
 /// [cid]: https://docs.ipfs.tech/concepts/content-addressing/
 /// [ipld]: https://ipld.io/
@@ -94,7 +92,7 @@ pub trait IpldStore: RawStore + Clone {
     ) -> impl Future<Output = StoreResult<Pin<Box<dyn AsyncRead + Send + Sync + 'a>>>> + 'a;
 
     /// Gets the size of all the blocks associated with the given `Cid` in bytes.
-    fn get_bytes_size(&self, cid: &Cid) -> impl Future<Output = StoreResult<u64>>;
+    fn get_bytes_size(&self, cid: &Cid) -> impl Future<Output = StoreResult<u64>> + Send;
 
     /// Checks if the store has a block with the given `Cid`.
     fn has(&self, cid: &Cid) -> impl Future<Output = bool>;

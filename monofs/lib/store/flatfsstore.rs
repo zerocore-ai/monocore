@@ -2,11 +2,11 @@ use std::{collections::HashSet, fs, future::Future, path::PathBuf, pin::Pin};
 
 use bytes::Bytes;
 use futures::StreamExt;
-use libipld::{
-    multihash::{Code, MultihashDigest},
-    Cid,
-};
 use monoutils::SeekableReader;
+use monoutils_store::{
+    codetable::{Code, MultihashDigest},
+    ipld::cid::Cid,
+};
 use monoutils_store::{
     Chunker, Codec, FixedSizeChunker, FlatLayout, IpldReferences, IpldStore, IpldStoreSeekable,
     Layout, LayoutSeekable, RawStore, StoreError, StoreResult,
@@ -109,13 +109,13 @@ where
     ///
     /// The root path is where all the blocks will be stored. If the path doesn't exist, it will be
     /// created when the first block is stored.
-    pub fn new(path: PathBuf) -> Self
+    pub fn new(path: impl AsRef<str>) -> Self
     where
         C: Default,
         L: Default,
     {
         Self {
-            path,
+            path: PathBuf::from(path.as_ref()),
             dir_levels: DirLevels::default(),
             chunker: Default::default(),
             layout: Default::default(),
@@ -123,9 +123,9 @@ where
     }
 
     /// Creates a new `FlatFsStore` with the given root path, chunker, and layout.
-    pub fn with_chunker_and_layout(path: PathBuf, chunker: C, layout: L) -> Self {
+    pub fn with_chunker_and_layout(path: impl AsRef<str>, chunker: C, layout: L) -> Self {
         Self {
-            path,
+            path: PathBuf::from(path.as_ref()),
             dir_levels: DirLevels::default(),
             chunker,
             layout,
@@ -133,13 +133,13 @@ where
     }
 
     /// Creates a new `FlatFsStore` with the given root path and default chunker and layout.
-    pub fn with_dir_levels(path: PathBuf, dir_levels: DirLevels) -> Self
+    pub fn with_dir_levels(path: impl AsRef<str>, dir_levels: DirLevels) -> Self
     where
         C: Default,
         L: Default,
     {
         Self {
-            path,
+            path: PathBuf::from(path.as_ref()),
             dir_levels,
             chunker: Default::default(),
             layout: Default::default(),
@@ -148,13 +148,13 @@ where
 
     /// Creates a new `FlatFsStore` with the given root path, directory structure, chunker, and layout.
     pub fn with_dir_levels_chunker_and_layout(
-        path: PathBuf,
+        path: impl AsRef<str>,
         dir_levels: DirLevels,
         chunker: C,
         layout: L,
     ) -> Self {
         Self {
-            path,
+            path: PathBuf::from(path.as_ref()),
             dir_levels,
             chunker,
             layout,
@@ -404,7 +404,8 @@ where
     fn get_seekable_bytes<'a>(
         &'a self,
         cid: &'a Cid,
-    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>> + Send {
+    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>> + Send
+    {
         self.layout.retrieve_seekable(cid, self.clone())
     }
 }
@@ -605,7 +606,7 @@ mod fixtures {
         dir_levels: DirLevels,
     ) -> (FlatFsStore<FixedSizeChunker, FlatLayout>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
-        let store = FlatFsStore::with_dir_levels(temp_dir.path().to_path_buf(), dir_levels);
+        let store = FlatFsStore::with_dir_levels(temp_dir.path().to_str().unwrap(), dir_levels);
         (store, temp_dir)
     }
 

@@ -4,11 +4,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{TimeZone, Utc};
 use getset::Getters;
 use intaglio::{Symbol, SymbolTable};
-use libipld::Ipld;
-use monoutils_store::{IpldStore, IpldStoreSeekable, MemoryStore};
+use monoutils_store::ipld::ipld::Ipld;
+use monoutils_store::{IpldStore, IpldStoreSeekable, MemoryStore, Storable};
 use nfsserve::nfs::{
     fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, nfstime3, sattr3, set_atime, set_gid3,
     set_mode3, set_mtime, set_size3, set_uid3, specdata3,
@@ -16,7 +16,7 @@ use nfsserve::nfs::{
 use nfsserve::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
 use tokio::sync::Mutex;
 
-use crate::filesystem::{Dir, Entity, EntityType, FsError, Metadata, SymPathLink};
+use crate::filesystem::{Dir, Entity, EntityType, File, FsError, Metadata, SymPathLink};
 use crate::store::FlatFsStore;
 
 //--------------------------------------------------------------------------------------------------
@@ -46,9 +46,6 @@ pub const UNIX_GID_KEY: &str = "unix.gid";
 
 /// Key for storing Unix access time in extended attributes.
 pub const UNIX_ATIME_KEY: &str = "unix.atime";
-
-/// Key for storing Unix modification time in extended attributes.
-pub const UNIX_MTIME_KEY: &str = "unix.mtime";
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -80,7 +77,7 @@ pub type DiskMonofsServer = MonofsServer<FlatFsStore>;
 /// - Directory listing
 /// - File attribute management
 /// - Symbolic link operations
-/// 
+///
 /// # Examples
 ///
 /// ```no_run
@@ -91,7 +88,7 @@ pub type DiskMonofsServer = MonofsServer<FlatFsStore>;
 /// let memory_server = MemoryMonofsServer::new(MemoryStore::default());
 ///
 /// // Or create a custom server with your own store implementation
-/// let custom_server = MonofsServer::new(your_store);
+/// // let custom_server = MonofsServer::new(CustomStore::default());
 /// ```
 #[derive(Debug, Getters)]
 pub struct MonofsServer<S>
@@ -104,6 +101,7 @@ where
     fileid_to_path_map: Arc<Mutex<HashMap<fileid3, Vec<Symbol>>>>,
     path_to_fileid_map: Arc<Mutex<HashMap<Vec<Symbol>, fileid3>>>,
 }
+
 //--------------------------------------------------------------------------------------------------
 // Methods
 //--------------------------------------------------------------------------------------------------
@@ -236,7 +234,7 @@ where
             set_mode3::Void => {}
             set_mode3::mode(mode) => {
                 metadata
-                    .set_attribute(UNIX_MODE_KEY, mode.to_string())
+                    .set_attribute(UNIX_MODE_KEY, mode)
                     .await
                     .map_err(nfsstat3::from)?;
             }
@@ -247,7 +245,7 @@ where
             set_uid3::Void => {}
             set_uid3::uid(uid) => {
                 metadata
-                    .set_attribute(UNIX_UID_KEY, uid.to_string())
+                    .set_attribute(UNIX_UID_KEY, uid)
                     .await
                     .map_err(nfsstat3::from)?;
             }
@@ -258,7 +256,7 @@ where
             set_gid3::Void => {}
             set_gid3::gid(gid) => {
                 metadata
-                    .set_attribute(UNIX_GID_KEY, gid.to_string())
+                    .set_attribute(UNIX_GID_KEY, gid)
                     .await
                     .map_err(nfsstat3::from)?;
             }
@@ -270,13 +268,13 @@ where
             set_atime::SET_TO_SERVER_TIME => {
                 let now = Utc::now();
                 metadata
-                    .set_attribute(UNIX_ATIME_KEY, now.timestamp().to_string())
+                    .set_attribute(UNIX_ATIME_KEY, now.timestamp())
                     .await
                     .map_err(nfsstat3::from)?;
             }
             set_atime::SET_TO_CLIENT_TIME(atime) => {
                 metadata
-                    .set_attribute(UNIX_ATIME_KEY, atime.seconds.to_string())
+                    .set_attribute(UNIX_ATIME_KEY, atime.seconds)
                     .await
                     .map_err(nfsstat3::from)?;
             }
@@ -287,16 +285,14 @@ where
             set_mtime::DONT_CHANGE => {}
             set_mtime::SET_TO_SERVER_TIME => {
                 let now = Utc::now();
-                metadata
-                    .set_attribute(UNIX_MTIME_KEY, now.timestamp().to_string())
-                    .await
-                    .map_err(nfsstat3::from)?;
+                metadata.set_modified_at(now);
             }
             set_mtime::SET_TO_CLIENT_TIME(mtime) => {
-                metadata
-                    .set_attribute(UNIX_MTIME_KEY, mtime.seconds.to_string())
-                    .await
-                    .map_err(nfsstat3::from)?;
+                // Combine `seconds` and `nseconds` properly
+                metadata.set_modified_at(
+                    Utc.timestamp_opt(mtime.seconds as i64, mtime.nseconds)
+                        .unwrap(),
+                );
             }
         }
 
@@ -304,7 +300,11 @@ where
     }
 
     /// Constructs NFS attributes (fattr3) from metadata.
-    async fn construct_attributes(metadata: &Metadata<S>, id: fileid3) -> Result<fattr3, nfsstat3> {
+    async fn construct_attributes(
+        metadata: &Metadata<S>,
+        size: u64,
+        id: fileid3,
+    ) -> Result<fattr3, nfsstat3> {
         Ok(fattr3 {
             ftype: match metadata.get_entity_type() {
                 EntityType::File => ftype3::NF3REG,
@@ -316,7 +316,7 @@ where
                 .get_attribute(UNIX_MODE_KEY)
                 .await
                 .map_err(nfsstat3::from)?
-                .and_then(|ipld| match ipld {
+                .and_then(|ipld| match &*ipld {
                     Ipld::String(s) => s.parse().ok(),
                     Ipld::Integer(i) => {
                         if *i >= 0 {
@@ -338,7 +338,7 @@ where
                 .get_attribute(UNIX_UID_KEY)
                 .await
                 .map_err(nfsstat3::from)?
-                .and_then(|ipld| match ipld {
+                .and_then(|ipld| match &*ipld {
                     Ipld::String(s) => s.parse().ok(),
                     Ipld::Integer(i) => {
                         if *i >= 0 {
@@ -355,7 +355,7 @@ where
                 .get_attribute(UNIX_GID_KEY)
                 .await
                 .map_err(nfsstat3::from)?
-                .and_then(|ipld| match ipld {
+                .and_then(|ipld| match &*ipld {
                     Ipld::String(s) => s.parse().ok(),
                     Ipld::Integer(i) => {
                         if *i >= 0 {
@@ -367,7 +367,7 @@ where
                     _ => None,
                 })
                 .unwrap_or(0),
-            size: 0, // TODO: Size is not stored in metadata
+            size,
             used: 0, // TODO: Space used is not tracked
             rdev: specdata3 {
                 specdata1: 0,
@@ -380,11 +380,7 @@ where
                 nseconds: 0,
             },
             mtime: nfstime3 {
-                seconds: metadata
-                    .get_modified_at()
-                    .map(|t| t.timestamp())
-                    .unwrap_or_else(|| metadata.get_created_at().timestamp())
-                    as u32,
+                seconds: metadata.get_modified_at().timestamp() as u32,
                 nseconds: 0,
             },
             ctime: nfstime3 {
@@ -446,11 +442,7 @@ where
         drop(root);
 
         // Construct full path
-        let full_path = if parent_path.is_empty() {
-            filename_str.to_string()
-        } else {
-            format!("{}/{}", parent_path, filename_str)
-        };
+        let full_path = join_path(&parent_path, filename_str);
 
         // Ensure path is registered and get its fileid
         self.ensure_path_registered_str(&full_path).await
@@ -464,15 +456,15 @@ where
         let root = self.root.lock().await;
 
         // Get metadata
-        let metadata = if path.is_empty() {
-            root.get_metadata()
+        let (metadata, size) = if path.is_empty() {
+            (root.get_metadata(), 0)
         } else {
             let entity = root.find(&path).await?.ok_or(nfsstat3::NFS3ERR_NOENT)?;
-            entity.get_metadata()
+            (entity.get_metadata(), entity.get_size().await?)
         };
 
         // Convert to NFS attributes
-        Self::construct_attributes(metadata, id).await
+        Self::construct_attributes(metadata, size, id).await
     }
 
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
@@ -483,18 +475,19 @@ where
         let mut root = self.root.lock().await;
 
         // Get metadata
-        let metadata = if path.is_empty() {
-            root.get_metadata_mut()
+        let (metadata, size) = if path.is_empty() {
+            (root.get_metadata_mut(), 0)
         } else {
             let entity = root.find_mut(&path).await?.ok_or(nfsstat3::NFS3ERR_NOENT)?;
-            entity.get_metadata_mut()
+            let size = entity.get_size().await?;
+            (entity.get_metadata_mut(), size)
         };
 
         // Update all attributes
         Self::update_attributes(metadata, &setattr).await?;
 
         // Construct and return updated attributes directly
-        Self::construct_attributes(metadata, id).await
+        Self::construct_attributes(metadata, size, id).await
     }
 
     async fn read(
@@ -521,26 +514,27 @@ where
             Entity::File(file) => {
                 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 
-                // Get content CID
-                let content_cid = file.get_content().ok_or(nfsstat3::NFS3ERR_INVAL)?;
+                if offset >= file.get_size().await? {
+                    return Ok((Vec::new(), true));
+                }
 
-                // Get seekable reader from store
-                let mut reader = file
-                    .get_store()
-                    .get_seekable_bytes(&content_cid)
-                    .await
-                    .map_err(|e| FsError::IpldStore(e))
-                    .map_err(nfsstat3::from)?;
-
-                // Seek to offset
-                reader.seek(SeekFrom::Start(offset)).await.map_err(|e| {
-                    tracing::error!("Failed to seek: {}", e);
+                let mut input_stream = file.get_input_stream().await.map_err(|e| {
+                    tracing::error!("Failed to get input stream: {}", e);
                     nfsstat3::NFS3ERR_IO
                 })?;
 
+                // Seek to offset
+                input_stream
+                    .seek(SeekFrom::Start(offset))
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("Failed to seek: {}", e);
+                        nfsstat3::NFS3ERR_IO
+                    })?;
+
                 // Read requested bytes
                 let mut buffer = vec![0; count as usize];
-                let bytes_read = reader.read(&mut buffer).await.map_err(|e| {
+                let bytes_read = input_stream.read(&mut buffer).await.map_err(|e| {
                     tracing::error!("Failed to read: {}", e);
                     nfsstat3::NFS3ERR_IO
                 })?;
@@ -548,9 +542,9 @@ where
                 // Truncate buffer to actual bytes read
                 buffer.truncate(bytes_read);
 
-                // Check if we've reached the end
+                // Check if we've reached the end by trying to read one more byte
                 let mut peek_buf = [0u8; 1];
-                let reached_end = reader.read(&mut peek_buf).await.map_err(|e| {
+                let reached_end = input_stream.read(&mut peek_buf).await.map_err(|e| {
                     tracing::error!("Failed to peek: {}", e);
                     nfsstat3::NFS3ERR_IO
                 })? == 0;
@@ -561,8 +555,125 @@ where
         }
     }
 
-    async fn write(&self, _id: fileid3, _offset: u64, _data: &[u8]) -> Result<fattr3, nfsstat3> {
-        todo!()
+    async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
+        // Get path from fileid
+        let path = self.fileid_to_path(id).await?;
+
+        // Get root directory
+        let mut root = self.root.lock().await;
+
+        // Get the file
+        let entity = if path.is_empty() {
+            return Err(nfsstat3::NFS3ERR_INVAL); // Root cannot be written
+        } else {
+            root.find_mut(&path).await?.ok_or(nfsstat3::NFS3ERR_NOENT)?
+        };
+
+        // Ensure it's a file and write its content
+        match entity {
+            Entity::File(file) => {
+                use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
+
+                // Get original file size
+                let original_size = file.get_size().await.map_err(|e| {
+                    tracing::error!("Failed to get original file size: {}", e);
+                    nfsstat3::NFS3ERR_IO
+                })?;
+
+                // Reject writes that would create holes (sparse files)
+                if offset > original_size {
+                    tracing::error!("Attempted to write at offset {} beyond file size {}, which would create a sparse file", offset, original_size);
+                    return Err(nfsstat3::NFS3ERR_INVAL);
+                }
+
+                // First checkpoint the file to create a versioned copy
+                let checkpoint_cid = file.checkpoint().await.map_err(|e| {
+                    tracing::error!("Failed to checkpoint file: {}", e);
+                    nfsstat3::NFS3ERR_IO
+                })?;
+
+                // Load the checkpointed version as our original file
+                let original_file = File::load(&checkpoint_cid, file.get_store().clone())
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("Failed to load checkpointed file: {}", e);
+                        nfsstat3::NFS3ERR_IO
+                    })?;
+
+                // Create output stream for the new version
+                let mut output = file.get_output_stream();
+
+                // If we're not writing at the start, copy existing data up to offset
+                if offset > 0 {
+                    let mut input = original_file.get_input_stream().await.map_err(|e| {
+                        tracing::error!("Failed to get input stream: {}", e);
+                        nfsstat3::NFS3ERR_IO
+                    })?;
+
+                    // Copy data up to offset
+                    let mut buffer = vec![0u8; offset as usize];
+                    let bytes_read = input.read(&mut buffer).await.map_err(|e| {
+                        tracing::error!("Failed to read existing data: {}", e);
+                        nfsstat3::NFS3ERR_IO
+                    })?;
+                    buffer.truncate(bytes_read);
+
+                    output.write_all(&buffer).await.map_err(|e| {
+                        tracing::error!("Failed to write existing data: {}", e);
+                        nfsstat3::NFS3ERR_IO
+                    })?;
+                }
+
+                // Write the new data
+                output.write_all(data).await.map_err(|e| {
+                    tracing::error!("Failed to write new data: {}", e);
+                    nfsstat3::NFS3ERR_IO
+                })?;
+
+                // If there's existing data after our write, append it
+                let end_offset = offset + data.len() as u64;
+                if end_offset < original_size {
+                    let mut input = original_file.get_input_stream().await.map_err(|e| {
+                        tracing::error!("Failed to get input stream: {}", e);
+                        nfsstat3::NFS3ERR_IO
+                    })?;
+
+                    // Seek to where we ended our write
+                    input.seek(SeekFrom::Start(end_offset)).await.map_err(|e| {
+                        tracing::error!("Failed to seek input stream: {}", e);
+                        nfsstat3::NFS3ERR_IO
+                    })?;
+
+                    // Read and write the remaining data
+                    let mut buffer = vec![0u8; (original_size - end_offset) as usize];
+                    let bytes_read = input.read(&mut buffer).await.map_err(|e| {
+                        tracing::error!("Failed to read remaining data: {}", e);
+                        nfsstat3::NFS3ERR_IO
+                    })?;
+                    buffer.truncate(bytes_read);
+
+                    output.write_all(&buffer).await.map_err(|e| {
+                        tracing::error!("Failed to write remaining data: {}", e);
+                        nfsstat3::NFS3ERR_IO
+                    })?;
+                }
+
+                // Finalize the write
+                output.shutdown().await.map_err(|e| {
+                    tracing::error!("Failed to finalize write: {}", e);
+                    nfsstat3::NFS3ERR_IO
+                })?;
+
+                // Get updated attributes
+                let final_size = file.get_size().await.map_err(|e| {
+                    tracing::error!("Failed to get final file size: {}", e);
+                    nfsstat3::NFS3ERR_IO
+                })?;
+
+                Self::construct_attributes(file.get_metadata(), final_size, id).await
+            }
+            _ => Err(nfsstat3::NFS3ERR_NOTDIR),
+        }
     }
 
     async fn create(
@@ -628,11 +739,7 @@ where
         drop(root);
 
         // Construct full path and ensure it is registered
-        let full_path = if parent_path.is_empty() {
-            filename_str.to_string()
-        } else {
-            format!("{}/{}", parent_path, filename_str)
-        };
+        let full_path = join_path(&parent_path, filename_str);
 
         // Ensure path is registered and get its fileid
         let fileid = self.ensure_path_registered_str(&full_path).await?;
@@ -695,11 +802,7 @@ where
         drop(root);
 
         // Construct full path and ensure it is registered
-        let full_path = if parent_path.is_empty() {
-            filename_str.to_string()
-        } else {
-            format!("{}/{}", parent_path, filename_str)
-        };
+        let full_path = join_path(&parent_path, filename_str);
 
         // Ensure path is registered and get its fileid
         self.ensure_path_registered_str(&full_path).await
@@ -757,11 +860,7 @@ where
         drop(root);
 
         // Construct full path and ensure it is registered
-        let full_path = if parent_path.is_empty() {
-            dirname_str.to_string()
-        } else {
-            format!("{}/{}", parent_path, dirname_str)
-        };
+        let full_path = join_path(&parent_path, dirname_str);
 
         // Ensure path is registered and get its fileid
         let fileid = self.ensure_path_registered_str(&full_path).await?;
@@ -788,11 +887,7 @@ where
         let mut root = self.root.lock().await;
 
         // Construct the full path
-        let full_path = if parent_path.is_empty() {
-            filename_str.to_string()
-        } else {
-            format!("{}/{}", parent_path, filename_str)
-        };
+        let full_path = join_path(&parent_path, filename_str);
 
         // Use Dir's remove operation
         root.remove(&full_path).await.map_err(nfsstat3::from)
@@ -820,17 +915,8 @@ where
         let to_dir_path = self.fileid_to_path(to_dirid).await?;
 
         // Construct full paths
-        let from_path = if from_dir_path.is_empty() {
-            from_filename_str.to_string()
-        } else {
-            format!("{}/{}", from_dir_path, from_filename_str)
-        };
-
-        let to_path = if to_dir_path.is_empty() {
-            to_filename_str.to_string()
-        } else {
-            format!("{}/{}", to_dir_path, to_filename_str)
-        };
+        let from_path = join_path(&from_dir_path, from_filename_str);
+        let to_path = join_path(&to_dir_path, to_filename_str);
 
         // Get root directory and use Dir's rename operation
         let mut root = self.root.lock().await;
@@ -869,11 +955,7 @@ where
         for (name, link) in dir.get_entries() {
             // Skip entries until we find the start_after fileid
             if !found_start {
-                let entry_path = if dir_path.is_empty() {
-                    name.to_string()
-                } else {
-                    format!("{}/{}", dir_path, name)
-                };
+                let entry_path = join_path(&dir_path, name.as_str());
 
                 // Try to get existing fileid without creating a new one
                 if let Some(entry_id) = self.get_path_registered_str(&entry_path).await? {
@@ -887,23 +969,16 @@ where
             // Resolve the entity to get its metadata
             let entity = link.resolve_entity(dir.get_store().clone()).await?;
 
-            // Skip deleted entries
-            if entity.get_metadata().get_deleted_at().is_some() {
-                continue;
-            }
-
             // Get the full path for this entry
-            let entry_path = if dir_path.is_empty() {
-                name.to_string()
-            } else {
-                format!("{}/{}", dir_path, name)
-            };
+            let entry_path = join_path(&dir_path, name.as_str());
 
             // Get or create fileid for this entry
             let fileid = self.ensure_path_registered_str(&entry_path).await?;
 
             // Construct attributes for this entry
-            let attr = Self::construct_attributes(entity.get_metadata(), fileid).await?;
+            let attr =
+                Self::construct_attributes(entity.get_metadata(), entity.get_size().await?, fileid)
+                    .await?;
 
             // If we've reached max_entries, note that there are more entries and break
             if entries.len() >= max_entries {
@@ -981,16 +1056,14 @@ where
         Self::update_attributes(symlink.get_metadata_mut(), attr).await?;
 
         // Add symlink to parent directory
-        parent_dir.put_entity(linkname_str, Entity::SymPathLink(symlink))?;
+        parent_dir
+            .put_adapted_entity(linkname_str, Entity::SymPathLink(symlink))
+            .await?;
 
         drop(root);
 
         // Construct full path and ensure it is registered
-        let full_path = if parent_path.is_empty() {
-            linkname_str.to_string()
-        } else {
-            format!("{}/{}", parent_path, linkname_str)
-        };
+        let full_path = join_path(&parent_path, linkname_str);
 
         // Ensure path is registered and get its fileid
         let fileid = self.ensure_path_registered_str(&full_path).await?;
@@ -1040,6 +1113,18 @@ impl From<FsError> for nfsstat3 {
             FsError::BrokenSymCidLink(_) => nfsstat3::NFS3ERR_NOENT,
             _ => nfsstat3::NFS3ERR_IO,
         }
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Functions
+//--------------------------------------------------------------------------------------------------
+
+fn join_path(base_path: &str, name: &str) -> String {
+    if base_path.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}/{}", base_path, name)
     }
 }
 
@@ -1575,20 +1660,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Test 1: Remove a file
-        println!("map before: {:?}", server.fileid_to_path_map.lock().await);
-        println!(
-            "lookup before: {:?}",
-            server.root.lock().await.find("file1.txt").await
-        );
-
         server.remove(0, &file1).await.unwrap();
-
-        println!("map after: {:?}", server.fileid_to_path_map.lock().await);
-        println!(
-            "lookup after: {:?}",
-            server.root.lock().await.find("file1.txt").await
-        );
 
         assert!(matches!(
             server.lookup(0, &file1).await,
@@ -1703,7 +1775,7 @@ mod tests {
         assert!(matches!(moved_entity, Entity::File(_)));
     }
 
-    #[tokio::test]
+    #[test_log::test(tokio::test)]
     async fn test_nfs_read_write() {
         let server = MemoryMonofsServer::new(MemoryStore::default());
 
@@ -1733,8 +1805,8 @@ mod tests {
         assert!(eof);
 
         // Read with offset in middle
-        let (partial_data, eof) = server.read(fileid, 7, 5).await.unwrap();
-        assert_eq!(&partial_data, b"World");
+        let (partial_data, eof) = server.read(fileid, 7, 6).await.unwrap();
+        assert_eq!(&partial_data, b"World!");
         assert!(eof);
 
         // Read with offset at end
@@ -1745,10 +1817,10 @@ mod tests {
         // Test 3: Append and verify with offset reads
         let append_data = b", NFS!";
         let append_result = server.write(fileid, 13, append_data).await.unwrap();
-        assert_eq!(append_result.size, 18);
+        assert_eq!(append_result.size, 19);
 
         // Read entire content
-        let (full_data, eof) = server.read(fileid, 0, 18).await.unwrap();
+        let (full_data, eof) = server.read(fileid, 0, 19).await.unwrap();
         assert_eq!(&full_data, b"Hello, World!, NFS!");
         assert!(eof);
 
@@ -1760,7 +1832,7 @@ mod tests {
         // Test 4: Overwrite in middle and verify with offset reads
         let overwrite_data = b"there";
         let overwrite_result = server.write(fileid, 7, overwrite_data).await.unwrap();
-        assert_eq!(overwrite_result.size, 18);
+        assert_eq!(overwrite_result.size, 19);
 
         // Read the modified section
         let (modified_part, eof) = server.read(fileid, 7, 5).await.unwrap();
@@ -1769,28 +1841,13 @@ mod tests {
 
         // Read across the modified boundary
         let (across_mod, eof) = server.read(fileid, 5, 7).await.unwrap();
-        assert_eq!(&across_mod, b", there!");
+        assert_eq!(&across_mod, b", there");
         assert!(!eof);
 
-        // Test 5: Sparse file reads
-        let gap_data = b"sparse";
-        let gap_write = server.write(fileid, 100, gap_data).await.unwrap();
-        assert_eq!(gap_write.size, 106);
-
-        // Read the zeros before sparse data
-        let (before_sparse, eof) = server.read(fileid, 95, 5).await.unwrap();
-        assert_eq!(&before_sparse, &[0, 0, 0, 0, 0]);
-        assert!(!eof);
-
-        // Read across the sparse boundary
-        let (sparse_boundary, eof) = server.read(fileid, 98, 4).await.unwrap();
-        assert_eq!(&sparse_boundary, &[0, 0, b's', b'p']);
-        assert!(!eof);
-
-        // Read in the middle of the sparse region
-        let (mid_sparse, eof) = server.read(fileid, 102, 4).await.unwrap();
-        assert_eq!(&mid_sparse, b"arse");
-        assert!(eof);
+        // Test 5: Write beyond file size should fail
+        let beyond_size_data = b"sparse";
+        let result = server.write(fileid, 100, beyond_size_data).await;
+        assert!(matches!(result, Err(nfsstat3::NFS3ERR_INVAL)));
 
         // Test 6: Edge cases
         // Read with zero count
@@ -1807,7 +1864,7 @@ mod tests {
         // Invalid file ID
         assert!(matches!(
             server.read(999, 0, 10).await,
-            Err(nfsstat3::NFS3ERR_STALE)
+            Err(nfsstat3::NFS3ERR_NOENT)
         ));
 
         // Read from deleted file
@@ -1817,7 +1874,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             server.read(fileid, 0, 10).await,
-            Err(nfsstat3::NFS3ERR_STALE)
+            Err(nfsstat3::NFS3ERR_NOENT)
         ));
     }
 }

@@ -2,7 +2,7 @@ use std::pin::Pin;
 
 use bytes::Bytes;
 use futures::{stream::BoxStream, Future};
-use libipld::Cid;
+use ipld_core::cid::Cid;
 use monoutils::SeekableReader;
 use tokio::io::AsyncRead;
 

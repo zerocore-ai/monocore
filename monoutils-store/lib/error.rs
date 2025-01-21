@@ -3,7 +3,7 @@ use std::{
     fmt::{self, Display},
 };
 
-use libipld::Cid;
+use ipld_core::cid::Cid;
 use thiserror::Error;
 
 use super::Codec;

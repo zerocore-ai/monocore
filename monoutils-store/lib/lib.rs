@@ -30,7 +30,17 @@ pub use store::*;
 // Re-Exports
 //--------------------------------------------------------------------------------------------------
 
-/// Re-exports of the `libipld` crate.
+/// Re-exports of the `ipld-core` crate.
 pub mod ipld {
-    pub use libipld::{cid, codec, multihash};
+    pub use ipld_core::*;
+}
+
+/// Re-exports of the `multihash` crate.
+pub mod multihash {
+    pub use multihash::*;
+}
+
+/// Re-exports of the `multihash-codetable` crate.
+pub mod codetable {
+    pub use multihash_codetable::*;
 }
