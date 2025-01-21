@@ -1,14 +1,16 @@
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug};
 use std::iter;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use getset::Getters;
-use libipld::Ipld;
 use monoutils_store::{
-    ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
+    ipld::{cid::Cid, ipld::Ipld},
+    IpldReferences, IpldStore, Storable, StoreError, StoreResult,
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 
 use crate::config::DEFAULT_SYMLINK_DEPTH;
 
@@ -57,7 +59,7 @@ pub const SYNC_TYPE_KEY: &str = "monofs.sync_type";
 /// assert_eq!(*metadata.get_sync_type(), SyncType::Default);
 /// assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
 /// ```
-#[derive(Clone, Serialize, Deserialize, Getters)]
+#[derive(Clone, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct Metadata<S>
 where
@@ -79,7 +81,6 @@ where
     sync_type: SyncType,
 
     /// Extended attributes.
-    #[serde(skip)]
     extended_attrs: Option<AttributesCidLink<S>>,
 
     /// The store of the metadata.
@@ -105,10 +106,44 @@ pub enum SyncType {
 }
 
 /// Extended attributes for a file system entity.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+///
+/// This struct provides a thread-safe way to store and manage extended attributes (xattrs) for file system entities.
+/// Extended attributes are key-value pairs that can be associated with files, directories, and other file system entities
+/// to store additional metadata beyond the standard attributes.
+///
+/// The attributes are stored in a `BTreeMap` wrapped in an `Arc<RwLock>` to allow safe concurrent access and modification.
+/// Values are stored as IPLD (InterPlanetary Linked Data) to support a wide range of data types and structures.
+///
+/// ## Examples
+///
+/// ```
+/// use monofs::filesystem::{EntityType, Metadata};
+/// use monoutils_store::MemoryStore;
+/// use monoutils_store::ipld::ipld::Ipld;
+///
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let store = MemoryStore::default();
+/// let mut metadata = Metadata::new(EntityType::File, store);
+///
+/// // Set extended attributes
+/// metadata.set_attribute("user.description", "Important document").await?;
+/// metadata.set_attribute("user.tags", vec![Ipld::from("document"), Ipld::from("important")]).await?;
+///
+/// // Read extended attributes
+/// let description = metadata.get_attribute("user.description").await?;
+/// let tags = metadata.get_attribute("user.tags").await?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct ExtendedAttributes<S> {
+    inner: Arc<RwLock<ExtendedAttributesInner<S>>>,
+}
+
+#[derive(Debug)]
+struct ExtendedAttributesInner<S> {
     /// The map of extended attributes.
-    map: BTreeMap<String, Ipld>,
+    map: BTreeMap<String, Arc<Ipld>>,
 
     /// The store used to persist the extended attributes.
     store: S,
@@ -131,7 +166,7 @@ pub struct MetadataSerializable {
 
 /// A serializable representation of [`ExtendedAttributes`].
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ExtendedAttributesSerializable<'a>(&'a BTreeMap<String, Ipld>);
+pub struct ExtendedAttributesSerializable(BTreeMap<String, Ipld>);
 
 //--------------------------------------------------------------------------------------------------
 // Methods
@@ -198,7 +233,8 @@ where
     /// ```
     /// use monofs::filesystem::{EntityType, Metadata};
     /// use monoutils_store::MemoryStore;
-    /// use libipld::Ipld;
+    /// use monoutils_store::ipld::ipld::Ipld;
+    /// use std::sync::Arc;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -212,18 +248,19 @@ where
     /// metadata.set_attribute("custom.attr", "value").await?;
     ///
     /// // Now we can get the attribute
-    /// assert_eq!(metadata.get_attribute("custom.attr").await?, Some(&Ipld::String("value".to_string())));
+    /// assert_eq!(metadata.get_attribute("custom.attr").await?, Some(Arc::new(Ipld::String("value".to_string()))));
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn get_attribute(&self, key: impl AsRef<str>) -> FsResult<Option<&Ipld>>
+    pub async fn get_attribute(&self, key: impl AsRef<str>) -> FsResult<Option<Arc<Ipld>>>
     where
         S: Send + Sync,
     {
         match &self.extended_attrs {
             Some(link) => {
                 let attrs = link.resolve_value(self.store.clone()).await?;
-                Ok(attrs.map.get(key.as_ref()))
+                let ipld = attrs.inner.read().await.map.get(key.as_ref()).cloned();
+                Ok(ipld)
             }
             None => Ok(None),
         }
@@ -239,7 +276,8 @@ where
     /// ```
     /// use monofs::filesystem::{EntityType, Metadata};
     /// use monoutils_store::MemoryStore;
-    /// use libipld::Ipld;
+    /// use monoutils_store::ipld::ipld::Ipld;
+    /// use std::sync::Arc;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -248,11 +286,11 @@ where
     ///
     /// // Set an attribute
     /// metadata.set_attribute("custom.attr", "value").await?;
-    /// assert_eq!(metadata.get_attribute("custom.attr").await?, Some(&Ipld::String("value".to_string())));
+    /// assert_eq!(metadata.get_attribute("custom.attr").await?, Some(Arc::new(Ipld::String("value".to_string()))));
     ///
     /// // Update an existing attribute
     /// metadata.set_attribute("custom.attr", "new value").await?;
-    /// assert_eq!(metadata.get_attribute("custom.attr").await?, Some(&Ipld::String("new value".to_string())));
+    /// assert_eq!(metadata.get_attribute("custom.attr").await?, Some(Arc::new(Ipld::String("new value".to_string()))));
     /// # Ok(())
     /// # }
     /// ```
@@ -270,14 +308,16 @@ where
         match &mut self.extended_attrs {
             Some(link) => {
                 let attrs = link.resolve_value_mut(self.store.clone()).await?;
-                attrs.map.insert(key, value);
+                attrs.inner.write().await.map.insert(key, Arc::new(value));
             }
             None => {
                 let mut map = BTreeMap::new();
-                map.insert(key, value);
+                map.insert(key, Arc::new(value));
                 let attrs = ExtendedAttributes {
-                    map,
-                    store: self.store.clone(),
+                    inner: Arc::new(RwLock::new(ExtendedAttributesInner {
+                        map,
+                        store: self.store.clone(),
+                    })),
                 };
                 self.extended_attrs = Some(AttributesCidLink::from(attrs));
             }
@@ -330,15 +370,29 @@ where
     S: IpldStore + Send + Sync,
 {
     async fn store(&self) -> StoreResult<Cid> {
-        let serializable = ExtendedAttributesSerializable(&self.map);
-        self.store.put_node(&serializable).await
+        let map = self
+            .inner
+            .read()
+            .await
+            .map
+            .iter()
+            .map(|(k, v)| (k.clone(), (**v).clone()))
+            .collect::<BTreeMap<_, _>>();
+
+        let serializable = ExtendedAttributesSerializable(map);
+        self.inner.write().await.store.put_node(&serializable).await
     }
 
     async fn load(cid: &Cid, store: S) -> StoreResult<Self> {
         let serializable: BTreeMap<String, Ipld> = store.get_node(cid).await?;
         Ok(Self {
-            map: serializable,
-            store,
+            inner: Arc::new(RwLock::new(ExtendedAttributesInner {
+                map: serializable
+                    .into_iter()
+                    .map(|(k, v)| (k, Arc::new(v)))
+                    .collect(),
+                store,
+            })),
         })
     }
 }
@@ -349,7 +403,7 @@ impl IpldReferences for MetadataSerializable {
     }
 }
 
-impl IpldReferences for ExtendedAttributesSerializable<'_> {
+impl IpldReferences for ExtendedAttributesSerializable {
     fn get_references<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Cid> + Send + 'a> {
         Box::new(iter::empty())
     }
@@ -374,13 +428,24 @@ where
     }
 }
 
-impl<S> ExtendedAttributes<S>
+// impl<S> ExtendedAttributes<S>
+// where
+//     S: IpldStore,
+// {
+//     /// Gets a reference to the map of extended attributes.
+//     pub fn get_map(&self) -> &BTreeMap<String, Ipld> {
+//         &self.map
+//     }
+// }
+
+impl<S> Clone for ExtendedAttributes<S>
 where
     S: IpldStore,
 {
-    /// Gets a reference to the map of extended attributes.
-    pub fn get_map(&self) -> &BTreeMap<String, Ipld> {
-        &self.map
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
     }
 }
 
@@ -445,18 +510,18 @@ mod tests {
         // Verify attributes were set
         assert_eq!(
             metadata.get_attribute("test.attr1").await?,
-            Some(&Ipld::String("value1".to_string()))
+            Some(Arc::new(Ipld::String("value1".to_string())))
         );
         assert_eq!(
             metadata.get_attribute("test.attr2").await?,
-            Some(&Ipld::String("value2".to_string()))
+            Some(Arc::new(Ipld::String("value2".to_string())))
         );
 
         // Update an existing attribute
         metadata.set_attribute("test.attr1", "new value").await?;
         assert_eq!(
             metadata.get_attribute("test.attr1").await?,
-            Some(&Ipld::String("new value".to_string()))
+            Some(Arc::new(Ipld::String("new value".to_string())))
         );
 
         // Store and load the metadata to verify persistence
@@ -466,11 +531,11 @@ mod tests {
         // Verify attributes persisted
         assert_eq!(
             loaded_metadata.get_attribute("test.attr1").await?,
-            Some(&Ipld::String("new value".to_string()))
+            Some(Arc::new(Ipld::String("new value".to_string())))
         );
         assert_eq!(
             loaded_metadata.get_attribute("test.attr2").await?,
-            Some(&Ipld::String("value2".to_string()))
+            Some(Arc::new(Ipld::String("value2".to_string())))
         );
 
         // Non-existent attribute still returns None

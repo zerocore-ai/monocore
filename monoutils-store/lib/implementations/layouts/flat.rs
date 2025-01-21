@@ -9,7 +9,7 @@ use aliasable::boxed::AliasableBox;
 use async_stream::try_stream;
 use bytes::Bytes;
 use futures::{ready, stream::BoxStream, Future, StreamExt};
-use libipld::Cid;
+use ipld_core::cid::Cid;
 use monoutils::SeekableReader;
 use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
 
@@ -74,7 +74,7 @@ where
 
     /// A function to get a raw block.
     ///
-    /// ## Important
+    /// ## Warning
     ///
     /// Holds a reference to other fields in this struct. Declared first to ensure it is dropped
     /// before the other fields.

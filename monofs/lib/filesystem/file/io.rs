@@ -34,6 +34,24 @@ where
 // Methods
 //--------------------------------------------------------------------------------------------------
 
+impl<S> File<S>
+where
+    S: IpldStore + Send + Sync + 'static,
+{
+    /// Gets an input stream for reading the file's content.
+    pub async fn get_input_stream(&self) -> io::Result<FileInputStream<'_>>
+    where
+        S: IpldStoreSeekable,
+    {
+        FileInputStream::new(self).await
+    }
+
+    /// Gets an output stream for writing to the file.
+    pub fn get_output_stream(&mut self) -> FileOutputStream<'_, S> {
+        FileOutputStream::new(self)
+    }
+}
+
 impl<'a> FileInputStream<'a> {
     /// Creates a new `FileInputStream` from a `File`.
     pub async fn new<S>(file: &'a File<S>) -> io::Result<Self>

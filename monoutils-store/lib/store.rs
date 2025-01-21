@@ -1,7 +1,7 @@
 use std::{collections::HashSet, future::Future, pin::Pin};
 
 use bytes::Bytes;
-use libipld::Cid;
+use ipld_core::cid::Cid;
 use monoutils::SeekableReader;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -38,13 +38,11 @@ pub enum Codec {
 /// It can store raw bytes of data and structured data stored as IPLD. Stored data can be fetched
 /// by their [`CID`s (Content Identifier)][cid] which is represents the fingerprint of the data.
 ///
-/// ## Important
+/// ## Implementation Note
 ///
-/// It is highly recommended to implement `Clone` with inexpensive cloning semantics. This is because
-/// `IpldStore`s are usually passed around a lot and cloned to be used in different parts of the
-/// application.
-///
-/// An implementation is responsible for how it stores, encodes and chunks data into blocks.
+/// It is advisable that the type implementing `IpldStore` implements cheap clone semantics (e.g.,
+/// using `Arc`) since several operations on `IpldStore` require cloning the store. Using types with
+/// expensive clone operations may impact performance.
 ///
 /// [cid]: https://docs.ipfs.tech/concepts/content-addressing/
 /// [ipld]: https://ipld.io/
@@ -94,7 +92,7 @@ pub trait IpldStore: RawStore + Clone {
     ) -> impl Future<Output = StoreResult<Pin<Box<dyn AsyncRead + Send + Sync + 'a>>>> + 'a;
 
     /// Gets the size of all the blocks associated with the given `Cid` in bytes.
-    fn get_bytes_size(&self, cid: &Cid) -> impl Future<Output = StoreResult<u64>>;
+    fn get_bytes_size(&self, cid: &Cid) -> impl Future<Output = StoreResult<u64>> + Send;
 
     /// Checks if the store has a block with the given `Cid`.
     fn has(&self, cid: &Cid) -> impl Future<Output = bool>;
@@ -117,10 +115,18 @@ pub trait IpldStore: RawStore + Clone {
     /// Returns the number of blocks in the store.
     fn get_block_count(&self) -> impl Future<Output = StoreResult<u64>>;
 
-    // /// Attempts to remove a node and its dependencies from the store.
+    // /// Dereferences a CID and deletes its blocks if it is not referenced by any other CID.
     // ///
-    // /// Returns the number of nodes and blocks removed.
-    // fn remove(&self, cid: &Cid) -> impl Future<Output = StoreResult<usize>>;
+    // /// This can lead to a cascade of deletions if the referenced blocks are also not referenced by
+    // /// any other CID.
+    // ///
+    // /// Returns `true` if the CID was deleted, `false` otherwise.
+    // fn dereference(&self, cid: &Cid) -> impl Future<Output = StoreResult<bool>>;
+
+    // /// Attempts to remove unused blocks from the store.
+    // ///
+    // /// Returns `true` if any blocks were removed, `false` otherwise.
+    // fn gc(&self) -> impl Future<Output = StoreResult<bool>>;
 }
 
 /// A trait for stores that support raw blocks.
@@ -152,7 +158,7 @@ pub trait RawStore: Clone {
 
 /// Helper extension to the `IpldStore` trait.
 pub trait IpldStoreExt: IpldStore {
-    /// Reads all the bytes associated with the given `Cid` into a single `Bytes` type.
+    /// Reads all the bytes associated with the given CID into a single [`Bytes`] type.
     fn read_all(&self, cid: &Cid) -> impl Future<Output = StoreResult<Bytes>> {
         async {
             let mut reader = self.get_bytes(cid).await?;
@@ -170,11 +176,11 @@ pub trait IpldStoreExt: IpldStore {
 
 /// `IpldStoreSeekable` is a trait that extends the `IpldStore` trait to allow for seeking.
 pub trait IpldStoreSeekable: IpldStore {
-    /// Gets a seekable reader for the underlying bytes associated with the given `Cid`.
+    /// Gets a seekable reader for the underlying bytes associated with the given CID.
     fn get_seekable_bytes<'a>(
         &'a self,
         cid: &'a Cid,
-    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>>;
+    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>> + Send;
 }
 
 /// A trait for types that can be changed to a different store.

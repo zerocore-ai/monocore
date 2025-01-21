@@ -1,7 +1,7 @@
 use std::{collections::HashSet, pin::Pin};
 
 use bytes::Bytes;
-use libipld::Cid;
+use ipld_core::cid::Cid;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::io::AsyncRead;
 

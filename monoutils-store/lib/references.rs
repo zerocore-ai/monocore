@@ -1,7 +1,7 @@
 use std::iter;
 
 use bytes::Bytes;
-use libipld::Cid;
+use ipld_core::cid::Cid;
 
 //--------------------------------------------------------------------------------------------------
 // Traits

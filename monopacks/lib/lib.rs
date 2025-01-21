@@ -1,4 +1,4 @@
-//! `monoagent` is a collection of AI agents used by the monocore project.
+//! `monopacks` is a tool for generating a `monoimages` from source directories.
 
 #![warn(missing_docs)]
 #![allow(clippy::module_inception)]

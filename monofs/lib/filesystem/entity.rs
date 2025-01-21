@@ -146,6 +146,14 @@ where
         }
     }
 
+    /// Returns the size of the entity in bytes.
+    pub async fn get_size(&self) -> FsResult<u64> {
+        match self {
+            Entity::File(file) => file.get_size().await,
+            _ => Ok(0),
+        }
+    }
+
     /// Creates a checkpoint of the current entity state.
     ///
     /// This is equivalent to storing the entity and loading it back,

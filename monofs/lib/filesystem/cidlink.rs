@@ -7,7 +7,6 @@ use std::{
 };
 
 use async_once_cell::OnceCell;
-use async_recursion::async_recursion;
 
 use monoutils_store::{ipld::cid::Cid, IpldStore, Storable};
 
@@ -22,6 +21,12 @@ pub type Cached<V> = OnceCell<V>;
 
 /// A link representing an association between an identifier and some lazily loaded value or
 /// just the value itself.
+///
+/// ## Implementation Note
+///
+/// It is advisable that the value type `V` implements cheap clone semantics (e.g., using `Arc`)
+/// since several operations on `Link` require cloning the value. Using types with expensive clone
+/// operations may impact performance.
 pub enum Link<I, V> {
     /// A link that is encoded and needs to be resolved.
     Encoded {
@@ -70,18 +75,27 @@ impl<V> CidLink<V> {
         }
     }
 
-    /// Resolves the [`Entity`]'s [`Cid`].
+    /// Returns the CID (Content Identifier) associated with this link.
     ///
-    /// This will attempt to encode the [`Entity`] if it is not already encoded.
-    #[async_recursion(?Send)]
-    pub async fn resolve_cid<S>(&self) -> FsResult<Cid>
+    /// For encoded links, returns the existing CID immediately.
+    /// For decoded values, stores the value and returns its new CID.
+    ///
+    /// ## Implementation Note
+    ///
+    /// Returns a boxed future because the recursive storage operation requires
+    /// captured values to be `Send`. Since `&self` is not `Send`, we clone the
+    /// necessary data. This is fine when the value type `V` has a cheap clone.
+    pub fn resolve_cid<S>(&self) -> futures::future::BoxFuture<FsResult<Cid>>
     where
-        S: IpldStore,
-        V: Storable<S>,
+        S: IpldStore + Clone + Send,
+        V: Storable<S> + Send + Clone,
     {
         match self {
-            Self::Encoded { identifier, .. } => Ok(*identifier),
-            Self::Decoded(value) => Ok(value.store().await?),
+            Self::Encoded { identifier, .. } => Box::pin(async move { Ok(*identifier) }),
+            Self::Decoded(value) => {
+                let value = value.clone();
+                Box::pin(async move { Ok(value.store().await?) })
+            }
         }
     }
 
@@ -199,10 +213,7 @@ where
                 .field("identifier", &identifier)
                 .field("cached", &cached.get())
                 .finish(),
-            Self::Decoded(value) => f
-                .debug_tuple("CidLink::Decoded")
-                .field(&value)
-                .finish(),
+            Self::Decoded(value) => f.debug_tuple("CidLink::Decoded").field(&value).finish(),
         }
     }
 }

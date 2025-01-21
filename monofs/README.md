@@ -29,20 +29,23 @@
 
 ## ✨ Features
 
-- 🔄 **Automatic Deduplication**: Save storage space by storing identical content only once, even across different files and directories
-- 🔒 **Immutable & Versioned**: Every change creates a new version, making it impossible to accidentally lose data
-- 🌐 **Built for Distribution**: Perfect for peer-to-peer and decentralized applications with content-addressed storage
-- ⚡ **Efficient Syncing**: Only transfer what's changed between versions, saving bandwidth and time
-- 🔗 **Smart Linking**: Create symbolic links that work reliably across different machines and network locations
-- 🚀 **Async by Design**: Built for high performance with asynchronous I/O operations
-- 📦 **Copy-on-Write**: Make changes without affecting other users or versions of the same data
-- 🛡️ **Data Integrity**: Content addressing ensures data hasn't been tampered with or corrupted
+- 🔄 **Automatic Deduplication**: <sub>Save storage space by storing identical content only once, even across different files and directories</sub>
+- 🔒 **Versioned**: <sub>Every change creates a new version, making it impossible to accidentally lose data</sub>
+- 🌐 **Built for Distribution**: <sub>Perfect for peer-to-peer and decentralized applications with content-addressed storage</sub>
+- ⚡ **Efficient Syncing**: <sub>Only transfer what's changed between versions, saving bandwidth and time</sub>
+- 🛡️ **Data Integrity**: <sub>Content addressing ensures data hasn't been tampered with or corrupted</sub>
 
 ## 🚀 Getting Started
 
+### Installation
+
+```sh
+curl -sSfL https://install.monofs.dev | sh
+```
+
 ### Quick Start
 
-TODO: Demo of running multiple servers on different paths syncing up with each other.
+TODO: Demo of running multiple servers on different paths syncing up with each other and use with monocore.
 
 ### API
 

@@ -2,7 +2,7 @@ use std::pin::Pin;
 
 use bytes::Bytes;
 use futures::stream::BoxStream;
-use libipld::Cid;
+use ipld_core::cid::Cid;
 use tokio::io::AsyncRead;
 
 use crate::{IpldStore, Layout, StoreResult};

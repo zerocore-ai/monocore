@@ -1,7 +1,7 @@
 [package]
 name = "monopacks"
 version = "0.1.0"
-description = "`monopacks` is a library for generating monocore environments from other arbitrary environments."
+description = "`monopacks` is a library for generating monoimages from source directories."
 license.workspace = true
 repository.workspace = true
 authors.workspace = true

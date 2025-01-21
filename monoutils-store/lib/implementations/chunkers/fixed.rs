@@ -14,7 +14,21 @@ use super::constants::DEFAULT_MAX_CHUNK_SIZE;
 //--------------------------------------------------------------------------------------------------
 
 /// `FixedSizeChunker` splits data into fixed-size chunks, regardless of the content, in a simple
-/// and deterministic.
+/// and deterministic way.
+///
+/// ```text
+/// Input Data:
+/// ┌────────────────────────────────────────────────────────────┐
+/// │ Lorem ipsum dolor sit amet, consectetur adipiscing elit.   │
+/// └────────────────────────────────────────────────────────────┘
+///
+/// FixedSizeChunker (chunk_size = 10):
+/// ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐
+/// │Lorem ipsu│ │m dolor si│ │t amet, co│ │nsectetur │ │adipiscing│ │ elit.  │
+/// └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘ └────────┘
+///    Chunk 1     Chunk 2      Chunk 3      Chunk 4      Chunk 5     Chunk 6
+///  (10 bytes)   (10 bytes)   (10 bytes)   (10 bytes)   (10 bytes)  (6 bytes)
+/// ```
 #[derive(Clone, Debug)]
 pub struct FixedSizeChunker {
     /// The size of each chunk.

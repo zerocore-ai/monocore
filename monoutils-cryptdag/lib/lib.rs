@@ -1,13 +1,8 @@
-//! `monofs` is an immutable distributed file system.
+//! `monoutils-cryptdag` is a key generation library for data structures that can be represented as trees or DAGs.
 
 #![warn(missing_docs)]
+#![allow(clippy::module_inception)]
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
-
-pub mod config;
-pub mod filesystem;
-pub mod store;
-pub mod utils;
-pub mod server;

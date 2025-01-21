@@ -1,5 +1,5 @@
 use futures::Future;
-use libipld::Cid;
+use ipld_core::cid::Cid;
 
 use super::{IpldStore, StoreResult};
 
@@ -13,8 +13,8 @@ where
     S: IpldStore,
 {
     /// Stores the type in the IPLD store and returns the Cid.
-    fn store(&self) -> impl Future<Output = StoreResult<Cid>>;
+    fn store(&self) -> impl Future<Output = StoreResult<Cid>> + Send;
 
     /// Loads the type from the IPLD store.
-    fn load(cid: &Cid, store: S) -> impl Future<Output = StoreResult<Self>>;
+    fn load(cid: &Cid, store: S) -> impl Future<Output = StoreResult<Self>> + Send;
 }

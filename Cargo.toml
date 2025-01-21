@@ -8,6 +8,7 @@ members = [
     "monoutils-did",
     "monoutils-store",
     "monoutils-ucan",
+    "monoutils-cryptdag",
 ]
 resolver = "2"
 
@@ -26,7 +27,7 @@ hex = "0.4"
 libc = "0.2"
 axum = "0.8"
 bytes = "1.9"
-libipld = "0.16"
+ipld-core = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 structstruck = "0.4"
@@ -49,6 +50,8 @@ reqwest-middleware = "0.3"                                        # Cannot upgra
 reqwest-retry = "0.6"                                             # Cannot upgrade to 0.7 due to https://github.com/TrueLayer/reqwest-middleware/issues/204
 monoutils-store = { version = "0.2", path = "./monoutils-store" }
 monoutils = { version = "0.2", path = "./monoutils" }
+multihash = "0.19"
+multihash-codetable = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 criterion = "0.5"
 tempfile = "3.15"

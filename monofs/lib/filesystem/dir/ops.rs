@@ -1,5 +1,4 @@
-use libipld::Cid;
-use monoutils_store::IpldStore;
+use monoutils_store::{ipld::cid::Cid, IpldStore};
 use typed_path::Utf8UnixPath;
 
 use crate::{

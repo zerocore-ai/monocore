@@ -1,12 +1,13 @@
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
     pin::Pin,
     sync::Arc,
 };
 
 use bytes::Bytes;
 use futures::StreamExt;
-use libipld::Cid;
+use ipld_core::cid::Cid;
 use monoutils::SeekableReader;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::{io::AsyncRead, sync::RwLock};
@@ -232,11 +233,12 @@ where
     C: Chunker + Clone + Send + Sync,
     L: LayoutSeekable + Clone + Send + Sync,
 {
-    async fn get_seekable_bytes<'a>(
+    fn get_seekable_bytes<'a>(
         &'a self,
         cid: &'a Cid,
-    ) -> StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>> {
-        self.layout.retrieve_seekable(cid, self.clone()).await
+    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>> + Send
+    {
+        self.layout.retrieve_seekable(cid, self.clone())
     }
 }
 
@@ -260,7 +262,7 @@ mod tests {
 
     use super::fixtures::TestNode;
     use super::*;
-    use libipld::multihash::{Code, MultihashDigest};
+    use multihash_codetable::{Code, MultihashDigest};
     use tokio::io::AsyncReadExt;
 
     #[tokio::test]

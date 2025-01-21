@@ -29,6 +29,13 @@ serde_json.workspace = true
 monoutils.workspace = true
 serde_ipld_dagcbor.workspace = true
 pretty-error-debug.workspace = true
-libipld.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+nfsserve = "0.10"
+intaglio = "1.10"
 hex.workspace = true
 tempfile.workspace = true
+
+[dev-dependencies]
+test-log.workspace = true
