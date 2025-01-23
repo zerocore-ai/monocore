@@ -27,6 +27,7 @@ use super::{DEFAULT_DESIRED_CHUNK_SIZE, DEFAULT_GEAR_TABLE};
 ///
 /// The average chunk size is controlled by the `desired_chunk_size` parameter, though actual
 /// chunk sizes will vary based on content.
+#[derive(Clone, Debug)]
 pub struct GearCDCChunker {
     /// The gear table used to generate pseudo-random values for each byte.
     /// Each byte maps to a 64-bit value that contributes to the rolling hash.
@@ -56,6 +57,7 @@ pub struct GearCDCChunker {
 ///
 /// This implementation ensures robust chunking behavior for both random and non-random data,
 /// which is essential for effective content-defined chunking in real-world applications.
+#[derive(Clone, Debug)]
 pub struct GearHasher {
     /// The gear table maps each possible byte value to a pseudo-random 64-bit number.
     /// This helps ensure an even distribution of hash values.

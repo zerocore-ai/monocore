@@ -1,7 +1,7 @@
 use clap::{CommandFactory, Parser};
-use monocore::{
-    cli::{MonocoreArgs, MonocoreSubcommand},
-    management, MonocoreResult,
+use monofs::{
+    cli::{MonofsArgs, MonofsSubcommand},
+    management,
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -9,18 +9,18 @@ use monocore::{
 //--------------------------------------------------------------------------------------------------
 
 #[tokio::main]
-async fn main() -> MonocoreResult<()> {
+async fn main() -> anyhow::Result<()> {
     // Parse command line arguments
-    let args = MonocoreArgs::parse();
+    let args = MonofsArgs::parse();
     match args.subcommand {
-        Some(MonocoreSubcommand::Init { path }) => {
-            tracing::info!("Initializing monocore project...");
-            management::init_env(path).await?;
-            tracing::info!("Successfully initialized monocore project");
+        Some(MonofsSubcommand::Init { system_path }) => {
+            tracing::info!("Initializing monofs project...");
+            management::init_fs(system_path).await?;
+            tracing::info!("Successfully initialized monofs project");
         }
         Some(_) => (), // TODO: implement other subcommands
         None => {
-            MonocoreArgs::command().print_help()?;
+            MonofsArgs::command().print_help()?;
         }
     }
 

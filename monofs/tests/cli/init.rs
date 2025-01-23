@@ -1,6 +1,8 @@
 //--------------------------------------------------------------------------------------------------
-// constants
+// Tests
 //--------------------------------------------------------------------------------------------------
 
-/// Environment variable for the monocore home directory
-pub const MONOCORE_HOME_ENV_VAR: &str = "MONOCORE_HOME";
+#[tokio::test]
+async fn test_init() -> anyhow::Result<()> {
+    Ok(())
+}

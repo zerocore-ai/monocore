@@ -18,16 +18,16 @@ use super::constants::DEFAULT_MAX_CHUNK_SIZE;
 ///
 /// ```text
 /// Input Data:
-/// ┌────────────────────────────────────────────────────────────┐
-/// │ Lorem ipsum dolor sit amet, consectetur adipiscing elit.   │
-/// └────────────────────────────────────────────────────────────┘
+/// ┌────────────────────────────────────────────────────┐
+/// │ Lorem ipsum dolor sit amet, consectetur adipiscing │
+/// └────────────────────────────────────────────────────┘
 ///
 /// FixedSizeChunker (chunk_size = 10):
-/// ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐
-/// │Lorem ipsu│ │m dolor si│ │t amet, co│ │nsectetur │ │adipiscing│ │ elit.  │
-/// └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘ └────────┘
-///    Chunk 1     Chunk 2      Chunk 3      Chunk 4      Chunk 5     Chunk 6
-///  (10 bytes)   (10 bytes)   (10 bytes)   (10 bytes)   (10 bytes)  (6 bytes)
+/// ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+/// │Lorem ipsu│ │m dolor si│ │t amet, co│ │nsectetur │ │adipiscing│
+/// └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
+///    Chunk 1     Chunk 2      Chunk 3      Chunk 4      Chunk 5
+///  (10 bytes)   (10 bytes)   (10 bytes)   (10 bytes)   (10 bytes)
 /// ```
 #[derive(Clone, Debug)]
 pub struct FixedSizeChunker {

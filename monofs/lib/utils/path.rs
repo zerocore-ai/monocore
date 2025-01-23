@@ -2,7 +2,20 @@
 
 use typed_path::Utf8UnixPath;
 
-use crate::filesystem::{FsError, FsResult, Utf8UnixPathSegment};
+use crate::{filesystem::Utf8UnixPathSegment, FsError, FsResult};
+
+//--------------------------------------------------------------------------------------------------
+// Constants
+//--------------------------------------------------------------------------------------------------
+
+/// The default suffix of the directory where the actual filesystem data is stored
+pub const MFS_DATA_SUFFIX: &str = ".mfs";
+
+/// The filename of the database that stores the filesystem's metadata
+pub const FS_DB_FILENAME: &str = "fs.db";
+
+/// The name of the symlink that links to the actual filesystem data
+pub const MFS_LINK_FILENAME: &str = ".mfs_link";
 
 //--------------------------------------------------------------------------------------------------
 // Functions

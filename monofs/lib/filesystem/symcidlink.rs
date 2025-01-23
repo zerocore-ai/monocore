@@ -12,7 +12,7 @@ use monoutils_store::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::filesystem::{CidLink, Dir, EntityCidLink, File, FsError, FsResult, Metadata};
+use crate::{filesystem::{CidLink, Dir, EntityCidLink, File, Metadata}, FsError, FsResult};
 
 use super::{entity::Entity, kind::EntityType, MetadataSerializable};
 

@@ -22,7 +22,7 @@
 //! cargo run --example dir_ops
 //! ```
 
-use monofs::filesystem::{Dir, File, FsResult};
+use monofs::filesystem::{Dir, File};
 use monoutils_store::MemoryStore;
 
 //--------------------------------------------------------------------------------------------------
@@ -30,7 +30,7 @@ use monoutils_store::MemoryStore;
 //--------------------------------------------------------------------------------------------------
 
 #[tokio::main]
-async fn main() -> FsResult<()> {
+async fn main() -> anyhow::Result<()> {
     // Create a new MemoryStore
     let store = MemoryStore::default();
 
@@ -51,7 +51,7 @@ async fn main() -> FsResult<()> {
     println!("Created directory: {:?}", dir);
 
     // List contents of root directory
-    let entries = root.list()?;
+    let entries = root.list().collect::<Vec<_>>();
     println!("Root directory contents: {:?}", entries);
 
     // Copy a file

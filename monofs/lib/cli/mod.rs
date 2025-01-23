@@ -1,6 +1,11 @@
+//! Configuration types and helpers.
+
+mod args;
+mod styles;
+
 //--------------------------------------------------------------------------------------------------
-// constants
+// Exports
 //--------------------------------------------------------------------------------------------------
 
-/// Environment variable for the monocore home directory
-pub const MONOCORE_HOME_ENV_VAR: &str = "MONOCORE_HOME";
+pub use args::*;
+pub(crate) use styles::*;

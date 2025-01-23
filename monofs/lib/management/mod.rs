@@ -1,6 +1,9 @@
+//! Management functions.
+
+mod fs;
+
 //--------------------------------------------------------------------------------------------------
-// constants
+// Exports
 //--------------------------------------------------------------------------------------------------
 
-/// Environment variable for the monocore home directory
-pub const MONOCORE_HOME_ENV_VAR: &str = "MONOCORE_HOME";
+pub use fs::*;

@@ -48,10 +48,12 @@
 //! All operations are implemented in a thread-safe manner, allowing concurrent access
 //! from multiple NFS clients.
 
+mod nfs;
 mod server;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
+pub use nfs::*;
 pub use server::*;

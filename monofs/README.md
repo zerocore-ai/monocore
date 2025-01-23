@@ -29,11 +29,11 @@
 
 ## ✨ Features
 
-- 🔄 **Automatic Deduplication**: <sub>Save storage space by storing identical content only once, even across different files and directories</sub>
-- 🔒 **Versioned**: <sub>Every change creates a new version, making it impossible to accidentally lose data</sub>
-- 🌐 **Built for Distribution**: <sub>Perfect for peer-to-peer and decentralized applications with content-addressed storage</sub>
-- ⚡ **Efficient Syncing**: <sub>Only transfer what's changed between versions, saving bandwidth and time</sub>
-- 🛡️ **Data Integrity**: <sub>Content addressing ensures data hasn't been tampered with or corrupted</sub>
+- 🔄 **Automatic Deduplication**: Save storage space by storing identical content only once, even across different files and directories
+- 🔒 **Versioned**: Every change creates a new version, making it impossible to accidentally lose data
+- 🌐 **Built for Distribution**: Perfect for peer-to-peer and decentralized applications with content-addressed storage
+- ⚡ **Efficient Syncing**: Only transfer what's changed between versions, saving bandwidth and time
+- 🛡️ **Data Integrity**: Content addressing ensures data hasn't been tampered with or corrupted
 
 ## 🚀 Getting Started
 
@@ -52,8 +52,8 @@ TODO: Demo of running multiple servers on different paths syncing up with each o
 #### Working with Files
 
 ```rust
-use monofs::filesystem::{File, FileInputStream, FileOutputStream};
-use monoutils_store::{MemoryStore, Storable};
+use monofs::filesystem::File;
+use monoutils_store::MemoryStore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::main]
@@ -64,20 +64,23 @@ async fn main() -> anyhow::Result<()> {
     let mut file = File::new(store.clone());
 
     // Write content to the file
-    let mut output_stream = FileOutputStream::new(&mut file);
+    let mut output_stream = file.get_output_stream();
     output_stream.write_all(b"Hello, monofs!").await?;
     output_stream.shutdown().await?;
 
     // Read content from the file
-    let mut input_stream = FileInputStream::new(&file).await?;
+    let mut input_stream = file.get_input_stream().await?;
     let mut buffer = Vec::new();
     input_stream.read_to_end(&mut buffer).await?;
 
     println!("File content: {}", String::from_utf8_lossy(&buffer));
 
-    // Store the file
-    let file_cid = file.store().await?;
-    println!("Stored file with CID: {}", file_cid);
+    // Drop reader to free up reference to the file
+    drop(input_stream);
+
+    // Persist changes; creates a new version of the file
+    let file_cid = file.checkpoint().await?;
+    println!("Checkpoint file with CID: {}", file_cid);
 
     Ok(())
 }
@@ -87,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
 
 ```rust
 use monofs::filesystem::{Dir, FsResult};
-use monoutils_store::{MemoryStore, Storable};
+use monoutils_store::MemoryStore;
 
 #[tokio::main]
 async fn main() -> FsResult<()> {
@@ -107,9 +110,9 @@ async fn main() -> FsResult<()> {
         println!("- {}: {:?}", name, entity);
     }
 
-    // Store the directory
-    let root_cid = root.store().await?;
-    println!("Stored root directory with CID: {}", root_cid);
+    // Persist changes; creates a new version of the directory
+    let root_cid = root.checkpoint().await?;
+    println!("Checkpoint root directory with CID: {}", root_cid);
 
     Ok(())
 }

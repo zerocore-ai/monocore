@@ -3,7 +3,7 @@ use std::fmt::{self, Debug};
 use monoutils_store::{ipld::cid::Cid, IpldStore, Storable, StoreError, StoreResult};
 use serde::Deserialize;
 
-use crate::filesystem::{self, Dir, File, FsError, FsResult, Metadata, SymCidLink, SymPathLink};
+use crate::{filesystem::{self, Dir, File, Metadata, SymCidLink, SymPathLink}, FsError, FsResult};
 
 //--------------------------------------------------------------------------------------------------
 // Types

@@ -120,6 +120,10 @@ pub enum FsError {
     /// Invalid operation.
     #[error("Invalid operation: {0}")]
     InvalidOperation(String),
+
+    /// IO error.
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
 }
 
 /// An error that can represent any error.

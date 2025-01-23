@@ -57,6 +57,19 @@ where
     C: Chunker,
     L: Layout,
 {
+    /// Creates a new `MemoryStore` with default chunker and layout.
+    pub fn new() -> Self
+    where
+        C: Default,
+        L: Default,
+    {
+        Self {
+            blocks: Arc::new(RwLock::new(HashMap::new())),
+            chunker: C::default(),
+            layout: L::default(),
+        }
+    }
+
     /// Creates a new `MemoryStore` with the given `chunker` and `layout`.
     pub fn with_chunker_and_layout(chunker: C, layout: L) -> Self {
         MemoryStore {

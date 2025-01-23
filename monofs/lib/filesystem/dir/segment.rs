@@ -5,7 +5,7 @@ use std::{
 
 use typed_path::{Utf8UnixComponent, Utf8UnixPath, Utf8UnixPathBuf};
 
-use crate::filesystem::FsError;
+use crate::FsError;
 
 //--------------------------------------------------------------------------------------------------
 // Types

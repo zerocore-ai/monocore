@@ -10,7 +10,7 @@ use monoutils::{EmptySeekableReader, SeekableReader};
 use monoutils_store::{IpldStore, IpldStoreSeekable};
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 
-use crate::filesystem::{File, FsResult};
+use crate::{filesystem::File, FsResult};
 
 //--------------------------------------------------------------------------------------------------
 // Types

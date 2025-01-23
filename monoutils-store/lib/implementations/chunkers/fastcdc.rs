@@ -22,6 +22,7 @@ use super::{
 /// - It can be updated efficiently as new bytes are processed
 /// - It provides good distribution of values for chunk boundary detection
 /// - It is position-sensitive within a 64-byte window
+#[derive(Clone, Debug)]
 pub struct FastHasher {
     /// The gear table maps each possible byte value to a pseudo-random 64-bit number.
     gear_table: [u64; 256],
@@ -58,6 +59,7 @@ pub struct FastHasher {
 ///
 /// [fastcdc]: https://www.usenix.org/system/files/conference/atc16/atc16-paper-xia.pdf
 /// [joshleeb]: https://joshleeb.com/posts/fastcdc.html
+#[derive(Clone, Debug)]
 pub struct FastCDCChunker {
     /// The gear table.
     gear_table: [u64; 256],

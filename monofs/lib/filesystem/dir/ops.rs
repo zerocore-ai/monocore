@@ -2,10 +2,9 @@ use monoutils_store::{ipld::cid::Cid, IpldStore};
 use typed_path::Utf8UnixPath;
 
 use crate::{
-    filesystem::{
-        dir::find, entity::Entity, file::File, FsError, FsResult, SymCidLink, SymPathLink,
-    },
+    filesystem::{dir::find, entity::Entity, file::File, SymCidLink, SymPathLink},
     utils::path,
+    FsError, FsResult,
 };
 
 use super::{Dir, FindResult, Utf8UnixPathSegment};
@@ -135,6 +134,7 @@ where
         path: impl AsRef<str>,
         file: bool,
     ) -> FsResult<&mut Entity<S>> {
+        tracing::info!("find_or_create: path: {:?}, file: {}", path.as_ref(), file);
         let path = Utf8UnixPath::new(path.as_ref());
 
         if path.has_root() {
@@ -207,16 +207,28 @@ where
 
     /// Creates a file at the specified path.
     #[inline]
-    pub async fn create_file(&mut self, path: impl AsRef<str>) -> FsResult<&mut Entity<S>> {
-        self.create_entity(path, File::new(self.get_store().clone()))
-            .await
+    pub async fn create_file(&mut self, path: impl AsRef<str>) -> FsResult<&mut File<S>> {
+        tracing::info!("create_file: path: {:?}", path.as_ref());
+        match self
+            .create_entity(path, File::new(self.get_store().clone()))
+            .await?
+        {
+            Entity::File(file) => Ok(file),
+            _ => unreachable!(),
+        }
     }
 
     /// Creates a directory at the specified path.
     #[inline]
-    pub async fn create_dir(&mut self, path: impl AsRef<str>) -> FsResult<&mut Entity<S>> {
-        self.create_entity(path, Dir::new(self.get_store().clone()))
-            .await
+    pub async fn create_dir(&mut self, path: impl AsRef<str>) -> FsResult<&mut Dir<S>> {
+        tracing::info!("create_dir: path: {:?}", path.as_ref());
+        match self
+            .create_entity(path, Dir::new(self.get_store().clone()))
+            .await?
+        {
+            Entity::Dir(dir) => Ok(dir),
+            _ => unreachable!(),
+        }
     }
 
     /// Creates a symbolic path link at the specified path.
@@ -225,12 +237,22 @@ where
         &mut self,
         path: impl AsRef<str>,
         target: impl AsRef<str>,
-    ) -> FsResult<&mut Entity<S>> {
-        self.create_entity(
-            path,
-            SymPathLink::with_path(self.get_store().clone(), target)?,
-        )
-        .await
+    ) -> FsResult<&mut SymPathLink<S>> {
+        tracing::info!(
+            "create_sympathlink: path: {:?}, target: {:?}",
+            path.as_ref(),
+            target.as_ref()
+        );
+        match self
+            .create_entity(
+                path,
+                SymPathLink::with_path(self.get_store().clone(), target)?,
+            )
+            .await?
+        {
+            Entity::SymPathLink(link) => Ok(link),
+            _ => unreachable!(),
+        }
     }
 
     /// Creates a symbolic CID link at the specified path.
@@ -239,9 +261,19 @@ where
         &mut self,
         path: impl AsRef<str>,
         cid: Cid,
-    ) -> FsResult<&mut Entity<S>> {
-        self.create_entity(path, SymCidLink::with_cid(self.get_store().clone(), cid))
-            .await
+    ) -> FsResult<&mut SymCidLink<S>> {
+        tracing::info!(
+            "create_symcidlink: path: {:?}, cid: {:?}",
+            path.as_ref(),
+            cid
+        );
+        match self
+            .create_entity(path, SymCidLink::with_cid(self.get_store().clone(), cid))
+            .await?
+        {
+            Entity::SymCidLink(link) => Ok(link),
+            _ => unreachable!(),
+        }
     }
 
     /// Lists all entries in the current directory.
@@ -259,7 +291,7 @@ where
     /// dir.find_or_create("bar.txt", true).await?;
     /// dir.find_or_create("baz/qux.txt", true).await?;
     ///
-    /// let entries = dir.list()?;
+    /// let entries = dir.list().collect::<Vec<_>>();
     /// assert_eq!(entries.len(), 3);
     /// assert!(entries.contains(&"foo".parse()?));
     /// assert!(entries.contains(&"bar.txt".parse()?));
@@ -267,8 +299,9 @@ where
     /// # Ok(())
     /// # }
     /// ```
-    pub fn list(&self) -> FsResult<Vec<Utf8UnixPathSegment>> {
-        Ok(self.get_entries().map(|(k, _)| k.clone()).collect())
+    pub fn list(&self) -> impl Iterator<Item = Utf8UnixPathSegment> + '_ {
+        tracing::info!("list");
+        self.get_entries().map(|(k, _)| k.clone())
     }
 
     /// Copies an entity from the source path to the target **directory**.
@@ -294,6 +327,11 @@ where
     /// # }
     /// ```
     pub async fn copy(&mut self, source: impl AsRef<str>, target: impl AsRef<str>) -> FsResult<()> {
+        tracing::info!(
+            "copy: source: {:?}, target: {:?}",
+            source.as_ref(),
+            target.as_ref()
+        );
         let source = Utf8UnixPath::new(source.as_ref());
         let target = Utf8UnixPath::new(target.as_ref());
 
@@ -362,6 +400,7 @@ where
     /// # }
     /// ```
     pub async fn remove(&mut self, path: impl AsRef<str>) -> FsResult<()> {
+        tracing::info!("remove: path: {:?}", path.as_ref());
         let path = Utf8UnixPath::new(path.as_ref());
 
         if path.has_root() {
@@ -418,6 +457,11 @@ where
         old_path: impl AsRef<str>,
         new_path: impl AsRef<str>,
     ) -> FsResult<()> {
+        tracing::info!(
+            "rename: old_path: {:?}, new_path: {:?}",
+            old_path.as_ref(),
+            new_path.as_ref()
+        );
         let old_path = Utf8UnixPath::new(old_path.as_ref());
         let new_path = Utf8UnixPath::new(new_path.as_ref());
 
@@ -496,9 +540,7 @@ mod tests {
     use monoutils_store::{ipld::cid::Cid, MemoryStore, Storable};
     use tokio::io::AsyncReadExt;
 
-    use crate::filesystem::{
-        symcidlink::SymCidLink, sympathlink::SymPathLink, Dir, Entity, File, FsError,
-    };
+    use crate::filesystem::{symcidlink::SymCidLink, sympathlink::SymPathLink, Dir, Entity, File};
 
     use super::*;
 
@@ -625,7 +667,7 @@ mod tests {
         dir.find_or_create("baz/qux.txt", true).await?;
 
         // List entries
-        let entries = dir.list()?;
+        let entries = dir.list().collect::<Vec<_>>();
 
         assert_eq!(entries.len(), 3);
         assert!(entries.contains(&"foo".parse()?));
@@ -803,13 +845,13 @@ mod tests {
         ));
 
         // List contents of directories
-        let root_contents = root.list()?;
+        let root_contents = root.list().collect::<Vec<_>>();
         assert_eq!(root_contents.len(), 2);
         assert!(root_contents.contains(&"projects".parse()?));
         assert!(root_contents.contains(&"documents".parse()?));
 
         if let Some(Entity::Dir(projects_dir)) = root.find("projects").await? {
-            let projects_contents = projects_dir.list()?;
+            let projects_contents = projects_dir.list().collect::<Vec<_>>();
             assert_eq!(projects_contents.len(), 2);
             assert!(projects_contents.contains(&"web".parse()?));
             assert!(projects_contents.contains(&"app".parse()?));

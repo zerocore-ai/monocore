@@ -1,8 +1,7 @@
 use crate::MonocoreResult;
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::{fs, io::AsyncWriteExt};
-use typed_path::Utf8UnixPathBuf;
 
 use crate::utils::path::{ACTIVE_DB_FILENAME, LOG_SUBDIR, MONOCORE_ENV_DIR};
 
@@ -69,9 +68,9 @@ sandboxes: []
 
 // TODO: init should add .menv to .gitignore or create it if it doesn't exist
 /// Initialize a new monocore environment at the specified path
-pub async fn init_env(path: Option<Utf8UnixPathBuf>) -> MonocoreResult<()> {
+pub async fn init_env(path: Option<PathBuf>) -> MonocoreResult<()> {
     // Get the target path, defaulting to current directory if none specified
-    let target_path = path.unwrap_or_else(|| Utf8UnixPathBuf::from("."));
+    let target_path = path.unwrap_or_else(|| PathBuf::from("."));
 
     // Create .menv directory structure
     create_env_dirs(&target_path).await?;
@@ -86,41 +85,39 @@ pub async fn init_env(path: Option<Utf8UnixPathBuf>) -> MonocoreResult<()> {
 }
 
 /// Create the required directories for a monocore environment
-async fn create_env_dirs(base_path: &Utf8UnixPathBuf) -> MonocoreResult<()> {
+async fn create_env_dirs(base_path: &Path) -> MonocoreResult<()> {
     let menv_path = base_path.join(MONOCORE_ENV_DIR);
-    let menv_path_std = Path::new(menv_path.as_str());
 
     // Create main .menv directory
-    fs::create_dir_all(menv_path_std).await?;
+    fs::create_dir_all(&menv_path).await?;
 
     // Create log directory
-    fs::create_dir_all(menv_path_std.join(LOG_SUBDIR)).await?;
+    fs::create_dir_all(menv_path.join(LOG_SUBDIR)).await?;
 
-    // We'll create filesystems directory later when monofs is ready
-    // fs::create_dir_all(menv_path.join(FILESYSTEMS_SUBDIR)).await?;
+    // We'll create rootfs directory later when monofs is ready
+    // fs::create_dir_all(menv_path.join(ROOTS_SUBDIR)).await?;
 
     Ok(())
 }
 
 /// Initialize the active database with schema
-async fn init_active_db(base_path: &Utf8UnixPathBuf) -> MonocoreResult<()> {
+async fn init_active_db(base_path: &Path) -> MonocoreResult<()> {
     let db_path = base_path.join(MONOCORE_ENV_DIR).join(ACTIVE_DB_FILENAME);
-    let db_path_std = Path::new(db_path.as_str());
 
     // Only initialize if database doesn't exist
-    if !db_path_std.exists() {
+    if !db_path.exists() {
         // Ensure parent directory exists
-        if let Some(parent) = db_path_std.parent() {
+        if let Some(parent) = db_path.parent() {
             fs::create_dir_all(parent).await?;
         }
 
         // Create an empty database file
-        fs::File::create(db_path_std).await?;
+        fs::File::create(&db_path).await?;
 
         // Create database connection pool
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(&format!("sqlite://{}?mode=rwc", db_path.as_str()))
+            .connect(&format!("sqlite://{}?mode=rwc", db_path.display()))
             .await?;
 
         // Initialize schema
@@ -131,13 +128,12 @@ async fn init_active_db(base_path: &Utf8UnixPathBuf) -> MonocoreResult<()> {
 }
 
 /// Create a default monocore.yaml configuration file
-async fn create_default_config(base_path: &Utf8UnixPathBuf) -> MonocoreResult<()> {
+async fn create_default_config(base_path: &Path) -> MonocoreResult<()> {
     let config_path = base_path.join("monocore.yaml");
-    let config_path_std = Path::new(config_path.as_str());
 
     // Only create if it doesn't exist
-    if !config_path_std.exists() {
-        let mut file = fs::File::create(config_path_std).await?;
+    if !config_path.exists() {
+        let mut file = fs::File::create(&config_path).await?;
         file.write_all(DEFAULT_CONFIG.as_bytes()).await?;
     }
 
@@ -145,12 +141,12 @@ async fn create_default_config(base_path: &Utf8UnixPathBuf) -> MonocoreResult<()
 }
 
 /// Get a connection pool to the active database
-pub async fn get_active_db_pool(base_path: &Utf8UnixPathBuf) -> MonocoreResult<Pool<Sqlite>> {
+pub async fn get_active_db_pool(base_path: &Path) -> MonocoreResult<Pool<Sqlite>> {
     let db_path = base_path.join(MONOCORE_ENV_DIR).join(ACTIVE_DB_FILENAME);
 
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(&format!("sqlite://{}?mode=rwc", db_path.as_str()))
+        .connect(&format!("sqlite://{}?mode=rwc", db_path.display()))
         .await?;
 
     Ok(pool)
