@@ -130,9 +130,21 @@ pub trait IpldStore: RawStore + Clone {
 }
 
 /// A trait for stores that support raw blocks.
+///
+/// ## Important
+///
+/// This is a low-level API intended for code implementing an [`IpldStore`].
+/// Users should prefer the higher-level methods from [`IpldStore`] instead:
+/// - Use [`IpldStore::put_bytes`]/[`IpldStore::get_bytes`] for raw bytes
+/// - Use [`IpldStore::put_node`]/[`IpldStore::get_node`] for structured data
 pub trait RawStore: Clone {
-    /// Tries to save `bytes` as a single block to the store. Unlike `put_bytes`, this method does
-    /// not chunk the data and does not create intermediate merkle nodes.
+    /// Tries to save `bytes` as a single block to the store. Unlike [`IpldStore::put_bytes`], this
+    /// method does not chunk the data and does not create intermediate merkle nodes.
+    ///
+    /// ## Important
+    ///
+    /// This is a low-level API intended for code implementing an [`IpldStore`].
+    /// Users should prefer [`IpldStore::put_bytes`] or [`IpldStore::put_node`] instead.
     ///
     /// ## Errors
     ///
@@ -144,8 +156,13 @@ pub trait RawStore: Clone {
 
     /// Retrieves raw bytes of a single block from the store by its `Cid`.
     ///
-    /// Unlike `get_stream`, this method does not expect chunked data and does not have to retrieve
-    /// intermediate merkle nodes.
+    /// Unlike [`IpldStore::get_bytes`], this method does not expect chunked data and does not have
+    /// to retrieve intermediate merkle nodes.
+    ///
+    /// ## Important
+    ///
+    /// This is a low-level API intended for code implementing an [`IpldStore`].
+    /// Users should prefer [`IpldStore::get_bytes`] or [`IpldStore::get_node`] instead.
     ///
     /// ## Errors
     ///

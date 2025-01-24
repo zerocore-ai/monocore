@@ -1,7 +1,29 @@
+//! This example demonstrates running a simple NFS server using monofs.
+//!
+//! The example shows how to:
+//! - Set up and configure an NFS server
+//! - Serve a monofs filesystem over NFS
+//! - Handle server configuration options
+//!
+//! Operations demonstrated:
+//! 1. Parsing command line arguments for server configuration
+//! 2. Setting up the NFS server
+//! 3. Binding to a specified port
+//! 4. Serving the filesystem
+//!
+//! To run the example:
+//! ```bash
+//! cargo run --example nfs -- --path /path/to/store --port 2049
+//! ```
+
 use anyhow::Result;
 use clap::Parser;
 use monofs::server::MonofsServer;
 use std::path::PathBuf;
+
+//--------------------------------------------------------------------------------------------------
+// Types
+//--------------------------------------------------------------------------------------------------
 
 /// Simple NFS server that serves the monofs filesystem.
 #[derive(Parser, Debug)]
@@ -18,6 +40,10 @@ struct Args {
     #[arg(short, long, default_value_t = 2049)]
     port: u32,
 }
+
+//--------------------------------------------------------------------------------------------------
+// Functions: main
+//--------------------------------------------------------------------------------------------------
 
 #[tokio::main]
 async fn main() -> Result<()> {

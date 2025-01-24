@@ -18,7 +18,7 @@
 //!
 //! To run the example:
 //! ```bash
-//! cargo run --example file_ops
+//! cargo run --example file
 //! ```
 
 use monofs::filesystem::File;
@@ -26,7 +26,7 @@ use monoutils_store::{MemoryStore, Storable};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
 //--------------------------------------------------------------------------------------------------
-// Function: main
+// Functions: main
 //--------------------------------------------------------------------------------------------------
 
 #[tokio::main]

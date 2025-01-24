@@ -6,10 +6,11 @@ use monoutils::SeekableReader;
 use monoutils_store::{
     codetable::{Code, MultihashDigest},
     ipld::cid::Cid,
+    FastCDCChunker, FixedSizeChunker,
 };
 use monoutils_store::{
-    Chunker, Codec, FixedSizeChunker, FlatLayout, IpldReferences, IpldStore, IpldStoreSeekable,
-    Layout, LayoutSeekable, RawStore, StoreError, StoreResult,
+    Chunker, Codec, FlatLayout, IpldReferences, IpldStore, IpldStoreSeekable, Layout,
+    LayoutSeekable, RawStore, StoreError, StoreResult,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::fs::{create_dir_all, File};
@@ -85,7 +86,7 @@ pub enum DirLevels {
 /// The default one-level structure is the most common approach, used by systems like IPFS and Git,
 /// providing a good balance between directory depth and file distribution (1024 possible subdirectories).
 #[derive(Debug, Clone)]
-pub struct FlatFsStore<C = FixedSizeChunker, L = FlatLayout>
+pub struct FlatFsStore<C = FastCDCChunker, L = FlatLayout>
 where
     C: Chunker,
     L: Layout,
@@ -95,6 +96,12 @@ where
     chunker: C,
     layout: L,
 }
+
+/// A [`FlatFsStore`] with a [`FastCDCChunker`] and [`FlatLayout`].
+pub type FlatFsStoreDefault = FlatFsStore<FastCDCChunker, FlatLayout>;
+
+/// A [`FlatFsStore`] with a [`FixedSizeChunker`] and [`FlatLayout`].
+pub type FlatFsStoreFixed = FlatFsStore<FixedSizeChunker, FlatLayout>;
 
 //--------------------------------------------------------------------------------------------------
 // Methods: FlatFsStore
@@ -208,18 +215,18 @@ where
     where
         T: Serialize + IpldReferences + Sync,
     {
-        // Serialize the data to bytes.
-        let bytes = Bytes::from(serde_ipld_dagcbor::to_vec(&data).map_err(StoreError::custom)?);
+        // Serialize the data to CBOR bytes
+        let bytes = serde_ipld_dagcbor::to_vec(&data).map_err(StoreError::custom)?;
 
-        // Check if the data exceeds the node maximum block size.
+        // Check if the data exceeds the node maximum block size
         if let Some(max_size) = self.get_node_block_max_size() {
             if bytes.len() as u64 > max_size {
                 return Err(StoreError::NodeBlockTooLarge(bytes.len() as u64, max_size));
             }
         }
 
-        // Store the block
-        let cid = self.make_cid(Codec::DagCbor, bytes.as_ref());
+        // Create CID and store the block
+        let cid = self.make_cid(Codec::DagCbor, &bytes);
         let block_path = self.get_block_path(&cid);
 
         self.ensure_directories(&block_path).await?;
@@ -238,7 +245,7 @@ where
         let chunk_stream = self.chunker.chunk(reader).await?;
         let mut cid_stream = self.layout.organize(chunk_stream, self.clone()).await?;
 
-        // Take the last `Cid` from the stream.
+        // Take the last CID from the stream
         let mut cid = cid_stream.next().await.unwrap()?;
         while let Some(result) = cid_stream.next().await {
             cid = result?;
@@ -253,10 +260,7 @@ where
     {
         let bytes = self.get_raw_block(cid).await?;
         match cid.codec().try_into()? {
-            Codec::DagCbor => {
-                let data = serde_ipld_dagcbor::from_slice(&bytes).map_err(StoreError::custom)?;
-                Ok(data)
-            }
+            Codec::DagCbor => serde_ipld_dagcbor::from_slice(&bytes).map_err(StoreError::custom),
             codec => Err(StoreError::UnexpectedBlockCodec(Codec::DagCbor, codec)),
         }
     }
@@ -278,8 +282,8 @@ where
 
     fn get_supported_codecs(&self) -> HashSet<Codec> {
         let mut codecs = HashSet::new();
-        codecs.insert(Codec::DagCbor);
         codecs.insert(Codec::Raw);
+        codecs.insert(Codec::DagCbor);
         codecs
     }
 
@@ -602,9 +606,7 @@ mod fixtures {
     use super::*;
 
     // Helper function to create a store with a temporary directory
-    pub(super) async fn setup_store(
-        dir_levels: DirLevels,
-    ) -> (FlatFsStore<FixedSizeChunker, FlatLayout>, TempDir) {
+    pub(super) async fn setup_store(dir_levels: DirLevels) -> (FlatFsStoreDefault, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let store = FlatFsStore::with_dir_levels(temp_dir.path().to_str().unwrap(), dir_levels);
         (store, temp_dir)

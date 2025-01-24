@@ -19,14 +19,14 @@
 //!
 //! To run the example:
 //! ```bash
-//! cargo run --example dir_ops
+//! cargo run --example dir
 //! ```
 
 use monofs::filesystem::{Dir, File};
 use monoutils_store::MemoryStore;
 
 //--------------------------------------------------------------------------------------------------
-// Function: main
+// Functions: main
 //--------------------------------------------------------------------------------------------------
 
 #[tokio::main]
