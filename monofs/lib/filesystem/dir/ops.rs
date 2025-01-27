@@ -176,7 +176,7 @@ where
         path: impl AsRef<str>,
         file: bool,
     ) -> FsResult<&mut Entity<S>> {
-        tracing::info!("find_or_create: path: {:?}, file: {}", path.as_ref(), file);
+        tracing::trace!("find_or_create: path: {:?}, file: {}", path.as_ref(), file);
         let path = Utf8UnixPath::new(path.as_ref());
 
         if path.has_root() {
@@ -250,7 +250,7 @@ where
     /// Creates a file at the specified path.
     #[inline]
     pub async fn create_file(&mut self, path: impl AsRef<str>) -> FsResult<&mut File<S>> {
-        tracing::info!("create_file: path: {:?}", path.as_ref());
+        tracing::trace!("create_file: path: {:?}", path.as_ref());
         match self
             .create_entity(path, File::new(self.get_store().clone()))
             .await?
@@ -263,7 +263,7 @@ where
     /// Creates a directory at the specified path.
     #[inline]
     pub async fn create_dir(&mut self, path: impl AsRef<str>) -> FsResult<&mut Dir<S>> {
-        tracing::info!("create_dir: path: {:?}", path.as_ref());
+        tracing::trace!("create_dir: path: {:?}", path.as_ref());
         match self
             .create_entity(path, Dir::new(self.get_store().clone()))
             .await?
@@ -280,7 +280,7 @@ where
         path: impl AsRef<str>,
         target: impl AsRef<str>,
     ) -> FsResult<&mut SymPathLink<S>> {
-        tracing::info!(
+        tracing::trace!(
             "create_sympathlink: path: {:?}, target: {:?}",
             path.as_ref(),
             target.as_ref()
@@ -304,7 +304,7 @@ where
         path: impl AsRef<str>,
         cid: Cid,
     ) -> FsResult<&mut SymCidLink<S>> {
-        tracing::info!(
+        tracing::trace!(
             "create_symcidlink: path: {:?}, cid: {:?}",
             path.as_ref(),
             cid
@@ -342,7 +342,7 @@ where
     /// # }
     /// ```
     pub fn list(&self) -> impl Iterator<Item = Utf8UnixPathSegment> + '_ {
-        tracing::info!("list");
+        tracing::trace!("list");
         self.get_entries().map(|(k, _)| k.clone())
     }
 
@@ -369,7 +369,7 @@ where
     /// # }
     /// ```
     pub async fn copy(&mut self, source: impl AsRef<str>, target: impl AsRef<str>) -> FsResult<()> {
-        tracing::info!(
+        tracing::trace!(
             "copy: source: {:?}, target: {:?}",
             source.as_ref(),
             target.as_ref()
@@ -442,7 +442,7 @@ where
     /// # }
     /// ```
     pub async fn remove(&mut self, path: impl AsRef<str>) -> FsResult<()> {
-        tracing::info!("remove: path: {:?}", path.as_ref());
+        tracing::trace!("remove: path: {:?}", path.as_ref());
         let path = Utf8UnixPath::new(path.as_ref());
 
         if path.has_root() {
@@ -499,7 +499,7 @@ where
         old_path: impl AsRef<str>,
         new_path: impl AsRef<str>,
     ) -> FsResult<()> {
-        tracing::info!(
+        tracing::trace!(
             "rename: old_path: {:?}, new_path: {:?}",
             old_path.as_ref(),
             new_path.as_ref()

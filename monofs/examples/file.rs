@@ -45,10 +45,10 @@ async fn main() -> anyhow::Result<()> {
     let content = b"Hello, monofs!";
     let mut output_stream = file.get_output_stream();
     output_stream.write_all(content).await?;
-    output_stream.shutdown().await?;
+    output_stream.flush().await?;
+    drop(output_stream);
     println!("Wrote content to file");
 
-    drop(output_stream);
 
     // Read content from the file
     let input_stream = file.get_input_stream().await?;

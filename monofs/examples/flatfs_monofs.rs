@@ -123,10 +123,8 @@ async fn perform_example_operations<S: IpldStore + Send + Sync + 'static>(
     output
         .write_all(b"# Documentation\n\nWelcome to the docs!")
         .await?;
-    output.shutdown().await?;
+    output.flush().await?;
     drop(output);
-
-    // output.flush().await?; // TODO
 
     let docs = root.find_mut("docs").await?.unwrap();
     if let Entity::Dir(ref mut docs_dir) = docs {
@@ -139,7 +137,7 @@ async fn perform_example_operations<S: IpldStore + Send + Sync + 'static>(
     output
         .write_all(b"{\n  \"version\": \"1.0.0\",\n  \"name\": \"flat-monofs\"\n}")
         .await?;
-    output.shutdown().await?;
+    output.flush().await?;
     drop(output);
 
     let configs = root.find_or_create("data/configs", false).await?;
@@ -153,7 +151,7 @@ async fn perform_example_operations<S: IpldStore + Send + Sync + 'static>(
     output
         .write_all(b"fn main() {\n    println!(\"Hello from flat-monofs!\");\n}")
         .await?;
-    output.shutdown().await?;
+    output.flush().await?;
     drop(output);
 
     let rust = root.find_or_create("projects/rust", false).await?;
