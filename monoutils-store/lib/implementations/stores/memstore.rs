@@ -270,8 +270,6 @@ impl Default for MemoryStore {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
     use crate::DEFAULT_MAX_CHUNK_SIZE;
 
     use super::fixtures::TestNode;
@@ -309,7 +307,7 @@ mod tests {
             .map(|i| (i % 255) as u8)
             .collect();
 
-        let cid = store.put_bytes(Cursor::new(data.clone())).await?; // TODO: Hate this clone
+        let cid = store.put_bytes(data.as_slice()).await?;
 
         // Verify the size matches
         let size = store.get_bytes_size(&cid).await?;

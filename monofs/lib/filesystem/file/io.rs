@@ -17,15 +17,6 @@ use crate::filesystem::File;
 // Types
 //--------------------------------------------------------------------------------------------------
 
-/// State machine for tracking shutdown progress
-#[derive(Default)]
-enum ShutdownState<'a> {
-    #[default]
-    NotStarted,
-    Running(BoxFuture<'a, io::Result<Option<Cid>>>),
-    Done,
-}
-
 /// A stream for reading from a `File` asynchronously.
 pub struct FileInputStream<'a> {
     reader: Pin<Box<dyn SeekableReader + Send + 'a>>,
@@ -38,7 +29,16 @@ where
 {
     file: &'a mut File<S>,
     buffer: Vec<u8>,
-    shutdown_state: ShutdownState<'a>,
+    flush_state: FlushState<'a>,
+}
+
+/// State machine for tracking flush progress
+#[derive(Default)]
+enum FlushState<'a> {
+    #[default]
+    NotStarted,
+    Running(BoxFuture<'a, io::Result<Option<Cid>>>),
+    Done,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -93,7 +93,7 @@ where
         Self {
             file,
             buffer: Vec::new(),
-            shutdown_state: ShutdownState::NotStarted,
+            flush_state: FlushState::NotStarted,
         }
     }
 }
@@ -135,17 +135,10 @@ where
         Poll::Ready(Ok(buf.len()))
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), io::Error>> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         loop {
-            match &mut self.shutdown_state {
-                ShutdownState::NotStarted => {
+            match &mut self.flush_state {
+                FlushState::NotStarted => {
                     let buffer = std::mem::take(&mut self.buffer);
                     let store = self.file.get_store().clone();
                     let fut = async move {
@@ -162,28 +155,32 @@ where
                         }
                     }
                     .boxed();
-                    self.shutdown_state = ShutdownState::Running(fut);
+                    self.flush_state = FlushState::Running(fut);
                 }
-                ShutdownState::Running(fut) => match fut.as_mut().poll(cx) {
+                FlushState::Running(fut) => match fut.as_mut().poll(cx) {
                     Poll::Pending => return Poll::Pending,
                     Poll::Ready(Ok(maybe_cid)) => {
                         if let Some(cid) = maybe_cid {
                             self.file.set_content(Some(cid));
                             self.file.get_metadata_mut().set_modified_at(Utc::now());
                         }
-                        self.shutdown_state = ShutdownState::Done;
+                        self.flush_state = FlushState::Done;
                         continue;
                     }
                     Poll::Ready(Err(e)) => {
-                        self.shutdown_state = ShutdownState::Done;
+                        self.flush_state = FlushState::Done;
                         return Poll::Ready(Err(e));
                     }
                 },
-                ShutdownState::Done => {
+                FlushState::Done => {
                     return Poll::Ready(Ok(()));
                 }
             }
         }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        self.poll_flush(cx)
     }
 }
 

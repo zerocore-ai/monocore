@@ -675,7 +675,7 @@ where
                 }
 
                 // Finalize the write
-                output.shutdown().await.map_err(|e| {
+                output.flush().await.map_err(|e| {
                     tracing::error!("Failed to finalize write: {}", e);
                     nfsstat3::NFS3ERR_IO
                 })?;
