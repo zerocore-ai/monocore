@@ -413,7 +413,7 @@ where
     }
 
     async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
-        tracing::info!("lookup: dirid: {}, filename: {}", dirid, filename);
+        tracing::trace!("lookup: dirid: {}, filename: {}", dirid, filename);
 
         // Convert filename bytes to string, ensuring valid UTF-8
         let filename_str = str::from_utf8(filename).map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
@@ -429,7 +429,7 @@ where
         // Get root directory
         let root = self.root.lock().await;
 
-        tracing::info!("parent_path: {}", parent_path);
+        tracing::trace!("parent_path: {}", parent_path);
 
         // Get parent directory - handle root directory case specially
         let parent_dir = if parent_path.is_empty() {
@@ -457,7 +457,7 @@ where
     }
 
     async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
-        tracing::info!("getattr: id: {}", id);
+        tracing::trace!("getattr: id: {}", id);
 
         // Get path from fileid
         let path = self.fileid_to_path(id).await?;
@@ -478,7 +478,7 @@ where
     }
 
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
-        tracing::info!("setattr: id: {}, setattr: {:?}", id, setattr);
+        tracing::trace!("setattr: id: {}, setattr: {:?}", id, setattr);
 
         // Get path from fileid
         let path = self.fileid_to_path(id).await?;
@@ -508,7 +508,7 @@ where
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        tracing::info!("read: id: {}, offset: {}, count: {}", id, offset, count);
+        tracing::trace!("read: id: {}, offset: {}, count: {}", id, offset, count);
 
         // Get path from fileid
         let path = self.fileid_to_path(id).await?;
@@ -570,7 +570,7 @@ where
     }
 
     async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
-        tracing::info!("write: id: {}, offset: {}, data: {:?}", id, offset, data);
+        tracing::trace!("write: id: {}, offset: {}, data: {:?}", id, offset, data);
 
         // Get path from fileid
         let path = self.fileid_to_path(id).await?;
@@ -680,6 +680,8 @@ where
                     nfsstat3::NFS3ERR_IO
                 })?;
 
+                drop(output);
+
                 // Get updated attributes
                 let final_size = file.get_size().await.map_err(|e| {
                     tracing::error!("Failed to get final file size: {}", e);
@@ -698,7 +700,7 @@ where
         filename: &filename3,
         attr: sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
-        tracing::info!(
+        tracing::trace!(
             "create: dirid: {}, filename: {:?}, attr: {:?}",
             dirid,
             filename,
@@ -777,7 +779,7 @@ where
         dirid: fileid3,
         filename: &filename3,
     ) -> Result<fileid3, nfsstat3> {
-        tracing::info!(
+        tracing::trace!(
             "create_exclusive: dirid: {}, filename: {:?}",
             dirid,
             filename
@@ -840,7 +842,7 @@ where
         dirid: fileid3,
         dirname: &filename3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
-        tracing::info!("mkdir: dirid: {}, dirname: {:?}", dirid, dirname);
+        tracing::trace!("mkdir: dirid: {}, dirname: {:?}", dirid, dirname);
         // Convert dirname bytes to string, ensuring valid UTF-8
         let dirname_str = str::from_utf8(dirname).map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
 
@@ -900,7 +902,7 @@ where
     }
 
     async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
-        tracing::info!("remove: dirid: {}, filename: {:?}", dirid, filename);
+        tracing::trace!("remove: dirid: {}, filename: {:?}", dirid, filename);
 
         // Convert filename bytes to string, ensuring valid UTF-8
         let filename_str = str::from_utf8(filename).map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
@@ -930,7 +932,7 @@ where
         to_dirid: fileid3,
         to_filename: &filename3,
     ) -> Result<(), nfsstat3> {
-        tracing::info!(
+        tracing::trace!(
             "rename: from_dirid: {}, from_filename: {:?}, to_dirid: {}, to_filename: {:?}",
             from_dirid,
             from_filename,
@@ -969,7 +971,7 @@ where
         start_after: fileid3,
         max_entries: usize,
     ) -> Result<ReadDirResult, nfsstat3> {
-        tracing::info!(
+        tracing::trace!(
             "readdir: dirid: {}, start_after: {}, max_entries: {}",
             dirid,
             start_after,
@@ -1051,7 +1053,7 @@ where
         symlink: &nfspath3,
         attr: &sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
-        tracing::info!(
+        tracing::trace!(
             "symlink: dirid: {}, linkname: {:?}, symlink: {:?}, attr: {:?}",
             dirid,
             linkname,
@@ -1128,7 +1130,7 @@ where
     }
 
     async fn readlink(&self, id: fileid3) -> Result<nfspath3, nfsstat3> {
-        tracing::info!("readlink: id: {}", id);
+        tracing::trace!("readlink: id: {}", id);
 
         // Get path from fileid
         let path = self.fileid_to_path(id).await?;

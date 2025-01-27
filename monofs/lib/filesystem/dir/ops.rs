@@ -26,11 +26,11 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monofs::filesystem::{Dir, Entity};
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("foo/bar.txt", true).await?;
     ///
@@ -69,11 +69,11 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monofs::filesystem::{Dir, Entity};
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("foo/bar.txt", true).await?;
     ///
@@ -107,28 +107,70 @@ where
     /// Finds an entity in the directory structure or creates it if it doesn't exist.
     ///
     /// This method traverses the directory structure to find the entity specified by the path.
-    /// If the entity doesn't exist, it creates a new file or directory based on the `file` parameter.
+    /// If any part of the path doesn't exist, it will be created. This includes creating all
+    /// necessary parent directories.
+    ///
+    /// ## Arguments
+    /// * `path` - The path to find or create. Can be a single name or a nested path (e.g., "foo/bar/baz.txt")
+    /// * `file` - If true, creates a file at the final path component. If false, creates a directory
     ///
     /// ## Examples
     ///
+    /// Creating nested directories:
     /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monofs::filesystem::{Dir, Entity};
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     ///
-    /// // Create a file
-    /// let file = dir.find_or_create("foo/bar.txt", true).await?;
-    /// assert!(matches!(file, Entity::File(_)));
-    ///
-    /// // Create a directory
-    /// let subdir = dir.find_or_create("baz", false).await?;
-    /// assert!(matches!(subdir, Entity::Dir(_)));
+    /// // Creates all parent directories automatically
+    /// let nested_dir = dir.find_or_create("docs/guides/tutorial", false).await?;
+    /// assert!(matches!(nested_dir, Entity::Dir(_)));
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// Creating a file in a nested path:
+    /// ```
+    /// use monofs::filesystem::{Dir, Entity};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> anyhow::Result<()> {
+    /// # let mut dir = Dir::new(MemoryStore::default());
+    /// // Creates parent directories and the file
+    /// let file = dir.find_or_create("projects/rust/main.rs", true).await?;
+    /// assert!(matches!(file, Entity::File(_)));
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// Finding existing entities:
+    /// ```
+    /// use monofs::filesystem::{Dir, Entity};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> anyhow::Result<()> {
+    /// # let mut dir = Dir::new(MemoryStore::default());
+    /// // Create a file first
+    /// dir.find_or_create("config.json", true).await?;
+    ///
+    /// // Later find the same file
+    /// let existing = dir.find_or_create("config.json", true).await?;
+    /// assert!(matches!(existing, Entity::File(_)));
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## Notes
+    /// - If the path exists but is of a different type (file vs directory), the existing entity
+    ///   will be returned without modification
+    /// - Parent directories are always created as directories, regardless of the `file` parameter
+    /// - The method is atomic - either all parts of the path are created or none are
+    /// - Deleted entities are treated as non-existent and will be recreated
     pub async fn find_or_create(
         &mut self,
         path: impl AsRef<str>,
@@ -281,11 +323,11 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, FsResult};
+    /// use monofs::filesystem::Dir;
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("foo", false).await?;
     /// dir.find_or_create("bar.txt", true).await?;
@@ -311,11 +353,11 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monofs::filesystem::{Dir, Entity};
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("source/file.txt", true).await?;
     /// dir.find_or_create("target", false).await?;
@@ -386,11 +428,11 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monofs::filesystem::{Dir, Entity};
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("foo/bar.txt", true).await?;
     ///
@@ -433,11 +475,11 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monofs::filesystem::{Dir, Entity};
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     ///
     /// // Create a file

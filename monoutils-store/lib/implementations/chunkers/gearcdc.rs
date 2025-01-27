@@ -1,6 +1,7 @@
 use std::pin::pin;
 
 use async_stream::try_stream;
+use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -169,11 +170,12 @@ impl GearHasher {
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
+#[async_trait]
 impl Chunker for GearCDCChunker {
-    async fn chunk<'a>(
+    async fn chunk(
         &self,
-        reader: impl AsyncRead + Send + 'a,
-    ) -> StoreResult<BoxStream<'a, StoreResult<Bytes>>> {
+        reader: impl AsyncRead + Send + Sync + 'life0,
+    ) -> StoreResult<BoxStream<'_, StoreResult<Bytes>>> {
         let mask = Self::size_to_mask(self.desired_chunk_size);
         let gear_table = self.gear_table;
 
@@ -210,8 +212,8 @@ impl Chunker for GearCDCChunker {
         Ok(Box::pin(s))
     }
 
-    fn chunk_max_size(&self) -> Option<u64> {
-        None // Variable-size chunks don't have a fixed maximum size
+    async fn chunk_max_size(&self) -> StoreResult<Option<u64>> {
+        Ok(None) // Variable-size chunks don't have a fixed maximum size
     }
 }
 

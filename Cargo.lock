@@ -1804,6 +1804,7 @@ dependencies = [
  "monoutils",
  "monoutils-store",
  "nfsserve",
+ "pin-project-lite",
  "pretty-error-debug",
  "serde",
  "serde_ipld_dagcbor",
@@ -1847,6 +1848,7 @@ dependencies = [
  "aliasable",
  "anyhow",
  "async-stream",
+ "async-trait",
  "bytes",
  "futures",
  "hex",
@@ -1862,6 +1864,7 @@ dependencies = [
  "thiserror 2.0.6",
  "tokio",
  "tokio-util",
+ "tracing",
 ]
 
 [[package]]

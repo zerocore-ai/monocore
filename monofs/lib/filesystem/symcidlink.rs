@@ -424,12 +424,15 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{SymCidLink, Dir, File, Entity, FsError};
+    /// use monofs::{
+    ///     filesystem::{SymCidLink, Dir, File, Entity},
+    ///     FsError,
+    /// };
     /// use monoutils_store::{MemoryStore, Storable};
     /// use monoutils_store::ipld::cid::Cid;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let store = MemoryStore::default();
     ///
     /// // Create a file
