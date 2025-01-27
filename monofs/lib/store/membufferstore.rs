@@ -1,5 +1,6 @@
 use std::{collections::HashSet, pin::Pin};
 
+use async_trait::async_trait;
 use bytes::Bytes;
 use monoutils_store::{
     ipld::cid::Cid, Codec, DualStore, DualStoreConfig, IpldReferences, IpldStore, MemoryStore,
@@ -48,6 +49,7 @@ where
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
+#[async_trait]
 impl<S> IpldStore for MemoryBufferStore<S>
 where
     S: IpldStore + Sync,
@@ -59,10 +61,7 @@ where
         self.inner.put_node(data).await
     }
 
-    async fn put_bytes<'a>(
-        &'a self,
-        reader: impl AsyncRead + Send + Sync + 'a,
-    ) -> StoreResult<Cid> {
+    async fn put_bytes(&self, reader: impl AsyncRead + Send + Sync) -> StoreResult<Cid> {
         self.inner.put_bytes(reader).await
     }
 
@@ -73,10 +72,7 @@ where
         self.inner.get_node(cid).await
     }
 
-    async fn get_bytes<'a>(
-        &'a self,
-        cid: &'a Cid,
-    ) -> StoreResult<Pin<Box<dyn AsyncRead + Send + Sync + 'a>>> {
+    async fn get_bytes(&self, cid: &Cid) -> StoreResult<Pin<Box<dyn AsyncRead + Send>>> {
         self.inner.get_bytes(cid).await
     }
 
@@ -84,18 +80,16 @@ where
         self.inner.get_bytes_size(cid).await
     }
 
-    #[inline]
     async fn has(&self, cid: &Cid) -> bool {
         self.inner.has(cid).await
     }
 
-    fn get_supported_codecs(&self) -> HashSet<Codec> {
-        self.inner.get_supported_codecs()
+    async fn get_supported_codecs(&self) -> HashSet<Codec> {
+        self.inner.get_supported_codecs().await
     }
 
-    #[inline]
-    fn get_node_block_max_size(&self) -> Option<u64> {
-        self.inner.get_node_block_max_size()
+    async fn get_node_block_max_size(&self) -> StoreResult<Option<u64>> {
+        self.inner.get_node_block_max_size().await
     }
 
     async fn get_block_count(&self) -> StoreResult<u64> {
@@ -103,6 +97,7 @@ where
     }
 }
 
+#[async_trait]
 impl<S> RawStore for MemoryBufferStore<S>
 where
     S: IpldStore + Sync,
@@ -115,8 +110,7 @@ where
         self.inner.get_raw_block(cid).await
     }
 
-    #[inline]
-    fn get_raw_block_max_size(&self) -> Option<u64> {
-        self.inner.get_raw_block_max_size()
+    async fn get_raw_block_max_size(&self) -> StoreResult<Option<u64>> {
+        self.inner.get_raw_block_max_size().await
     }
 }

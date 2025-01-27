@@ -22,14 +22,13 @@
 use anyhow::Result;
 use clap::Parser;
 use monofs::{
-    filesystem::{Dir, File},
+    filesystem::{Dir, Entity, File},
     store::FlatFsStoreDefault,
 };
 use monoutils_store::{ipld::cid::Cid, IpldStore, Storable};
 use std::future::Future;
 use std::pin::Pin;
 use tokio::io::AsyncWriteExt;
-use tracing;
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -56,10 +55,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Initialize logging
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_writer(std::io::stderr)
-        .init();
+    tracing_subscriber::fmt::init();
 
     // Create filesystem directory and blocks subdirectory
     let blocks_path = args.path.join("blocks");
@@ -80,16 +76,36 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Load or create root directory
-    let mut root = if let Some(cid) = head_cid {
+    // Load or create root directory and perform operations
+    let root = if let Some(cid) = head_cid {
         println!("Loading existing filesystem from CID: {}", cid);
         Dir::load(&cid, store.clone()).await?
     } else {
         println!("Creating new filesystem...");
-        Dir::new(store.clone())
+        let mut root = Dir::new(store.clone());
+        perform_example_operations(&mut root).await?;
+
+        // Store the root directory and save its CID
+        let root_cid = root.store().await?;
+        tokio::fs::write(&head_path, root_cid.to_string()).await?;
+        println!("\nStored new filesystem with root CID: {}", root_cid);
+
+        root
     };
 
-    // Demonstrate filesystem operations
+    // Always display the current filesystem structure
+    println!("\nFilesystem contents:");
+    print_dir_contents(&root, 0).await?;
+
+    Ok(())
+}
+
+/// Performs example filesystem operations to demonstrate functionality.
+/// This function is only called when creating a new filesystem (no existing head CID).
+/// It creates a sample directory structure with files and demonstrates basic operations.
+async fn perform_example_operations<S: IpldStore + Send + Sync + 'static>(
+    root: &mut Dir<S>,
+) -> Result<()> {
     println!("\nDemonstrating filesystem operations:");
 
     // 1. Create some directories
@@ -102,44 +118,52 @@ async fn main() -> Result<()> {
     println!("\n2. Creating and writing to files...");
 
     // Create a README in docs
-    let mut readme = File::new(store.clone());
+    let mut readme = File::new(root.get_store().clone());
     let mut output = readme.get_output_stream();
     output
         .write_all(b"# Documentation\n\nWelcome to the docs!")
         .await?;
     output.shutdown().await?;
-    let docs = root.find_or_create("docs", false).await?;
-    if let monofs::filesystem::Entity::Dir(ref mut docs_dir) = docs {
+    drop(output);
+
+    // output.flush().await?; // TODO
+
+    let docs = root.find_mut("docs").await?.unwrap();
+    if let Entity::Dir(ref mut docs_dir) = docs {
         docs_dir.put_adapted_file("README.md", readme).await?;
     }
 
     // Create a config file
-    let mut config = File::new(store.clone());
+    let mut config = File::new(root.get_store().clone());
     let mut output = config.get_output_stream();
     output
         .write_all(b"{\n  \"version\": \"1.0.0\",\n  \"name\": \"flat-monofs\"\n}")
         .await?;
     output.shutdown().await?;
+    drop(output);
+
     let configs = root.find_or_create("data/configs", false).await?;
-    if let monofs::filesystem::Entity::Dir(ref mut configs_dir) = configs {
+    if let Entity::Dir(ref mut configs_dir) = configs {
         configs_dir.put_adapted_file("app.json", config).await?;
     }
 
     // Create a Rust project file
-    let mut main_rs = File::new(store.clone());
+    let mut main_rs = File::new(root.get_store().clone());
     let mut output = main_rs.get_output_stream();
     output
         .write_all(b"fn main() {\n    println!(\"Hello from flat-monofs!\");\n}")
         .await?;
     output.shutdown().await?;
+    drop(output);
+
     let rust = root.find_or_create("projects/rust", false).await?;
-    if let monofs::filesystem::Entity::Dir(ref mut rust_dir) = rust {
+    if let Entity::Dir(ref mut rust_dir) = rust {
         rust_dir.put_adapted_file("main.rs", main_rs).await?;
     }
 
     // 3. List contents recursively
     println!("\n3. Listing filesystem contents:");
-    print_dir_contents(&root, 0).await?;
+    print_dir_contents(root, 0).await?;
 
     // 4. Demonstrate file operations
     println!("\n4. Demonstrating file operations:");
@@ -156,15 +180,6 @@ async fn main() -> Result<()> {
     // Remove a file
     root.remove("projects/rust/main.rs").await?;
     println!("Removed projects/rust/main.rs");
-
-    // 5. Show updated contents
-    println!("\n5. Updated filesystem contents:");
-    print_dir_contents(&root, 0).await?;
-
-    // Store the root directory and save its CID
-    let root_cid = root.store().await?;
-    tokio::fs::write(&head_path, root_cid.to_string()).await?;
-    println!("\nStored filesystem with root CID: {}", root_cid);
 
     Ok(())
 }
@@ -185,11 +200,11 @@ fn print_dir_contents<S: IpldStore + Send + Sync + 'static>(
             let entity = link.resolve_entity(dir.get_store().clone()).await?;
 
             match entity {
-                monofs::filesystem::Entity::Dir(subdir) => {
+                Entity::Dir(subdir) => {
                     println!("{}📁 {}/", indent, name);
                     print_dir_contents(&subdir, depth + 1).await?;
                 }
-                monofs::filesystem::Entity::File(file) => {
+                Entity::File(file) => {
                     let size = file.get_size().await?;
                     println!("{}📄 {} ({} bytes)", indent, name, size);
                 }

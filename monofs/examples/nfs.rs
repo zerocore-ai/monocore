@@ -51,10 +51,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Initialize logging
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_writer(std::io::stderr)
-        .init();
+    tracing_subscriber::fmt::init();
 
     // Create and start the server
     let server = MonofsServer::new(args.store_path, args.host, args.port);

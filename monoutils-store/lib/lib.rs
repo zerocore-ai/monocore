@@ -11,7 +11,7 @@ mod merkle;
 mod references;
 mod storable;
 mod store;
-pub(crate) mod utils;
+pub mod utils;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -25,6 +25,7 @@ pub use merkle::*;
 pub use references::*;
 pub use storable::*;
 pub use store::*;
+pub use utils::*;
 
 //--------------------------------------------------------------------------------------------------
 // Re-Exports

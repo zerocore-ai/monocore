@@ -41,6 +41,7 @@ intaglio = "1.10"
 hex.workspace = true
 tempfile.workspace = true
 clap.workspace = true
+pin-project-lite = "0.2.15"
 
 [dev-dependencies]
 test-log.workspace = true

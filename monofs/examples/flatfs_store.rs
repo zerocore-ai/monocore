@@ -38,10 +38,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Initialize logging
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_writer(std::io::stderr)
-        .init();
+    tracing_subscriber::fmt::init();
 
     // Create store directory and blocks subdirectory
     let blocks_path = args.path.join("blocks");
@@ -151,13 +148,13 @@ async fn main() -> Result<()> {
     println!("  Head CID: {}", cid);
     println!("  Number of content blocks: {}", store_data.data.len());
 
-    let supported_codecs = store.get_supported_codecs();
+    let supported_codecs = store.get_supported_codecs().await;
     println!("  Supported codecs:");
     for codec in supported_codecs {
         println!("    - {:?}", codec);
     }
 
-    if let Some(max_size) = store.get_node_block_max_size() {
+    if let Some(max_size) = store.get_node_block_max_size().await? {
         println!("  Max node block size: {} bytes", max_size);
     }
 

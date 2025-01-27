@@ -10,10 +10,10 @@
 //!   standard NFS operations like file/directory creation, reading, writing, and attribute management.
 //!   The server is generic over the storage backend, allowing different storage implementations.
 //!
-//! - [`MemoryMonofsServer`]: A convenience type alias for a MonofsServer using in-memory storage.
+//! - [`MemoryMonofsNFS`]: A convenience type alias for a MonofsServer using in-memory storage.
 //!   This is primarily useful for testing and development.
 //!
-//! - [`DiskMonofsServer`]: A convenience type alias for a MonofsServer using filesystem-based storage.
+//! - [`DiskMonofsNFS`]: A convenience type alias for a MonofsServer using filesystem-based storage.
 //!   This is the recommended type for production use.
 //!
 //! # Features
@@ -27,11 +27,11 @@
 //! # Examples
 //!
 //! ```no_run
-//! use monofs::server::MemoryMonofsServer;
+//! use monofs::server::MemoryMonofsNFS;
 //! use monoutils_store::MemoryStore;
 //!
 //! // Create an in-memory NFS server
-//! let server = MemoryMonofsServer::new(MemoryStore::default());
+//! let server = MemoryMonofsNFS::new(MemoryStore::default());
 //! ```
 //!
 //! # Implementation Details

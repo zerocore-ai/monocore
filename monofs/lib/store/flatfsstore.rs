@@ -1,19 +1,16 @@
-use std::{collections::HashSet, fs, future::Future, path::PathBuf, pin::Pin};
+use std::{collections::HashSet, path::PathBuf, pin::Pin};
 
+use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
 use monoutils::SeekableReader;
-use monoutils_store::{
-    codetable::{Code, MultihashDigest},
-    ipld::cid::Cid,
-    FastCDCChunker, FixedSizeChunker,
-};
+use monoutils_store::{ipld::cid::Cid, FastCDCChunker, FixedSizeChunker};
 use monoutils_store::{
     Chunker, Codec, FlatLayout, IpldReferences, IpldStore, IpldStoreSeekable, Layout,
     LayoutSeekable, RawStore, StoreError, StoreResult,
 };
 use serde::{de::DeserializeOwned, Serialize};
-use tokio::fs::{create_dir_all, File};
+use tokio::fs::{self, File};
 use tokio::io::AsyncRead;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -187,18 +184,16 @@ where
 
     /// Ensure the parent directories exist for a given block path
     async fn ensure_directories(&self, block_path: &PathBuf) -> StoreResult<()> {
+        tracing::trace!("about to ensure directories: {:?}", block_path);
         if let Some(parent) = block_path.parent() {
-            create_dir_all(parent)
+            tracing::trace!("path parent: {:?}", parent);
+            fs::create_dir_all(parent)
                 .await
                 .map_err(|e| StoreError::custom(e))?;
+            tracing::trace!("created directories");
         }
+        tracing::trace!("done ensuring directories");
         Ok(())
-    }
-
-    /// Create a CID for the given bytes with the specified codec
-    fn make_cid(&self, codec: Codec, bytes: &[u8]) -> Cid {
-        let digest = Code::Blake3_256.digest(bytes);
-        Cid::new_v1(codec.into(), digest)
     }
 }
 
@@ -206,10 +201,11 @@ where
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
+#[async_trait]
 impl<C, L> IpldStore for FlatFsStore<C, L>
 where
-    C: Chunker + Clone + Send + Sync,
-    L: Layout + Clone + Send + Sync,
+    C: Chunker + Clone + Send + Sync + 'static,
+    L: Layout + Clone + Send + Sync + 'static,
 {
     async fn put_node<T>(&self, data: &T) -> StoreResult<Cid>
     where
@@ -219,14 +215,14 @@ where
         let bytes = serde_ipld_dagcbor::to_vec(&data).map_err(StoreError::custom)?;
 
         // Check if the data exceeds the node maximum block size
-        if let Some(max_size) = self.get_node_block_max_size() {
+        if let Some(max_size) = self.get_node_block_max_size().await? {
             if bytes.len() as u64 > max_size {
                 return Err(StoreError::NodeBlockTooLarge(bytes.len() as u64, max_size));
             }
         }
 
         // Create CID and store the block
-        let cid = self.make_cid(Codec::DagCbor, &bytes);
+        let cid = monoutils_store::make_cid(Codec::DagCbor, &bytes);
         let block_path = self.get_block_path(&cid);
 
         self.ensure_directories(&block_path).await?;
@@ -238,10 +234,8 @@ where
         Ok(cid)
     }
 
-    async fn put_bytes<'a>(
-        &'a self,
-        reader: impl AsyncRead + Send + Sync + 'a,
-    ) -> StoreResult<Cid> {
+    async fn put_bytes(&self, reader: impl AsyncRead + Send + Sync) -> StoreResult<Cid> {
+        tracing::trace!("putting bytes");
         let chunk_stream = self.chunker.chunk(reader).await?;
         let mut cid_stream = self.layout.organize(chunk_stream, self.clone()).await?;
 
@@ -265,10 +259,7 @@ where
         }
     }
 
-    async fn get_bytes<'a>(
-        &'a self,
-        cid: &'a Cid,
-    ) -> StoreResult<Pin<Box<dyn AsyncRead + Send + Sync + 'a>>> {
+    async fn get_bytes(&self, cid: &Cid) -> StoreResult<Pin<Box<dyn AsyncRead + Send>>> {
         self.layout.retrieve(cid, self.clone()).await
     }
 
@@ -280,15 +271,15 @@ where
         self.get_block_path(cid).exists()
     }
 
-    fn get_supported_codecs(&self) -> HashSet<Codec> {
+    async fn get_supported_codecs(&self) -> HashSet<Codec> {
         let mut codecs = HashSet::new();
         codecs.insert(Codec::Raw);
         codecs.insert(Codec::DagCbor);
         codecs
     }
 
-    fn get_node_block_max_size(&self) -> Option<u64> {
-        self.chunker.chunk_max_size()
+    async fn get_node_block_max_size(&self) -> StoreResult<Option<u64>> {
+        Ok(self.chunker.chunk_max_size().await?)
     }
 
     async fn get_block_count(&self) -> StoreResult<u64> {
@@ -296,26 +287,41 @@ where
         match self.dir_levels {
             DirLevels::Zero => {
                 // Count all files in the root directory
-                let entries = fs::read_dir(&self.path).map_err(StoreError::custom)?;
-                for entry in entries {
-                    let entry = entry.map_err(StoreError::custom)?;
-                    if entry.file_type().map_err(StoreError::custom)?.is_file() {
+                let mut entries = fs::read_dir(&self.path).await.map_err(StoreError::custom)?;
+                while let Some(entry) = entries.next_entry().await.map_err(StoreError::custom)? {
+                    if entry
+                        .file_type()
+                        .await
+                        .map_err(StoreError::custom)?
+                        .is_file()
+                    {
                         count += 1;
                     }
                 }
             }
             DirLevels::One => {
                 // Count all files in first-level subdirectories
-                let entries = fs::read_dir(&self.path).map_err(StoreError::custom)?;
-                for dir_entry in entries {
-                    let dir_entry = dir_entry.map_err(StoreError::custom)?;
-                    if dir_entry.file_type().map_err(StoreError::custom)?.is_dir() {
-                        let subdir_entries =
-                            fs::read_dir(dir_entry.path()).map_err(StoreError::custom)?;
-                        for file_entry in subdir_entries {
-                            let file_entry = file_entry.map_err(StoreError::custom)?;
+                let mut entries = fs::read_dir(&self.path).await.map_err(StoreError::custom)?;
+                while let Some(dir_entry) =
+                    entries.next_entry().await.map_err(StoreError::custom)?
+                {
+                    if dir_entry
+                        .file_type()
+                        .await
+                        .map_err(StoreError::custom)?
+                        .is_dir()
+                    {
+                        let mut subdir_entries = fs::read_dir(dir_entry.path())
+                            .await
+                            .map_err(StoreError::custom)?;
+                        while let Some(file_entry) = subdir_entries
+                            .next_entry()
+                            .await
+                            .map_err(StoreError::custom)?
+                        {
                             if file_entry
                                 .file_type()
+                                .await
                                 .map_err(StoreError::custom)?
                                 .is_file()
                             {
@@ -327,21 +333,37 @@ where
             }
             DirLevels::Two => {
                 // Count all files in second-level subdirectories
-                let entries = fs::read_dir(&self.path).map_err(StoreError::custom)?;
-                for l1_entry in entries {
-                    let l1_entry = l1_entry.map_err(StoreError::custom)?;
-                    if l1_entry.file_type().map_err(StoreError::custom)?.is_dir() {
-                        let l2_entries =
-                            fs::read_dir(l1_entry.path()).map_err(StoreError::custom)?;
-                        for l2_entry in l2_entries {
-                            let l2_entry = l2_entry.map_err(StoreError::custom)?;
-                            if l2_entry.file_type().map_err(StoreError::custom)?.is_dir() {
-                                let file_entries =
-                                    fs::read_dir(l2_entry.path()).map_err(StoreError::custom)?;
-                                for file_entry in file_entries {
-                                    let file_entry = file_entry.map_err(StoreError::custom)?;
+                let mut entries = fs::read_dir(&self.path).await.map_err(StoreError::custom)?;
+                while let Some(l1_entry) = entries.next_entry().await.map_err(StoreError::custom)? {
+                    if l1_entry
+                        .file_type()
+                        .await
+                        .map_err(StoreError::custom)?
+                        .is_dir()
+                    {
+                        let mut l2_entries = fs::read_dir(l1_entry.path())
+                            .await
+                            .map_err(StoreError::custom)?;
+                        while let Some(l2_entry) =
+                            l2_entries.next_entry().await.map_err(StoreError::custom)?
+                        {
+                            if l2_entry
+                                .file_type()
+                                .await
+                                .map_err(StoreError::custom)?
+                                .is_dir()
+                            {
+                                let mut file_entries = fs::read_dir(l2_entry.path())
+                                    .await
+                                    .map_err(StoreError::custom)?;
+                                while let Some(file_entry) = file_entries
+                                    .next_entry()
+                                    .await
+                                    .map_err(StoreError::custom)?
+                                {
                                     if file_entry
                                         .file_type()
+                                        .await
                                         .map_err(StoreError::custom)?
                                         .is_file()
                                     {
@@ -358,23 +380,26 @@ where
     }
 }
 
+#[async_trait]
 impl<C, L> RawStore for FlatFsStore<C, L>
 where
     C: Chunker + Clone + Send + Sync,
     L: Layout + Clone + Send + Sync,
 {
-    async fn put_raw_block(&self, bytes: impl Into<Bytes>) -> StoreResult<Cid> {
+    async fn put_raw_block(&self, bytes: impl Into<Bytes> + Send) -> StoreResult<Cid> {
         let bytes = bytes.into();
-        if let Some(max_size) = self.get_raw_block_max_size() {
+        if let Some(max_size) = self.get_raw_block_max_size().await? {
             if bytes.len() as u64 > max_size {
                 return Err(StoreError::RawBlockTooLarge(bytes.len() as u64, max_size));
             }
         }
 
-        let cid = self.make_cid(Codec::Raw, bytes.as_ref());
+        let cid = monoutils_store::make_cid(Codec::Raw, bytes.as_ref());
         let block_path = self.get_block_path(&cid);
 
+        tracing::trace!("ensuring directories: {:?}", block_path);
         self.ensure_directories(&block_path).await?;
+        tracing::trace!("created directories");
         let mut file = File::create(&block_path)
             .await
             .map_err(StoreError::custom)?;
@@ -395,22 +420,22 @@ where
         Ok(bytes.into())
     }
 
-    fn get_raw_block_max_size(&self) -> Option<u64> {
-        self.chunker.chunk_max_size()
+    async fn get_raw_block_max_size(&self) -> StoreResult<Option<u64>> {
+        Ok(self.chunker.chunk_max_size().await?)
     }
 }
 
+#[async_trait]
 impl<C, L> IpldStoreSeekable for FlatFsStore<C, L>
 where
-    C: Chunker + Clone + Send + Sync,
-    L: LayoutSeekable + Clone + Send + Sync,
+    C: Chunker + Clone + Send + Sync + 'static,
+    L: LayoutSeekable + Clone + Send + Sync + 'static,
 {
-    fn get_seekable_bytes<'a>(
-        &'a self,
-        cid: &'a Cid,
-    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>> + Send
-    {
-        self.layout.retrieve_seekable(cid, self.clone())
+    async fn get_seekable_bytes(
+        &self,
+        cid: &Cid,
+    ) -> StoreResult<Pin<Box<dyn SeekableReader + Send + 'static>>> {
+        self.layout.retrieve_seekable(cid, self.clone()).await
     }
 }
 
@@ -420,8 +445,9 @@ where
 
 #[cfg(test)]
 mod tests {
+    use monoutils_store::codetable::{Code, MultihashDigest};
     use monoutils_store::DEFAULT_MAX_CHUNK_SIZE;
-    use std::fs;
+    use tokio::fs;
     use tokio::io::AsyncReadExt;
 
     use super::fixtures::{self, TestNode};
@@ -514,11 +540,13 @@ mod tests {
             match dir_level {
                 DirLevels::Zero => {
                     // All files should be in root directory
-                    let entries: Vec<_> = fs::read_dir(temp.path())?.collect();
-                    assert_eq!(entries.len(), 3);
-                    for entry in entries {
-                        assert!(entry?.file_type()?.is_file());
+                    let mut entries = fs::read_dir(temp.path()).await?;
+                    let mut count = 0;
+                    while let Some(entry) = entries.next_entry().await? {
+                        assert!(entry.file_type().await?.is_file());
+                        count += 1;
                     }
+                    assert_eq!(count, 3);
                 }
                 DirLevels::One => {
                     // Files should be in first-level directories
@@ -583,16 +611,19 @@ mod tests {
         assert_eq!(store.get_block_count().await?, 2);
 
         // Verify supported codecs
-        let codecs = store.get_supported_codecs();
+        let codecs = store.get_supported_codecs().await;
         assert!(codecs.contains(&Codec::Raw));
         assert!(codecs.contains(&Codec::DagCbor));
 
         // Verify size limits from chunker
         assert_eq!(
-            store.get_node_block_max_size(),
+            store.get_node_block_max_size().await?,
             Some(DEFAULT_MAX_CHUNK_SIZE)
         );
-        assert_eq!(store.get_raw_block_max_size(), Some(DEFAULT_MAX_CHUNK_SIZE));
+        assert_eq!(
+            store.get_raw_block_max_size().await?,
+            Some(DEFAULT_MAX_CHUNK_SIZE)
+        );
 
         Ok(())
     }

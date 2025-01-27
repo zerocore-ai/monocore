@@ -31,6 +31,9 @@ use monoutils_store::MemoryStore;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Initialize logging
+    tracing_subscriber::fmt::init();
+
     // Create a new MemoryStore
     let store = MemoryStore::default();
 

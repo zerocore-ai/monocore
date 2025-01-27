@@ -31,6 +31,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Initialize logging
+    tracing_subscriber::fmt::init();
+
     // Create a new MemoryStore
     let store = MemoryStore::default();
 
@@ -44,6 +47,8 @@ async fn main() -> anyhow::Result<()> {
     output_stream.write_all(content).await?;
     output_stream.shutdown().await?;
     println!("Wrote content to file");
+
+    drop(output_stream);
 
     // Read content from the file
     let input_stream = file.get_input_stream().await?;
