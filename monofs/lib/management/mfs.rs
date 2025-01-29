@@ -27,8 +27,10 @@ use tokio::{fs, process::Command};
 ///
 /// ## Example
 /// ```no_run
+/// use monofs::management;
+///
 /// # async fn example() -> anyhow::Result<()> {
-/// init_mfs(Some("mfstest".into())).await?;
+/// management::init_mfs(Some("mfstest".into())).await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -125,12 +127,14 @@ pub async fn init_mfs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
 ///
 /// ## Example
 /// ```no_run
+/// use monofs::management;
+///
 /// # async fn example() -> anyhow::Result<()> {
 /// // Detach from current directory
-/// detach_mfs(None, false).await?;
+/// management::detach_mfs(None, false).await?;
 ///
 /// // Detach from specific directory with force option
-/// detach_mfs(Some("mfstest".into()), true).await?;
+/// management::detach_mfs(Some("mfstest".into()), true).await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -142,8 +146,95 @@ pub async fn detach_mfs(mount_dir: Option<PathBuf>, force: bool) -> FsResult<()>
     let mfs_root = find::find_mfs_root(&start_path).await?;
     tracing::info!("Found MFS root at {}", mfs_root.display());
 
+    // Get the filesystem database path
+    let db_path = get_fs_db_path(&mfs_root).await?;
+
     // Unmount the filesystem
-    unmount_fs(&mfs_root, force).await
+    unmount_fs(&mfs_root, force).await?;
+
+    // Get and terminate the supervisor process
+    match get_supervisor_pid(&db_path, &mfs_root).await {
+        Ok(Some(supervisor_pid)) => {
+            tracing::info!("Found supervisor process with PID: {}", supervisor_pid);
+
+            // Check if process is still running
+            let pid = Pid::from_raw(supervisor_pid);
+            match nix::unistd::getpgid(Some(pid)) {
+                Ok(_) => {
+                    // Process exists, send SIGTERM
+                    if let Err(e) = signal::kill(pid, Signal::SIGTERM) {
+                        tracing::warn!(
+                            "Failed to send SIGTERM to supervisor process {}: {}",
+                            supervisor_pid,
+                            e
+                        );
+                    } else {
+                        tracing::info!("Sent SIGTERM to supervisor process {}", supervisor_pid);
+                    }
+                }
+                Err(nix::errno::Errno::ESRCH) => {
+                    tracing::info!("Supervisor process {} no longer exists", supervisor_pid);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to check if supervisor process {} exists: {}",
+                        supervisor_pid,
+                        e
+                    );
+                }
+            }
+        }
+        Ok(None) => {
+            tracing::warn!(
+                "No supervisor PID found in database for mount point {}. \
+                The supervisor may have already exited.",
+                mfs_root.display()
+            );
+        }
+        Err(e) => {
+            tracing::error!("Failed to query supervisor PID from database: {}.", e);
+        }
+    }
+
+    Ok(())
+}
+
+/// Get the filesystem database path from the MFS root directory
+async fn get_fs_db_path(mfs_root: impl AsRef<Path>) -> FsResult<PathBuf> {
+    let mfs_root = mfs_root.as_ref();
+    let mfs_link = mfs_root.join(MFS_LINK_FILENAME);
+
+    tracing::info!("MFS link path: {}", mfs_link.display());
+
+    // Read the symlink to get the MFS data directory
+    let mfs_data_dir = fs::read_link(&mfs_link).await?;
+
+    tracing::info!("MFS data dir: {}", mfs_data_dir.display());
+
+    let db_path = mfs_data_dir.join(FS_DB_FILENAME);
+
+    tracing::info!("DB path: {}", db_path.display());
+
+    Ok(db_path)
+}
+
+/// Get the supervisor PID for a mount directory from the filesystem database
+async fn get_supervisor_pid(
+    db_path: impl AsRef<Path>,
+    mount_dir: impl AsRef<Path>,
+) -> FsResult<Option<i32>> {
+    let pool = db::get_fs_db_pool(db_path.as_ref()).await?;
+
+    let mount_dir = mount_dir.as_ref().to_string_lossy().to_string();
+
+    // Query the database for the supervisor PID
+    let record = sqlx::query("SELECT supervisor_pid FROM filesystems WHERE mount_dir = ?")
+        .bind(mount_dir)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| FsError::custom(e))?;
+
+    Ok(record.and_then(|row| row.get::<Option<i32>, _>("supervisor_pid")))
 }
 
 /// Unmount a filesystem at the specified mount point

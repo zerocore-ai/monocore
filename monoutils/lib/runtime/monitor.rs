@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use std::path::Path;
+use std::path::PathBuf;
 use tokio::process::ChildStderr;
 use tokio::process::ChildStdout;
 
@@ -14,13 +14,13 @@ use crate::MonoutilsResult;
 pub trait ProcessMonitor {
     /// Start monitoring a process
     async fn start(
-        &self,
+        &mut self,
         pid: u32,
         stdout: ChildStdout,
         stderr: ChildStderr,
-        log_path: impl AsRef<Path> + Send + 'static,
+        log_path: PathBuf,
     ) -> MonoutilsResult<()>;
 
     /// Stop monitoring
-    async fn stop(&self) -> MonoutilsResult<()>;
+    async fn stop(&mut self) -> MonoutilsResult<()>;
 }

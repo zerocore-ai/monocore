@@ -23,6 +23,9 @@ pub struct NfsServerMonitor {
 
     /// The mount directory
     mount_dir: PathBuf,
+
+    /// The NFS server log path
+    nfsserver_log_path: Option<PathBuf>,
 }
 
 impl NfsServerMonitor {
@@ -36,6 +39,7 @@ impl NfsServerMonitor {
             database: management::get_fs_db_pool(database.as_ref()).await?,
             supervisor_pid,
             mount_dir,
+            nfsserver_log_path: None,
         })
     }
 }
@@ -43,16 +47,18 @@ impl NfsServerMonitor {
 #[async_trait]
 impl ProcessMonitor for NfsServerMonitor {
     async fn start(
-        &self,
+        &mut self,
         pid: u32,
         mut stdout: ChildStdout,
         mut stderr: ChildStderr,
-        log_path: impl AsRef<Path> + Send + 'static,
+        log_path: PathBuf,
     ) -> MonoutilsResult<()> {
-        let nfs_server_log = RotatingLog::new(log_path).await?;
+        let nfs_server_log = RotatingLog::new(&log_path).await?;
         let mut stdout_writer = nfs_server_log.get_sync_writer();
         let mut stderr_writer = nfs_server_log.get_sync_writer();
         let nfs_server_pid = pid;
+
+        self.nfsserver_log_path = Some(log_path);
 
         // Insert filesystem entry into database
         sqlx::query(
@@ -104,8 +110,27 @@ impl ProcessMonitor for NfsServerMonitor {
         Ok(())
     }
 
-    async fn stop(&self) -> MonoutilsResult<()> {
-        // Nothing to do here.
+    async fn stop(&mut self) -> MonoutilsResult<()> {
+        // Remove filesystem entry from database
+        sqlx::query(
+            r#"
+            DELETE FROM filesystems
+            WHERE mount_dir = ? AND supervisor_pid = ?
+            "#,
+        )
+        .bind(self.mount_dir.to_string_lossy().to_string())
+        .bind(self.supervisor_pid)
+        .execute(&self.database)
+        .await
+        .map_err(MonoutilsError::custom)?;
+
+        // Delete the log file if it exists
+        if let Some(log_path) = &self.nfsserver_log_path {
+            if let Err(e) = tokio::fs::remove_file(log_path).await {
+                tracing::warn!(error = %e, "Failed to delete nfs server log file");
+            }
+        }
+
         Ok(())
     }
 }

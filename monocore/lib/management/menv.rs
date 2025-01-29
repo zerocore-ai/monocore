@@ -14,7 +14,6 @@ use super::db;
 // Functions
 //--------------------------------------------------------------------------------------------------
 
-// TODO: init should add .menv to .gitignore or create it if it doesn't exist
 /// Initialize a new monocore environment at the specified path
 ///
 /// ## Arguments
@@ -22,15 +21,18 @@ use super::db;
 ///
 /// ## Example
 /// ```no_run
+/// use monocore::management;
+///
 /// # async fn example() -> anyhow::Result<()> {
 /// // Initialize in current directory
-/// init_menv(None).await?;
+/// management::init_menv(None).await?;
 ///
 /// // Initialize in specific directory
-/// init_menv(Some("my_project".into())).await?;
+/// management::init_menv(Some("my_project".into())).await?;
 /// # Ok(())
 /// # }
 /// ```
+// TODO: init should add .menv to .gitignore or create it if it doesn't exist
 pub async fn init_menv(project_path: Option<PathBuf>) -> MonocoreResult<()> {
     // Get the target path, defaulting to current directory if none specified
     let project_path = project_path.unwrap_or_else(|| PathBuf::from("."));
