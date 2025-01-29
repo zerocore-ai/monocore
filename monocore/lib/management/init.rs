@@ -1,62 +1,15 @@
 use crate::MonocoreResult;
-use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
+use sqlx::{migrate::Migrator, sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::path::{Path, PathBuf};
 use tokio::{fs, io::AsyncWriteExt};
 
-use crate::utils::path::{ACTIVE_DB_FILENAME, LOG_SUBDIR, MONOCORE_ENV_DIR};
+use crate::utils::path::{LOG_SUBDIR, MONOCORE_ENV_DIR, SANDBOX_DB_FILENAME};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
 //--------------------------------------------------------------------------------------------------
 
-const ACTIVE_DB_SCHEMA: &str = r#"
--- Create sandboxes table
-CREATE TABLE IF NOT EXISTS sandboxes (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    pid INTEGER,
-    status TEXT NOT NULL,
-    rootfs_path TEXT NOT NULL,
-    group_id INTEGER,
-    group_ip TEXT,
-    config TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    modified_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(group_id) REFERENCES groups(id)
-);
-
--- Create groups table
-CREATE TABLE IF NOT EXISTS groups (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    subnet TEXT NOT NULL,
-    reach TEXT NOT NULL,
-    config TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    modified_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Create sandbox_metrics table
-CREATE TABLE IF NOT EXISTS sandbox_metrics (
-    id INTEGER PRIMARY KEY,
-    sandbox_id INTEGER NOT NULL,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    cpu_usage REAL,
-    memory_usage INTEGER,
-    disk_read_bytes INTEGER,
-    disk_write_bytes INTEGER,
-    total_disk_read INTEGER,
-    total_disk_write INTEGER,
-    FOREIGN KEY(sandbox_id) REFERENCES sandboxes(id)
-);
-
-
--- Create indexes
-CREATE INDEX IF NOT EXISTS idx_sandboxes_name ON sandboxes(name);
-CREATE INDEX IF NOT EXISTS idx_sandboxes_group_id ON sandboxes(group_id);
-CREATE INDEX IF NOT EXISTS idx_sandbox_metrics_sandbox_id_timestamp ON sandbox_metrics(sandbox_id, timestamp);
-CREATE INDEX IF NOT EXISTS idx_groups_name ON groups(name);
-"#;
+static MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrations");
 
 const DEFAULT_CONFIG: &str = r#"# Sandbox configurations
 sandboxes: []
@@ -102,7 +55,7 @@ async fn create_env_dirs(base_path: &Path) -> MonocoreResult<()> {
 
 /// Initialize the active database with schema
 async fn init_active_db(base_path: &Path) -> MonocoreResult<()> {
-    let db_path = base_path.join(MONOCORE_ENV_DIR).join(ACTIVE_DB_FILENAME);
+    let db_path = base_path.join(MONOCORE_ENV_DIR).join(SANDBOX_DB_FILENAME);
 
     // Only initialize if database doesn't exist
     if !db_path.exists() {
@@ -120,8 +73,8 @@ async fn init_active_db(base_path: &Path) -> MonocoreResult<()> {
             .connect(&format!("sqlite://{}?mode=rwc", db_path.display()))
             .await?;
 
-        // Initialize schema
-        sqlx::query(ACTIVE_DB_SCHEMA).execute(&pool).await?;
+        // Run migrations
+        MIGRATOR.run(&pool).await?;
     }
 
     Ok(())
@@ -142,7 +95,7 @@ async fn create_default_config(base_path: &Path) -> MonocoreResult<()> {
 
 /// Get a connection pool to the active database
 pub async fn get_active_db_pool(base_path: &Path) -> MonocoreResult<Pool<Sqlite>> {
-    let db_path = base_path.join(MONOCORE_ENV_DIR).join(ACTIVE_DB_FILENAME);
+    let db_path = base_path.join(MONOCORE_ENV_DIR).join(SANDBOX_DB_FILENAME);
 
     let pool = SqlitePoolOptions::new()
         .max_connections(5)

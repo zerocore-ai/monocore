@@ -29,7 +29,7 @@
 //!
 //! # Usage Example
 //!
-//! ```rust,no_run
+//! ```no_run
 //! // TODO
 //! ```
 //!
@@ -62,7 +62,6 @@
 #![warn(missing_docs)]
 
 mod error;
-mod log;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -76,4 +75,3 @@ pub mod utils;
 pub mod vm;
 
 pub use error::*;
-pub use log::*;

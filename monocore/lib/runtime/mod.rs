@@ -1,11 +1,9 @@
-mod microvm;
-mod orchestration;
-mod supervision;
+//! Runtime components for the Monocore runtime.
+
+mod orchestrator;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use microvm::*;
-pub use orchestration::*;
-pub use supervision::*;
+pub use orchestrator::*;

@@ -1,3 +1,5 @@
+//! Utility functions for converting between different data types.
+
 use std::{
     ffi::{c_char, CString},
     ops::{Bound, RangeBounds},

@@ -1,3 +1,5 @@
+//! Utility functions for working with paths.
+
 use std::path::PathBuf;
 
 use monoutils::SupportedPathType;
@@ -28,17 +30,14 @@ pub const LAYERS_SUBDIR: &str = "layers";
 /// The directory where monocore's installed binaries are stored
 pub const BIN_SUBDIR: &str = "bin";
 
-/// The filename for the project active database
-pub const ACTIVE_DB_FILENAME: &str = "active.db";
+/// The filename for the project active sandbox database
+pub const SANDBOX_DB_FILENAME: &str = "sandbox.db";
 
 /// The filename for the global OCI database
 pub const OCI_DB_FILENAME: &str = "oci.db";
 
-/// The filename for the supervisor's log file
-pub const SUPERVISOR_LOG_FILENAME: &str = "supervisor.log";
-
-/// The suffix for sandbox log files
-pub const LOG_SUFFIX: &str = ".log";
+/// The prefix for mcrun log files
+pub const MCRUN_LOG_PREFIX: &str = "mcrun";
 
 //--------------------------------------------------------------------------------------------------
 // Functions

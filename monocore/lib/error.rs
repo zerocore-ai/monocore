@@ -1,5 +1,6 @@
 use monoutils::MonoutilsError;
 use nix::errno::Errno;
+use sqlx::migrate::MigrateError;
 use std::{
     error::Error,
     fmt::{self, Display},
@@ -249,6 +250,10 @@ pub enum MonocoreError {
     /// An error from monoutils
     #[error("monoutils error: {0}")]
     MonoutilsError(#[from] MonoutilsError),
+
+    /// An error that occurred when a migration error occurred
+    #[error("migration error: {0}")]
+    MigrationError(#[from] MigrateError),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.
