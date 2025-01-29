@@ -1,7 +1,7 @@
-use crate::utils::path::{BLOCKS_SUBDIR, FS_DB_FILENAME, LOG_SUBDIR};
+use crate::utils::path::{BLOCKS_SUBDIR, FS_DB_FILENAME, LOG_SUBDIR, MFS_LINK_FILENAME};
 use crate::{
     config::{DEFAULT_HOST, DEFAULT_NFS_PORT},
-    utils::path::MFS_DIR_SUFFIX,
+    utils::path::{self, MFS_DIR_SUFFIX},
     FsResult,
 };
 use std::path::PathBuf;
@@ -67,7 +67,10 @@ pub async fn init_fs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
         .map(|name| name.to_string_lossy().to_string())
         .expect("Failed to get file name for mount point");
 
-    let status = Command::new("/Users/steveakinyemi/Desktop/Personal/FOCUS/monocore/target/debug/mfsrun")
+    let mfsrun_path = path::resolve_mfsrun_bin_path()?;
+
+    tracing::info!("Mounting the filesystem...");
+    let status = Command::new(mfsrun_path)
         .arg("supervisor")
         .arg("--log-dir")
         .arg(&log_dir)
@@ -91,6 +94,13 @@ pub async fn init_fs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
     // Mount the filesystem
     super::mount_fs(&mount_dir, DEFAULT_HOST, port).await?;
     tracing::info!("Mounted filesystem at {}", mount_dir.display());
+
+    // Create symbolic link to mfs_data_dir in mount directory
+    let link_path = mount_dir.join(MFS_LINK_FILENAME);
+    if !link_path.exists() {
+        fs::symlink(&mfs_data_dir, &link_path).await?;
+        tracing::info!("Created symbolic link at {}", link_path.display());
+    }
 
     Ok(port)
 }
