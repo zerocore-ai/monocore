@@ -151,6 +151,16 @@ pub enum FsError {
     /// Supervisor error.
     #[error("Supervisor error: {0}")]
     SupervisorError(String),
+
+    /// mfsrun binary not found at specified location
+    #[error("mfsrun binary not found at {path} from {src}")]
+    MfsrunBinaryNotFound {
+        /// The path that was checked
+        path: String,
+
+        /// Where the path came from - either "environment variable" or "default path"
+        src: String,
+    },
 }
 
 /// An error that can represent any error.
