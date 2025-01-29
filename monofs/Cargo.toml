@@ -47,6 +47,7 @@ tempfile.workspace = true
 clap.workspace = true
 pin-project-lite = "0.2.15"
 sqlx.workspace = true
+nix.workspace = true
 
 [dev-dependencies]
 test-log.workspace = true

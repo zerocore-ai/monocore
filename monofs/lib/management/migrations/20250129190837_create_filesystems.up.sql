@@ -3,7 +3,7 @@
 -- Create filesystems table
 CREATE TABLE IF NOT EXISTS filesystems (
     id INTEGER PRIMARY KEY,
-    head TEXT NOT NULL,
+    head TEXT,
     mount_dir TEXT NOT NULL,
     supervisor_pid INTEGER,
     nfsserver_pid INTEGER,

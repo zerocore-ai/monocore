@@ -1,3 +1,4 @@
+use crate::management::db;
 use crate::management::find;
 use crate::utils::path::{BLOCKS_SUBDIR, FS_DB_FILENAME, LOG_SUBDIR, MFS_LINK_FILENAME};
 use crate::FsError;
@@ -6,6 +7,9 @@ use crate::{
     utils::path::{self, MFS_DIR_SUFFIX},
     FsResult,
 };
+use nix::sys::signal::{self, Signal};
+use nix::unistd::Pid;
+use sqlx::Row;
 use std::path::{Path, PathBuf};
 use tokio::{fs, process::Command};
 
@@ -58,6 +62,10 @@ pub async fn init_mfs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
         tracing::info!("Created fs database at {}", db_path.display());
     }
 
+    // Initialize the database schema
+    db::init_fs_db(&db_path).await?;
+    tracing::info!("Initialized fs database schema");
+
     // Create the blocks directory
     let blocks_dir = mfs_data_dir.join(BLOCKS_SUBDIR);
     fs::create_dir_all(&blocks_dir).await?;
@@ -86,6 +94,8 @@ pub async fn init_mfs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
         .arg(&blocks_dir)
         .arg("--db-path")
         .arg(&db_path)
+        .arg("--mount-dir")
+        .arg(&mount_dir)
         .spawn()?;
 
     tracing::info!(

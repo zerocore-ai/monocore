@@ -1,16 +1,15 @@
-use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
-use tokio::process::Command;
 use std::process::Stdio;
 use std::{
-    io::Write,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::{fs::create_dir_all, io::AsyncReadExt};
+use tokio::fs::create_dir_all;
+use tokio::process::Command;
+use tokio::signal::unix::{signal, SignalKind};
 
 use crate::path::{LOG_SUFFIX, SUPERVISOR_LOG_FILENAME};
-use crate::{MetricsMonitor, MonoutilsResult, RotatingLog};
+use crate::{MonoutilsResult, ProcessMonitor, RotatingLog};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -19,7 +18,7 @@ use crate::{MetricsMonitor, MonoutilsResult, RotatingLog};
 /// A supervisor that manages a child process and its logging.
 pub struct Supervisor<M>
 where
-    M: MetricsMonitor,
+    M: ProcessMonitor + Send,
 {
     /// Path to the child executable
     child_exe: PathBuf,
@@ -37,10 +36,13 @@ where
     log_dir: PathBuf,
 
     /// The metrics monitor
-    metrics_monitor: M,
+    process_monitor: M,
 
     /// The managed child process ID
     child_pid: Option<u32>,
+
+    /// Environment variables for the child process
+    child_envs: Vec<(String, String)>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -49,7 +51,7 @@ where
 
 impl<M> Supervisor<M>
 where
-    M: MetricsMonitor,
+    M: ProcessMonitor + Send,
 {
     /// Creates a new supervisor instance.
     ///
@@ -59,21 +61,28 @@ where
     /// * `child_args` - Arguments to pass to the child executable
     /// * `child_name` - Name of the child process
     /// * `log_dir` - Path to the supervisor's log directory
+    /// * `process_monitor` - The process monitor to use
+    /// * `child_envs` - Environment variables for the child process
     pub fn new(
         child_exe: impl AsRef<Path>,
         child_args: impl IntoIterator<Item = impl Into<String>>,
+        child_envs: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
         child_name: impl Into<String>,
         child_log_prefix: impl Into<String>,
         log_dir: impl AsRef<Path>,
-        metrics_monitor: M,
+        process_monitor: M,
     ) -> Self {
         Self {
             child_exe: child_exe.as_ref().to_path_buf(),
             child_args: child_args.into_iter().map(Into::into).collect(),
+            child_envs: child_envs
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
             child_name: child_name.into(),
             child_log_prefix: child_log_prefix.into(),
             log_dir: log_dir.as_ref().to_path_buf(),
-            metrics_monitor,
+            process_monitor,
             child_pid: None,
         }
     }
@@ -93,9 +102,9 @@ where
     /// Starts the supervisor and the child process.
     ///
     /// This method:
-    /// 1. Sets up the supervisor's rotating log
+    /// 1. Creates the log directory if it doesn't exist
     /// 2. Starts the child process
-    /// 3. Sets up the child's rotating log for stdout/stderr
+    /// 3. Passes stdout/stderr to the process monitor
     pub async fn start(&mut self) -> MonoutilsResult<()> {
         // Create log directory if it doesn't exist
         create_dir_all(&self.log_dir).await?;
@@ -106,6 +115,7 @@ where
         // Start child process
         let mut child = Command::new(&self.child_exe)
             .args(&self.child_args)
+            .envs(self.child_envs.iter().map(|(k, v)| (k, v)))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
@@ -113,93 +123,106 @@ where
         let child_pid = child.id().expect("Failed to get child process ID");
         self.child_pid = Some(child_pid);
 
-        // Register child process with metrics monitor
-        self.metrics_monitor.register(child_pid).await?;
-
         // Generate unique child ID
         let child_id = self.generate_child_id(child_pid);
 
-        // Setup child's rotating log
+        // Setup child's log path
         let child_log_name = format!("{}-{}.{}", self.child_log_prefix, child_id, LOG_SUFFIX);
-        let child_log = RotatingLog::new(self.log_dir.join(child_log_name)).await?;
+        let child_log_path = self.log_dir.join(child_log_name);
 
-        // Get sync writers for child stdout/stderr
-        let mut stdout_writer = child_log.get_sync_writer();
-        let mut stderr_writer = child_log.get_sync_writer();
+        // Take ownership of child's stdout/stderr and start monitoring
+        let stdout = child.stdout.take().expect("Failed to take child stdout");
+        let stderr = child.stderr.take().expect("Failed to take child stderr");
+        self.process_monitor
+            .start(child_pid, stdout, stderr, child_log_path)
+            .await?;
 
-        // Take ownership of child's stdout/stderr
-        let mut stdout = child.stdout.take().expect("Failed to take child stdout");
-        let mut stderr = child.stderr.take().expect("Failed to take child stderr");
+        // Setup signal handlers
+        let mut sigterm = signal(SignalKind::terminate())?;
+        let mut sigint = signal(SignalKind::interrupt())?;
 
-        // Start metrics monitoring
-        self.metrics_monitor.start().await?;
+        // Wait for either child process to exit or signal to be received
+        tokio::select! {
+            status = child.wait() => {
+                tracing::info!("Child process {} exited", child_pid);
 
-        // Spawn tasks to handle stdout/stderr
-        tokio::spawn(async move {
-            let mut buf = [0u8; 1024];
+                // Stop process monitoring
+                self.process_monitor.stop().await?;
 
-            while let Ok(n) = stdout.read(&mut buf).await {
-                if n == 0 {
-                    break;
-                }
-                if let Err(e) = stdout_writer.write_all(&buf[..n]) {
-                    tracing::error!(child_pid = child_pid, error = %e, "Failed to write to child stdout log");
-                }
-                if let Err(e) = stdout_writer.flush() {
-                    tracing::error!(child_pid = child_pid, error = %e, "Failed to flush child stdout log");
-                }
-            }
-        });
-
-        tokio::spawn(async move {
-            let mut buf = [0u8; 1024];
-
-            while let Ok(n) = stderr.read(&mut buf).await {
-                if n == 0 {
-                    break;
-                }
-                if let Err(e) = stderr_writer.write_all(&buf[..n]) {
-                    tracing::error!(child_pid = child_pid, error = %e, "Failed to write to child stderr log");
-                }
-                if let Err(e) = stderr_writer.flush() {
-                    tracing::error!(child_pid = child_pid, error = %e, "Failed to flush child stderr log");
-                }
-            }
-        });
-
-        // Wait for child process to exit
-        match child.wait().await {
-            Ok(status) => {
-                // Stop metrics monitoring
-                self.metrics_monitor.stop().await?;
-
-                if status.success() {
-                    println!("Child process {} exited successfully", child_pid);
+                if status.is_ok() {
+                    if let Ok(status) = status {
+                        if status.success() {
+                            tracing::info!(
+                                "Child process {} exited successfully",
+                                child_pid
+                            );
+                        } else {
+                            tracing::error!(
+                                "Child process {} exited with status: {:?}",
+                                child_pid,
+                                status
+                            );
+                        }
+                    }
                 } else {
-                    eprintln!(
-                        "Child process {} exited with status: {:?}",
-                        child_pid, status
+                    tracing::error!(
+                        "Failed to wait for child process {}: {:?}",
+                        child_pid,
+                        status
                     );
                 }
-
-                self.child_pid = None;
             }
-            Err(e) => eprintln!("Failed to wait for child process {}: {}", child_pid, e),
+            _ = sigterm.recv() => {
+                tracing::info!("Received SIGTERM signal");
+
+                // Stop process monitoring
+                self.process_monitor.stop().await?;
+
+                if let Some(pid) = self.child_pid.take() {
+                    if let Err(e) = nix::sys::signal::kill(Pid::from_raw(pid as i32), nix::sys::signal::Signal::SIGTERM) {
+                        tracing::error!(
+                            "Failed to send SIGTERM to process {}: {}",
+                            pid,
+                            e
+                        );
+                    }
+                }
+
+                // Wait for child to exit after sending signal
+                if let Err(e) = child.wait().await {
+                    tracing::error!(
+                        "Error waiting for child after SIGTERM: {}",
+                        e
+                    );
+                }
+            }
+            _ = sigint.recv() => {
+                tracing::info!("Received SIGINT signal");
+
+                // Stop process monitoring
+                self.process_monitor.stop().await?;
+
+                if let Some(pid) = self.child_pid.take() {
+                    if let Err(e) = nix::sys::signal::kill(Pid::from_raw(pid as i32), nix::sys::signal::Signal::SIGTERM) {
+                        tracing::error!(
+                            "Failed to send SIGTERM to process {}: {}",
+                            pid,
+                            e
+                        );
+                    }
+                }
+
+                // Wait for child to exit after sending signal
+                if let Err(e) = child.wait().await {
+                    tracing::error!(
+                        "Error waiting for child after SIGINT: {}",
+                        e
+                    );
+                }
+            }
         }
 
-        Ok(())
-    }
-
-    /// Stops the supervisor and child process.
-    pub async fn stop(&mut self) -> MonoutilsResult<()> {
-        // Stop child process if it exists
-        if let Some(pid) = self.child_pid.take() {
-            // Send SIGTERM signal
-            if let Err(e) = signal::kill(Pid::from_raw(pid as i32), Signal::SIGTERM) {
-                eprintln!("Failed to send SIGTERM to process {}: {}", pid, e);
-            }
-        }
-
+        self.child_pid = None;
         Ok(())
     }
 }
