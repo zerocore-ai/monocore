@@ -1,5 +1,6 @@
 use std::{collections::HashSet, pin::Pin};
 
+use async_trait::async_trait;
 use bytes::Bytes;
 use ipld_core::cid::Cid;
 use serde::{de::DeserializeOwned, Serialize};
@@ -69,11 +70,11 @@ where
     }
 
     /// Gets the bytes stored in a chosen store as raw bytes by its `Cid`.
-    pub async fn get_bytes_from<'a>(
-        &'a self,
-        cid: &'a Cid,
+    pub async fn get_bytes_from(
+        &self,
+        cid: &Cid,
         choice: Choice,
-    ) -> StoreResult<Pin<Box<dyn AsyncRead + Send + Sync + 'a>>> {
+    ) -> StoreResult<Pin<Box<dyn AsyncRead + Send>>> {
         match choice {
             Choice::A => self.store_a.get_bytes(cid).await,
             Choice::B => self.store_b.get_bytes(cid).await,
@@ -154,6 +155,7 @@ impl Choice {
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
+#[async_trait]
 impl<A, B> IpldStore for DualStore<A, B>
 where
     A: IpldStore + Sync,
@@ -166,7 +168,7 @@ where
         self.put_node_into(data, self.config.default).await
     }
 
-    async fn put_bytes<'a>(&'a self, bytes: impl AsyncRead + Send + Sync + 'a) -> StoreResult<Cid> {
+    async fn put_bytes(&self, bytes: impl AsyncRead + Send + Sync) -> StoreResult<Cid> {
         self.put_bytes_into(bytes, self.config.default).await
     }
 
@@ -184,10 +186,7 @@ where
         }
     }
 
-    async fn get_bytes<'a>(
-        &'a self,
-        cid: &'a Cid,
-    ) -> StoreResult<Pin<Box<dyn AsyncRead + Send + Sync + 'a>>> {
+    async fn get_bytes(&self, cid: &Cid) -> StoreResult<Pin<Box<dyn AsyncRead + Send>>> {
         match self.get_bytes_from(cid, self.config.default).await {
             Ok(bytes) => Ok(bytes),
             Err(StoreError::BlockNotFound(_)) => {
@@ -209,18 +208,16 @@ where
         }
     }
 
-    fn get_supported_codecs(&self) -> HashSet<Codec> {
-        self.store_a
-            .get_supported_codecs()
-            .into_iter()
-            .chain(self.store_b.get_supported_codecs())
-            .collect()
+    async fn get_supported_codecs(&self) -> HashSet<Codec> {
+        let mut codecs = self.store_a.get_supported_codecs().await;
+        codecs.extend(self.store_b.get_supported_codecs().await);
+        codecs
     }
 
-    fn get_node_block_max_size(&self) -> Option<u64> {
-        self.store_a
-            .get_node_block_max_size()
-            .max(self.store_b.get_node_block_max_size())
+    async fn get_node_block_max_size(&self) -> StoreResult<Option<u64>> {
+        let max_size_a = self.store_a.get_node_block_max_size().await?;
+        let max_size_b = self.store_b.get_node_block_max_size().await?;
+        Ok(max_size_a.max(max_size_b))
     }
 
     async fn is_empty(&self) -> StoreResult<bool> {
@@ -232,6 +229,7 @@ where
     }
 }
 
+#[async_trait]
 impl<A, B> RawStore for DualStore<A, B>
 where
     A: IpldStore + Sync,
@@ -252,10 +250,10 @@ where
         }
     }
 
-    fn get_raw_block_max_size(&self) -> Option<u64> {
-        self.store_a
-            .get_raw_block_max_size()
-            .max(self.store_b.get_raw_block_max_size())
+    async fn get_raw_block_max_size(&self) -> StoreResult<Option<u64>> {
+        let max_size_a = self.store_a.get_raw_block_max_size().await?;
+        let max_size_b = self.store_b.get_raw_block_max_size().await?;
+        Ok(max_size_a.max(max_size_b))
     }
 }
 

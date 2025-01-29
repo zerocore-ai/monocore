@@ -2,10 +2,9 @@ use monoutils_store::{ipld::cid::Cid, IpldStore};
 use typed_path::Utf8UnixPath;
 
 use crate::{
-    filesystem::{
-        dir::find, entity::Entity, file::File, FsError, FsResult, SymCidLink, SymPathLink,
-    },
+    filesystem::{dir::find, entity::Entity, file::File, SymCidLink, SymPathLink},
     utils::path,
+    FsError, FsResult,
 };
 
 use super::{Dir, FindResult, Utf8UnixPathSegment};
@@ -27,11 +26,11 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monofs::filesystem::{Dir, Entity};
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("foo/bar.txt", true).await?;
     ///
@@ -70,11 +69,11 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monofs::filesystem::{Dir, Entity};
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("foo/bar.txt", true).await?;
     ///
@@ -108,33 +107,76 @@ where
     /// Finds an entity in the directory structure or creates it if it doesn't exist.
     ///
     /// This method traverses the directory structure to find the entity specified by the path.
-    /// If the entity doesn't exist, it creates a new file or directory based on the `file` parameter.
+    /// If any part of the path doesn't exist, it will be created. This includes creating all
+    /// necessary parent directories.
+    ///
+    /// ## Arguments
+    /// * `path` - The path to find or create. Can be a single name or a nested path (e.g., "foo/bar/baz.txt")
+    /// * `file` - If true, creates a file at the final path component. If false, creates a directory
     ///
     /// ## Examples
     ///
+    /// Creating nested directories:
     /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monofs::filesystem::{Dir, Entity};
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     ///
-    /// // Create a file
-    /// let file = dir.find_or_create("foo/bar.txt", true).await?;
-    /// assert!(matches!(file, Entity::File(_)));
-    ///
-    /// // Create a directory
-    /// let subdir = dir.find_or_create("baz", false).await?;
-    /// assert!(matches!(subdir, Entity::Dir(_)));
+    /// // Creates all parent directories automatically
+    /// let nested_dir = dir.find_or_create("docs/guides/tutorial", false).await?;
+    /// assert!(matches!(nested_dir, Entity::Dir(_)));
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// Creating a file in a nested path:
+    /// ```
+    /// use monofs::filesystem::{Dir, Entity};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> anyhow::Result<()> {
+    /// # let mut dir = Dir::new(MemoryStore::default());
+    /// // Creates parent directories and the file
+    /// let file = dir.find_or_create("projects/rust/main.rs", true).await?;
+    /// assert!(matches!(file, Entity::File(_)));
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// Finding existing entities:
+    /// ```
+    /// use monofs::filesystem::{Dir, Entity};
+    /// use monoutils_store::MemoryStore;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> anyhow::Result<()> {
+    /// # let mut dir = Dir::new(MemoryStore::default());
+    /// // Create a file first
+    /// dir.find_or_create("config.json", true).await?;
+    ///
+    /// // Later find the same file
+    /// let existing = dir.find_or_create("config.json", true).await?;
+    /// assert!(matches!(existing, Entity::File(_)));
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## Notes
+    /// - If the path exists but is of a different type (file vs directory), the existing entity
+    ///   will be returned without modification
+    /// - Parent directories are always created as directories, regardless of the `file` parameter
+    /// - The method is atomic - either all parts of the path are created or none are
+    /// - Deleted entities are treated as non-existent and will be recreated
     pub async fn find_or_create(
         &mut self,
         path: impl AsRef<str>,
         file: bool,
     ) -> FsResult<&mut Entity<S>> {
+        tracing::trace!("find_or_create: path: {:?}, file: {}", path.as_ref(), file);
         let path = Utf8UnixPath::new(path.as_ref());
 
         if path.has_root() {
@@ -207,16 +249,28 @@ where
 
     /// Creates a file at the specified path.
     #[inline]
-    pub async fn create_file(&mut self, path: impl AsRef<str>) -> FsResult<&mut Entity<S>> {
-        self.create_entity(path, File::new(self.get_store().clone()))
-            .await
+    pub async fn create_file(&mut self, path: impl AsRef<str>) -> FsResult<&mut File<S>> {
+        tracing::trace!("create_file: path: {:?}", path.as_ref());
+        match self
+            .create_entity(path, File::new(self.get_store().clone()))
+            .await?
+        {
+            Entity::File(file) => Ok(file),
+            _ => unreachable!(),
+        }
     }
 
     /// Creates a directory at the specified path.
     #[inline]
-    pub async fn create_dir(&mut self, path: impl AsRef<str>) -> FsResult<&mut Entity<S>> {
-        self.create_entity(path, Dir::new(self.get_store().clone()))
-            .await
+    pub async fn create_dir(&mut self, path: impl AsRef<str>) -> FsResult<&mut Dir<S>> {
+        tracing::trace!("create_dir: path: {:?}", path.as_ref());
+        match self
+            .create_entity(path, Dir::new(self.get_store().clone()))
+            .await?
+        {
+            Entity::Dir(dir) => Ok(dir),
+            _ => unreachable!(),
+        }
     }
 
     /// Creates a symbolic path link at the specified path.
@@ -225,12 +279,22 @@ where
         &mut self,
         path: impl AsRef<str>,
         target: impl AsRef<str>,
-    ) -> FsResult<&mut Entity<S>> {
-        self.create_entity(
-            path,
-            SymPathLink::with_path(self.get_store().clone(), target)?,
-        )
-        .await
+    ) -> FsResult<&mut SymPathLink<S>> {
+        tracing::trace!(
+            "create_sympathlink: path: {:?}, target: {:?}",
+            path.as_ref(),
+            target.as_ref()
+        );
+        match self
+            .create_entity(
+                path,
+                SymPathLink::with_path(self.get_store().clone(), target)?,
+            )
+            .await?
+        {
+            Entity::SymPathLink(link) => Ok(link),
+            _ => unreachable!(),
+        }
     }
 
     /// Creates a symbolic CID link at the specified path.
@@ -239,9 +303,19 @@ where
         &mut self,
         path: impl AsRef<str>,
         cid: Cid,
-    ) -> FsResult<&mut Entity<S>> {
-        self.create_entity(path, SymCidLink::with_cid(self.get_store().clone(), cid))
-            .await
+    ) -> FsResult<&mut SymCidLink<S>> {
+        tracing::trace!(
+            "create_symcidlink: path: {:?}, cid: {:?}",
+            path.as_ref(),
+            cid
+        );
+        match self
+            .create_entity(path, SymCidLink::with_cid(self.get_store().clone(), cid))
+            .await?
+        {
+            Entity::SymCidLink(link) => Ok(link),
+            _ => unreachable!(),
+        }
     }
 
     /// Lists all entries in the current directory.
@@ -249,17 +323,17 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, FsResult};
+    /// use monofs::filesystem::Dir;
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("foo", false).await?;
     /// dir.find_or_create("bar.txt", true).await?;
     /// dir.find_or_create("baz/qux.txt", true).await?;
     ///
-    /// let entries = dir.list()?;
+    /// let entries = dir.list().collect::<Vec<_>>();
     /// assert_eq!(entries.len(), 3);
     /// assert!(entries.contains(&"foo".parse()?));
     /// assert!(entries.contains(&"bar.txt".parse()?));
@@ -267,8 +341,9 @@ where
     /// # Ok(())
     /// # }
     /// ```
-    pub fn list(&self) -> FsResult<Vec<Utf8UnixPathSegment>> {
-        Ok(self.get_entries().map(|(k, _)| k.clone()).collect())
+    pub fn list(&self) -> impl Iterator<Item = Utf8UnixPathSegment> + '_ {
+        tracing::trace!("list");
+        self.get_entries().map(|(k, _)| k.clone())
     }
 
     /// Copies an entity from the source path to the target **directory**.
@@ -278,11 +353,11 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monofs::filesystem::{Dir, Entity};
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("source/file.txt", true).await?;
     /// dir.find_or_create("target", false).await?;
@@ -294,6 +369,11 @@ where
     /// # }
     /// ```
     pub async fn copy(&mut self, source: impl AsRef<str>, target: impl AsRef<str>) -> FsResult<()> {
+        tracing::trace!(
+            "copy: source: {:?}, target: {:?}",
+            source.as_ref(),
+            target.as_ref()
+        );
         let source = Utf8UnixPath::new(source.as_ref());
         let target = Utf8UnixPath::new(target.as_ref());
 
@@ -348,11 +428,11 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monofs::filesystem::{Dir, Entity};
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     /// dir.find_or_create("foo/bar.txt", true).await?;
     ///
@@ -362,6 +442,7 @@ where
     /// # }
     /// ```
     pub async fn remove(&mut self, path: impl AsRef<str>) -> FsResult<()> {
+        tracing::trace!("remove: path: {:?}", path.as_ref());
         let path = Utf8UnixPath::new(path.as_ref());
 
         if path.has_root() {
@@ -394,11 +475,11 @@ where
     /// ## Examples
     ///
     /// ```
-    /// use monofs::filesystem::{Dir, Entity, FsResult};
+    /// use monofs::filesystem::{Dir, Entity};
     /// use monoutils_store::MemoryStore;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> FsResult<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let mut dir = Dir::new(MemoryStore::default());
     ///
     /// // Create a file
@@ -418,6 +499,11 @@ where
         old_path: impl AsRef<str>,
         new_path: impl AsRef<str>,
     ) -> FsResult<()> {
+        tracing::trace!(
+            "rename: old_path: {:?}, new_path: {:?}",
+            old_path.as_ref(),
+            new_path.as_ref()
+        );
         let old_path = Utf8UnixPath::new(old_path.as_ref());
         let new_path = Utf8UnixPath::new(new_path.as_ref());
 
@@ -496,9 +582,7 @@ mod tests {
     use monoutils_store::{ipld::cid::Cid, MemoryStore, Storable};
     use tokio::io::AsyncReadExt;
 
-    use crate::filesystem::{
-        symcidlink::SymCidLink, sympathlink::SymPathLink, Dir, Entity, File, FsError,
-    };
+    use crate::filesystem::{symcidlink::SymCidLink, sympathlink::SymPathLink, Dir, Entity, File};
 
     use super::*;
 
@@ -625,7 +709,7 @@ mod tests {
         dir.find_or_create("baz/qux.txt", true).await?;
 
         // List entries
-        let entries = dir.list()?;
+        let entries = dir.list().collect::<Vec<_>>();
 
         assert_eq!(entries.len(), 3);
         assert!(entries.contains(&"foo".parse()?));
@@ -803,13 +887,13 @@ mod tests {
         ));
 
         // List contents of directories
-        let root_contents = root.list()?;
+        let root_contents = root.list().collect::<Vec<_>>();
         assert_eq!(root_contents.len(), 2);
         assert!(root_contents.contains(&"projects".parse()?));
         assert!(root_contents.contains(&"documents".parse()?));
 
         if let Some(Entity::Dir(projects_dir)) = root.find("projects").await? {
-            let projects_contents = projects_dir.list()?;
+            let projects_contents = projects_dir.list().collect::<Vec<_>>();
             assert_eq!(projects_contents.len(), 2);
             assert!(projects_contents.contains(&"web".parse()?));
             assert!(projects_contents.contains(&"app".parse()?));

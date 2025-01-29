@@ -4,13 +4,14 @@ use std::{
     task::{Context, Poll},
 };
 
+use bytes::Bytes;
 use chrono::Utc;
-use futures::Future;
+use futures::{future::BoxFuture, FutureExt};
 use monoutils::{EmptySeekableReader, SeekableReader};
-use monoutils_store::{IpldStore, IpldStoreSeekable};
+use monoutils_store::{ipld::cid::Cid, IpldStore, IpldStoreSeekable};
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 
-use crate::filesystem::{File, FsResult};
+use crate::filesystem::File;
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -18,16 +19,26 @@ use crate::filesystem::{File, FsResult};
 
 /// A stream for reading from a `File` asynchronously.
 pub struct FileInputStream<'a> {
-    reader: Pin<Box<dyn SeekableReader + Send + Sync + 'a>>,
+    reader: Pin<Box<dyn SeekableReader + Send + 'a>>,
 }
 
 /// A stream for writing to a `File` asynchronously.
 pub struct FileOutputStream<'a, S>
 where
-    S: IpldStore,
+    S: IpldStore + Send + Sync + 'static,
 {
     file: &'a mut File<S>,
     buffer: Vec<u8>,
+    flush_state: FlushState<'a>,
+}
+
+/// State machine for tracking flush progress
+#[derive(Default)]
+enum FlushState<'a> {
+    #[default]
+    NotStarted,
+    Running(BoxFuture<'a, io::Result<Option<Cid>>>),
+    Done,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -82,19 +93,8 @@ where
         Self {
             file,
             buffer: Vec::new(),
+            flush_state: FlushState::NotStarted,
         }
-    }
-
-    /// Finalizes the write operation and updates the file content.
-    async fn finalize(&mut self) -> FsResult<()> {
-        if !self.buffer.is_empty() {
-            let store = self.file.get_store();
-            let cid = store.put_bytes(&self.buffer[..]).await.map(Into::into)?;
-            self.file.set_content(Some(cid));
-            self.file.get_metadata_mut().set_modified_at(Utc::now());
-            self.buffer.clear();
-        }
-        Ok(())
     }
 }
 
@@ -135,20 +135,52 @@ where
         Poll::Ready(Ok(buf.len()))
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        Poll::Ready(Ok(()))
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        loop {
+            match &mut self.flush_state {
+                FlushState::NotStarted => {
+                    let buffer = std::mem::take(&mut self.buffer);
+                    let store = self.file.get_store().clone();
+                    let fut = async move {
+                        if !buffer.is_empty() {
+                            let bytes = Bytes::from(buffer);
+                            let reader = &bytes[..];
+                            let cid = store
+                                .put_bytes(reader)
+                                .await
+                                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                            Ok(Some(cid))
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    .boxed();
+                    self.flush_state = FlushState::Running(fut);
+                }
+                FlushState::Running(fut) => match fut.as_mut().poll(cx) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(Ok(maybe_cid)) => {
+                        if let Some(cid) = maybe_cid {
+                            self.file.set_content(Some(cid));
+                            self.file.get_metadata_mut().set_modified_at(Utc::now());
+                        }
+                        self.flush_state = FlushState::Done;
+                        continue;
+                    }
+                    Poll::Ready(Err(e)) => {
+                        self.flush_state = FlushState::Done;
+                        return Poll::Ready(Err(e));
+                    }
+                },
+                FlushState::Done => {
+                    return Poll::Ready(Ok(()));
+                }
+            }
+        }
     }
 
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), io::Error>> {
-        let finalize_future = self.finalize();
-        tokio::pin!(finalize_future);
-
-        finalize_future
-            .poll(cx)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        self.poll_flush(cx)
     }
 }
 
@@ -199,6 +231,8 @@ mod tests {
         let data = b"Hello, world!";
         output_stream.write_all(data).await?;
         output_stream.shutdown().await?;
+
+        drop(output_stream);
 
         // Now read the file to verify the content
         let input_stream = FileInputStream::new(&file).await?;

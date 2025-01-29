@@ -15,10 +15,9 @@ use monoutils_store::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::filesystem::{
-    kind::EntityType, Entity, EntityCidLink, File, FsError, FsResult, Link, Metadata,
-    MetadataSerializable, SymCidLink,
-};
+use crate::{filesystem::{
+    kind::EntityType, Entity, EntityCidLink, File, Link, Metadata, MetadataSerializable, SymCidLink,
+}, FsError, FsResult};
 
 //--------------------------------------------------------------------------------------------------
 // Constants

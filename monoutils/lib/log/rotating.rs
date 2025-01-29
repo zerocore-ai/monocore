@@ -26,6 +26,8 @@ use tokio::{
     task::JoinHandle,
 };
 
+use crate::DEFAULT_LOG_MAX_SIZE;
+
 //--------------------------------------------------------------------------------------------------
 // Types
 //--------------------------------------------------------------------------------------------------
@@ -93,26 +95,32 @@ type RotationFuture = BoxFuture<'static, io::Result<(File, PathBuf)>>;
 //--------------------------------------------------------------------------------------------------
 
 impl RotatingLog {
-    /// Default maximum log file size (10MB)
-    pub const DEFAULT_MAX_SIZE: u64 = 10 * 1024 * 1024;
-
-    /// Creates a new rotating log file.
+    /// Creates a new rotating log file with the default maximum size.
     ///
-    /// # Arguments
+    /// This is a convenience wrapper around [`with_max_size`] that uses the default
+    /// maximum log file size defined in `DEFAULT_LOG_MAX_SIZE`.
+    ///
+    /// ## Arguments
     ///
     /// * `path` - Path to the log file
-    /// * `max_size` - Optional maximum size in bytes before rotation. If None, uses DEFAULT_MAX_SIZE
     ///
-    /// # Returns
-    ///
-    /// Returns a Result containing the new RotatingLog instance or an IO error
-    ///
-    /// # Errors
+    /// ## Errors
     ///
     /// Will return an error if:
     /// * The file cannot be created or opened
     /// * File metadata cannot be read
-    pub async fn new(path: impl AsRef<Path>, max_size: Option<u64>) -> io::Result<Self> {
+    pub async fn new(path: impl AsRef<Path>) -> io::Result<Self> {
+        Self::with_max_size(path, DEFAULT_LOG_MAX_SIZE).await
+    }
+
+    /// Creates a new rotating log file.
+    ///
+    /// ## Errors
+    ///
+    /// Will return an error if:
+    /// * The file cannot be created or opened
+    /// * File metadata cannot be read
+    pub async fn with_max_size(path: impl AsRef<Path>, max_size: u64) -> io::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let file = OpenOptions::new()
             .create(true)
@@ -128,7 +136,7 @@ impl RotatingLog {
         // Create a clone of the file and size counter for the background task
         let bg_file = file.try_clone().await?;
         let bg_path = path.clone();
-        let bg_max_size = max_size.unwrap_or(Self::DEFAULT_MAX_SIZE);
+        let bg_max_size = max_size;
         let bg_size = Arc::clone(&current_size);
 
         // Spawn background task to handle channel data
@@ -139,7 +147,7 @@ impl RotatingLog {
         Ok(Self {
             file,
             path,
-            max_size: max_size.unwrap_or(Self::DEFAULT_MAX_SIZE),
+            max_size,
             current_size,
             state: State::Idle,
             tx,
@@ -326,6 +334,156 @@ impl Write for SyncChannelWriter {
     }
 
     fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Tests
+//--------------------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+    use tokio::io::AsyncWriteExt;
+
+    #[tokio::test]
+    async fn test_create_new_log() -> io::Result<()> {
+        let dir = tempdir()?;
+        let log_path = dir.path().join("test.log");
+
+        let log = RotatingLog::with_max_size(&log_path, 1024).await?;
+        assert!(log_path.exists());
+        assert_eq!(log.max_size, 1024);
+        assert_eq!(log.current_size.load(Ordering::Relaxed), 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_write_to_log() -> io::Result<()> {
+        let dir = tempdir()?;
+        let log_path = dir.path().join("test.log");
+
+        let mut log = RotatingLog::with_max_size(&log_path, 1024).await?;
+        let test_data = b"test log entry\n";
+        log.write_all(test_data).await?;
+        log.flush().await?;
+
+        let content = fs::read_to_string(&log_path)?;
+        assert_eq!(content, String::from_utf8_lossy(test_data));
+        assert_eq!(
+            log.current_size.load(Ordering::Relaxed),
+            test_data.len() as u64
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_log_rotation() -> io::Result<()> {
+        let dir = tempdir()?;
+        let log_path = dir.path().join("test.log");
+        let max_size = 20; // Small size to trigger rotation
+
+        let mut log = RotatingLog::with_max_size(&log_path, max_size).await?;
+
+        // Write data until we trigger rotation
+        let first_entry = b"first entry\n";
+        log.write_all(first_entry).await?;
+        log.flush().await?;
+
+        let second_entry = b"second entry\n";
+        log.write_all(second_entry).await?;
+        log.flush().await?;
+
+        // Give some time for rotation to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Check that both current and old log files exist
+        assert!(log_path.exists());
+        assert!(log_path.with_extension("old").exists());
+
+        // Verify old file contains our first entry
+        let old_content = fs::read_to_string(log_path.with_extension("old"))?;
+        assert_eq!(old_content, String::from_utf8_lossy(first_entry));
+
+        // Verify new file contains our second entry
+        let new_content = fs::read_to_string(&log_path)?;
+        assert_eq!(new_content, String::from_utf8_lossy(second_entry));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_oversized_write() -> io::Result<()> {
+        let dir = tempdir()?;
+        let log_path = dir.path().join("test.log");
+        let max_size = 10; // Small size
+
+        let mut log = RotatingLog::with_max_size(&log_path, max_size).await?;
+
+        // Write data much larger than max_size
+        let large_entry = b"this is a very large log entry that exceeds the maximum size\n";
+        log.write_all(large_entry).await?;
+        log.flush().await?;
+
+        // Give some time for rotation to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Verify the content was written (even though it exceeds max_size)
+        assert!(log_path.exists());
+        let content = fs::read_to_string(&log_path)?;
+        assert_eq!(content, String::from_utf8_lossy(large_entry));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_sync_writer() -> io::Result<()> {
+        let dir = tempdir()?;
+        let log_path = dir.path().join("test.log");
+
+        let log = RotatingLog::with_max_size(&log_path, 1024).await?;
+        let mut sync_writer = log.get_sync_writer();
+
+        let test_data = b"sync writer test\n";
+        sync_writer.write_all(test_data)?;
+        sync_writer.flush()?;
+
+        // Give some time for async processing
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        let content = fs::read_to_string(&log_path)?;
+        assert_eq!(content, String::from_utf8_lossy(test_data));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_multiple_rotations() -> io::Result<()> {
+        let dir = tempdir()?;
+        let log_path = dir.path().join("test.log");
+        let max_size = 20;
+
+        let mut log = RotatingLog::with_max_size(&log_path, max_size).await?;
+
+        // Perform multiple writes to trigger multiple rotations
+        for i in 0..3 {
+            let test_data = format!("rotation test {}\n", i).into_bytes();
+            log.write_all(&test_data).await?;
+            log.flush().await?;
+
+            // Give time for rotation
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+
+        // Verify only one .old file exists (latest rotation)
+        assert!(log_path.exists());
+        assert!(log_path.with_extension("old").exists());
+
         Ok(())
     }
 }

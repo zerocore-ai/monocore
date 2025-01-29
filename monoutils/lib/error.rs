@@ -1,3 +1,5 @@
+//! `monoutils::error` is a module containing error utilities for the monocore project.
+
 use thiserror::Error;
 
 //--------------------------------------------------------------------------------------------------
@@ -13,6 +15,10 @@ pub enum MonoutilsError {
     /// An error that occurred when validating paths
     #[error("path validation error: {0}")]
     PathValidation(String),
+
+    /// An error that occurred when performing an IO operation
+    #[error("io error: {0}")]
+    IoError(#[from] std::io::Error),    
 }
 
 //--------------------------------------------------------------------------------------------------

@@ -10,10 +10,10 @@
 //!   standard NFS operations like file/directory creation, reading, writing, and attribute management.
 //!   The server is generic over the storage backend, allowing different storage implementations.
 //!
-//! - [`MemoryMonofsServer`]: A convenience type alias for a MonofsServer using in-memory storage.
+//! - [`MemoryMonofsNFS`]: A convenience type alias for a MonofsServer using in-memory storage.
 //!   This is primarily useful for testing and development.
 //!
-//! - [`DiskMonofsServer`]: A convenience type alias for a MonofsServer using filesystem-based storage.
+//! - [`DiskMonofsNFS`]: A convenience type alias for a MonofsServer using filesystem-based storage.
 //!   This is the recommended type for production use.
 //!
 //! # Features
@@ -27,11 +27,21 @@
 //! # Examples
 //!
 //! ```no_run
-//! use monofs::server::MemoryMonofsServer;
-//! use monoutils_store::MemoryStore;
+//! use monofs::server::MonofsServer;
 //!
-//! // Create an in-memory NFS server
-//! let server = MemoryMonofsServer::new(MemoryStore::default());
+//! # #[tokio::main]
+//! # async fn main() -> anyhow::Result<()> {
+//! // Create a new NFS server instance
+//! let server = MonofsServer::new(
+//!     "/path/to/store",  // Store path
+//!     "127.0.0.1",       // Host address
+//!     2049,              // NFS port
+//! );
+//!
+//! // Start the server
+//! server.start().await?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Implementation Details
@@ -48,10 +58,12 @@
 //! All operations are implemented in a thread-safe manner, allowing concurrent access
 //! from multiple NFS clients.
 
+mod nfs;
 mod server;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
+pub use nfs::*;
 pub use server::*;

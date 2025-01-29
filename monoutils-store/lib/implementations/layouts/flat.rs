@@ -7,6 +7,7 @@ use std::{
 
 use aliasable::boxed::AliasableBox;
 use async_stream::try_stream;
+use async_trait::async_trait;
 use bytes::Bytes;
 use futures::{ready, stream::BoxStream, Future, StreamExt};
 use ipld_core::cid::Cid;
@@ -78,7 +79,7 @@ where
     ///
     /// Holds a reference to other fields in this struct. Declared first to ensure it is dropped
     /// before the other fields.
-    get_raw_block_fn: Pin<Box<dyn Future<Output = StoreResult<Bytes>> + Send + Sync + 'static>>,
+    get_raw_block_fn: Pin<Box<dyn Future<Output = StoreResult<Bytes>> + Send + 'static>>,
 
     /// The store associated with the reader.
     ///
@@ -117,20 +118,18 @@ where
         let store = AliasableBox::from_unique(Box::new(store));
 
         // Create future to get the first node child.
-        let get_raw_block_fn: Pin<Box<dyn Future<Output = StoreResult<Bytes>> + Send + Sync>> =
-            Box::pin(
-                store.get_raw_block(
-                    node.children
-                        .first()
-                        .map(|(cid, _)| cid)
-                        .ok_or(StoreError::from(LayoutError::NoLeafBlock))?,
-                ),
-            );
+        let get_raw_block_fn: Pin<Box<dyn Future<Output = StoreResult<Bytes>> + Send>> = Box::pin(
+            store.get_raw_block(
+                node.children
+                    .first()
+                    .map(|(cid, _)| cid)
+                    .ok_or(StoreError::from(LayoutError::NoLeafBlock))?,
+            ),
+        );
 
         // Unsafe magic to escape Rust ownership grip.
-        let get_raw_block_fn: Pin<
-            Box<dyn Future<Output = StoreResult<Bytes>> + Send + Sync + 'static>,
-        > = unsafe { std::mem::transmute(get_raw_block_fn) };
+        let get_raw_block_fn: Pin<Box<dyn Future<Output = StoreResult<Bytes>> + Send + 'static>> =
+            unsafe { std::mem::transmute(get_raw_block_fn) };
 
         Ok(FlatLayoutReader {
             byte_cursor: 0,
@@ -144,7 +143,7 @@ where
 
     fn fix_future(&mut self) {
         // Create future to get the next child.
-        let get_raw_block_fn: Pin<Box<dyn Future<Output = StoreResult<Bytes>> + Send + Sync>> =
+        let get_raw_block_fn: Pin<Box<dyn Future<Output = StoreResult<Bytes>> + Send>> =
             Box::pin(async {
                 let bytes = self
                     .store
@@ -166,9 +165,8 @@ where
             });
 
         // Unsafe magic to escape Rust ownership grip.
-        let get_raw_block_fn: Pin<
-            Box<dyn Future<Output = StoreResult<Bytes>> + Send + Sync + 'static>,
-        > = unsafe { std::mem::transmute(get_raw_block_fn) };
+        let get_raw_block_fn: Pin<Box<dyn Future<Output = StoreResult<Bytes>> + Send + 'static>> =
+            unsafe { std::mem::transmute(get_raw_block_fn) };
 
         // Update type's future.
         self.get_raw_block_fn = get_raw_block_fn;
@@ -251,17 +249,20 @@ where
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
+#[async_trait]
 impl Layout for FlatLayout {
     async fn organize<'a>(
-        &self,
+        &'a self,
         mut stream: BoxStream<'a, StoreResult<Bytes>>,
-        store: impl IpldStore + Send + 'a,
+        store: impl IpldStore + Send + Sync + 'static,
     ) -> StoreResult<BoxStream<'a, StoreResult<Cid>>> {
         let s = try_stream! {
             let mut children = Vec::new();
             while let Some(Ok(chunk)) = stream.next().await {
                 let len = chunk.len();
+                tracing::trace!("organizing by putting raw block: {:?}", len);
                 let cid = store.put_raw_block(chunk).await?;
+                tracing::trace!("successfully put raw block");
                 children.push((cid, len));
                 yield cid;
             }
@@ -279,11 +280,11 @@ impl Layout for FlatLayout {
         Ok(Box::pin(s))
     }
 
-    async fn retrieve<'a>(
+    async fn retrieve(
         &self,
         cid: &Cid,
-        store: impl IpldStore + Send + Sync + 'a,
-    ) -> StoreResult<Pin<Box<dyn AsyncRead + Send + Sync + 'a>>> {
+        store: impl IpldStore + Send + Sync + 'static,
+    ) -> StoreResult<Pin<Box<dyn AsyncRead + Send>>> {
         let node = store.get_node(cid).await?;
         let reader = FlatLayoutReader::new(node, store)?;
         Ok(Box::pin(reader))
@@ -295,12 +296,13 @@ impl Layout for FlatLayout {
     }
 }
 
+#[async_trait]
 impl LayoutSeekable for FlatLayout {
-    async fn retrieve_seekable<'a>(
+    async fn retrieve_seekable(
         &self,
-        cid: &'a Cid,
-        store: impl IpldStore + Send + Sync + 'a,
-    ) -> StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>> {
+        cid: &Cid,
+        store: impl IpldStore + Send + Sync + 'static,
+    ) -> StoreResult<Pin<Box<dyn SeekableReader + Send>>> {
         let node = store.get_node(cid).await?;
         let reader = FlatLayoutReader::new(node, store)?;
         Ok(Box::pin(reader))

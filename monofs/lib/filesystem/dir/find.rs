@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use monoutils_store::IpldStore;
 use typed_path::{Utf8UnixComponent, Utf8UnixPath};
 
-use crate::filesystem::{entity::Entity, FsError, FsResult};
+use crate::{filesystem::entity::Entity, FsError, FsResult};
 
 use super::{Dir, Utf8UnixPathSegment};
 
@@ -52,7 +52,10 @@ pub type FindResultDirMut<'a, S> = FindResult<&'a mut Dir<S>>;
 /// following the path specified by `path`. It attempts to resolve each component of the path
 /// until it either finds the target directory, encounters an error, or determines that the path
 /// is not found or invalid.
-pub(crate) async fn find_dir<S>(mut dir: &Dir<S>, path: impl AsRef<str>) -> FsResult<FindResultDir<S>>
+pub(crate) async fn find_dir<S>(
+    mut dir: &Dir<S>,
+    path: impl AsRef<str>,
+) -> FsResult<FindResultDir<S>>
 where
     S: IpldStore + Send + Sync,
 {
@@ -153,7 +156,10 @@ where
 /// This function checks the existence of an entity at the given path. If the entity
 /// exists, it returns the entity. If the entity does not exist, it creates a new
 /// directory hierarchy and returns the new entity.
-pub(crate) async fn find_or_create_dir<S>(dir: &mut Dir<S>, path: impl AsRef<str>) -> FsResult<&mut Dir<S>>
+pub(crate) async fn find_or_create_dir<S>(
+    dir: &mut Dir<S>,
+    path: impl AsRef<str>,
+) -> FsResult<&mut Dir<S>>
 where
     S: IpldStore + Send + Sync,
 {
@@ -229,16 +235,23 @@ mod tests {
             let file2 = File::new(store.clone());
 
             let file1_cid = file1.store().await?;
-            subdir1.put_adapted_entry("file1.txt", file1_cid.into()).await?;
+            subdir1
+                .put_adapted_entry("file1.txt", file1_cid.into())
+                .await?;
 
             let file2_cid = file2.store().await?;
-            subdir2.put_adapted_entry("file2.txt", file2_cid.into()).await?;
+            subdir2
+                .put_adapted_entry("file2.txt", file2_cid.into())
+                .await?;
 
             let subdir2_cid = subdir2.store().await?;
-            subdir1.put_adapted_entry("subdir2", subdir2_cid.into()).await?;
+            subdir1
+                .put_adapted_entry("subdir2", subdir2_cid.into())
+                .await?;
 
             let subdir1_cid = subdir1.store().await?;
-            root.put_adapted_entry("subdir1", subdir1_cid.into()).await?;
+            root.put_adapted_entry("subdir1", subdir1_cid.into())
+                .await?;
 
             Ok(root)
         }

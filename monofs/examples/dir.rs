@@ -19,18 +19,21 @@
 //!
 //! To run the example:
 //! ```bash
-//! cargo run --example dir_ops
+//! cargo run --example dir
 //! ```
 
-use monofs::filesystem::{Dir, File, FsResult};
+use monofs::filesystem::{Dir, File};
 use monoutils_store::MemoryStore;
 
 //--------------------------------------------------------------------------------------------------
-// Function: main
+// Functions: main
 //--------------------------------------------------------------------------------------------------
 
 #[tokio::main]
-async fn main() -> FsResult<()> {
+async fn main() -> anyhow::Result<()> {
+    // Initialize logging
+    tracing_subscriber::fmt::init();
+
     // Create a new MemoryStore
     let store = MemoryStore::default();
 
@@ -51,7 +54,7 @@ async fn main() -> FsResult<()> {
     println!("Created directory: {:?}", dir);
 
     // List contents of root directory
-    let entries = root.list()?;
+    let entries = root.list().collect::<Vec<_>>();
     println!("Root directory contents: {:?}", entries);
 
     // Copy a file

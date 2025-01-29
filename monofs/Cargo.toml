@@ -11,6 +11,14 @@ edition.workspace = true
 name = "monofs"
 path = "lib/lib.rs"
 
+[[bin]]
+name = "monofs"
+path = "bin/monofs.rs"
+
+[[bin]]
+name = "mfsrun"
+path = "bin/mfsrun.rs"
+
 [dependencies]
 monoutils-store.workspace = true
 serde.workspace = true
@@ -36,6 +44,8 @@ nfsserve = "0.10"
 intaglio = "1.10"
 hex.workspace = true
 tempfile.workspace = true
+clap.workspace = true
+pin-project-lite = "0.2.15"
 
 [dev-dependencies]
 test-log.workspace = true

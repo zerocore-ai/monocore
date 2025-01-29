@@ -15,10 +15,6 @@ path = "lib/lib.rs"
 name = "monocore"
 path = "bin/monocore.rs"
 
-[[bin]]
-name = "monokrun"
-path = "bin/monokrun.rs"
-
 [[test]]
 name = "integration_cli"
 path = "tests/cli/mod.rs"

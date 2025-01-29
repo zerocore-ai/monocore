@@ -1,13 +1,12 @@
+//! Utility functions for working with paths.
+
 use std::path::PathBuf;
 
 use monoutils::SupportedPathType;
 
-use crate::{
-    config::{DEFAULT_MONOCORE_ENV, DEFAULT_MONOCORE_HOME},
-    MonocoreError, MonocoreResult,
-};
+use crate::{config::DEFAULT_MONOCORE_HOME, MonocoreError, MonocoreResult};
 
-use super::{MONOCORE_ENV_VAR, MONOCORE_HOME_ENV_VAR};
+use super::MONOCORE_HOME_ENV_VAR;
 
 //--------------------------------------------------------------------------------------------------
 // Constants
@@ -19,8 +18,8 @@ pub const MONOCORE_ENV_DIR: &str = ".menv";
 /// The directory name for monocore's global data
 pub const MONOCORE_HOME_DIR: &str = ".monocore";
 
-/// The directory where project filesystems are stored
-pub const FILESYSTEMS_SUBDIR: &str = "filesystems";
+/// The directory where project root filesystems are stored
+pub const ROOTS_SUBDIR: &str = "roots";
 
 /// The directory where project logs are stored
 pub const LOG_SUBDIR: &str = "log";
@@ -31,17 +30,14 @@ pub const LAYERS_SUBDIR: &str = "layers";
 /// The directory where monocore's installed binaries are stored
 pub const BIN_SUBDIR: &str = "bin";
 
-/// The filename for the project active database
-pub const ACTIVE_DB_FILENAME: &str = "active.db";
+/// The filename for the project active sandbox database
+pub const SANDBOX_DB_FILENAME: &str = "sandbox.db";
 
 /// The filename for the global OCI database
 pub const OCI_DB_FILENAME: &str = "oci.db";
 
-/// The filename for the supervisor's log file
-pub const SUPERVISOR_LOG_FILENAME: &str = "supervisor.log";
-
-/// The suffix for sandbox log files
-pub const LOG_SUFFIX: &str = ".log";
+/// The prefix for mcrun log files
+pub const MCRUN_LOG_PREFIX: &str = "mcrun";
 
 //--------------------------------------------------------------------------------------------------
 // Functions
@@ -53,15 +49,6 @@ pub fn monocore_home_path() -> PathBuf {
         PathBuf::from(monocore_home)
     } else {
         DEFAULT_MONOCORE_HOME.to_owned()
-    }
-}
-
-/// Returns the path where all monocore project data is stored.
-pub fn monocore_env_path() -> PathBuf {
-    if let Ok(monocore_env) = std::env::var(MONOCORE_ENV_VAR) {
-        PathBuf::from(monocore_env)
-    } else {
-        DEFAULT_MONOCORE_ENV.to_owned()
     }
 }
 

@@ -17,3 +17,11 @@ thiserror.workspace = true
 typed-path.workspace = true
 pretty-error-debug.workspace = true
 tokio.workspace = true
+futures.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+nix = { workspace = true, features = ["process", "signal"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

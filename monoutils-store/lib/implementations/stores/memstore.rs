@@ -1,10 +1,10 @@
 use std::{
     collections::{HashMap, HashSet},
-    future::Future,
     pin::Pin,
     sync::Arc,
 };
 
+use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
 use ipld_core::cid::Cid;
@@ -13,7 +13,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use tokio::{io::AsyncRead, sync::RwLock};
 
 use crate::{
-    utils, Chunker, Codec, FixedSizeChunker, FlatLayout, IpldReferences, IpldStore,
+    utils, Chunker, Codec, FastCDCChunker, FixedSizeChunker, FlatLayout, IpldReferences, IpldStore,
     IpldStoreSeekable, Layout, LayoutSeekable, RawStore, StoreError, StoreResult,
 };
 
@@ -21,7 +21,7 @@ use crate::{
 // Types
 //--------------------------------------------------------------------------------------------------
 
-/// An in-memory storage for IPLD node and raw blocks with reference counting.
+/// An in-memory storage for IPLD nodes and bytes.
 ///
 /// This store maintains a reference count for each stored block. Reference counting is used to
 /// determine when a block can be safely removed from the store.
@@ -48,6 +48,12 @@ where
     layout: L,
 }
 
+/// The default [`MemoryStore`] using [`FastCDCChunker`] and [`FlatLayout`].
+pub type MemoryStoreDefault = MemoryStore<FastCDCChunker, FlatLayout>;
+
+/// A [`MemoryStore`] with a [`FixedSizeChunker`] and [`FlatLayout`].
+pub type MemoryStoreFixed = MemoryStore<FixedSizeChunker, FlatLayout>;
+
 //--------------------------------------------------------------------------------------------------
 // Methods
 //--------------------------------------------------------------------------------------------------
@@ -57,6 +63,19 @@ where
     C: Chunker,
     L: Layout,
 {
+    /// Creates a new `MemoryStore` with default chunker and layout.
+    pub fn new() -> Self
+    where
+        C: Default,
+        L: Default,
+    {
+        Self {
+            blocks: Arc::new(RwLock::new(HashMap::new())),
+            chunker: C::default(),
+            layout: L::default(),
+        }
+    }
+
     /// Creates a new `MemoryStore` with the given `chunker` and `layout`.
     pub fn with_chunker_and_layout(chunker: C, layout: L) -> Self {
         MemoryStore {
@@ -102,10 +121,11 @@ where
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
+#[async_trait]
 impl<C, L> IpldStore for MemoryStore<C, L>
 where
-    C: Chunker + Clone + Send + Sync,
-    L: Layout + Clone + Send + Sync,
+    C: Chunker + Clone + Send + Sync + 'static,
+    L: Layout + Clone + Send + Sync + 'static,
 {
     async fn put_node<T>(&self, data: &T) -> StoreResult<Cid>
     where
@@ -115,7 +135,7 @@ where
         let bytes = Bytes::from(serde_ipld_dagcbor::to_vec(&data).map_err(StoreError::custom)?);
 
         // Check if the data exceeds the node maximum block size.
-        if let Some(max_size) = self.get_node_block_max_size() {
+        if let Some(max_size) = self.get_node_block_max_size().await? {
             if bytes.len() as u64 > max_size {
                 return Err(StoreError::NodeBlockTooLarge(bytes.len() as u64, max_size));
             }
@@ -127,10 +147,7 @@ where
         Ok(self.store_raw(bytes, Codec::DagCbor).await)
     }
 
-    async fn put_bytes<'a>(
-        &'a self,
-        reader: impl AsyncRead + Send + Sync + 'a,
-    ) -> StoreResult<Cid> {
+    async fn put_bytes(&self, reader: impl AsyncRead + Send + Sync) -> StoreResult<Cid> {
         let chunk_stream = self.chunker.chunk(reader).await?;
         let mut cid_stream = self.layout.organize(chunk_stream, self.clone()).await?;
 
@@ -143,16 +160,16 @@ where
         Ok(cid)
     }
 
-    async fn get_node<T>(&self, cid: &Cid) -> StoreResult<T>
+    async fn get_node<D>(&self, cid: &Cid) -> StoreResult<D>
     where
-        T: DeserializeOwned,
+        D: DeserializeOwned + Send,
     {
         let blocks = self.blocks.read().await;
         match blocks.get(cid) {
             Some((_, bytes)) => match cid.codec().try_into()? {
                 Codec::DagCbor => {
                     let data =
-                        serde_ipld_dagcbor::from_slice::<T>(bytes).map_err(StoreError::custom)?;
+                        serde_ipld_dagcbor::from_slice::<D>(bytes).map_err(StoreError::custom)?;
                     Ok(data)
                 }
                 codec => Err(StoreError::UnexpectedBlockCodec(Codec::DagCbor, codec)),
@@ -161,10 +178,7 @@ where
         }
     }
 
-    async fn get_bytes<'a>(
-        &'a self,
-        cid: &'a Cid,
-    ) -> StoreResult<Pin<Box<dyn AsyncRead + Send + Sync + 'a>>> {
+    async fn get_bytes(&self, cid: &Cid) -> StoreResult<Pin<Box<dyn AsyncRead + Send>>> {
         self.layout.retrieve(cid, self.clone()).await
     }
 
@@ -172,22 +186,20 @@ where
         self.layout.get_size(cid, self.clone()).await
     }
 
-    #[inline]
     async fn has(&self, cid: &Cid) -> bool {
         let blocks = self.blocks.read().await;
         blocks.contains_key(cid)
     }
 
-    fn get_supported_codecs(&self) -> HashSet<Codec> {
+    async fn get_supported_codecs(&self) -> HashSet<Codec> {
         let mut codecs = HashSet::new();
         codecs.insert(Codec::DagCbor);
         codecs.insert(Codec::Raw);
         codecs
     }
 
-    #[inline]
-    fn get_node_block_max_size(&self) -> Option<u64> {
-        self.chunker.chunk_max_size()
+    async fn get_node_block_max_size(&self) -> StoreResult<Option<u64>> {
+        self.chunker.chunk_max_size().await
     }
 
     async fn get_block_count(&self) -> StoreResult<u64> {
@@ -195,14 +207,15 @@ where
     }
 }
 
+#[async_trait]
 impl<C, L> RawStore for MemoryStore<C, L>
 where
     C: Chunker + Clone + Send + Sync,
     L: Layout + Clone + Send + Sync,
 {
-    async fn put_raw_block(&self, bytes: impl Into<Bytes>) -> StoreResult<Cid> {
+    async fn put_raw_block(&self, bytes: impl Into<Bytes> + Send) -> StoreResult<Cid> {
         let bytes = bytes.into();
-        if let Some(max_size) = self.get_raw_block_max_size() {
+        if let Some(max_size) = self.get_raw_block_max_size().await? {
             if bytes.len() as u64 > max_size {
                 return Err(StoreError::RawBlockTooLarge(bytes.len() as u64, max_size));
             }
@@ -222,23 +235,22 @@ where
         }
     }
 
-    #[inline]
-    fn get_raw_block_max_size(&self) -> Option<u64> {
-        self.chunker.chunk_max_size()
+    async fn get_raw_block_max_size(&self) -> StoreResult<Option<u64>> {
+        self.chunker.chunk_max_size().await
     }
 }
 
+#[async_trait]
 impl<C, L> IpldStoreSeekable for MemoryStore<C, L>
 where
-    C: Chunker + Clone + Send + Sync,
-    L: LayoutSeekable + Clone + Send + Sync,
+    C: Chunker + Clone + Send + Sync + 'static,
+    L: LayoutSeekable + Clone + Send + Sync + 'static,
 {
-    fn get_seekable_bytes<'a>(
-        &'a self,
-        cid: &'a Cid,
-    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>> + Send
-    {
-        self.layout.retrieve_seekable(cid, self.clone())
+    async fn get_seekable_bytes(
+        &self,
+        cid: &Cid,
+    ) -> StoreResult<Pin<Box<dyn SeekableReader + Send + 'static>>> {
+        self.layout.retrieve_seekable(cid, self.clone()).await
     }
 }
 
@@ -295,7 +307,7 @@ mod tests {
             .map(|i| (i % 255) as u8)
             .collect();
 
-        let cid = store.put_bytes(&data[..]).await?;
+        let cid = store.put_bytes(data.as_slice()).await?;
 
         // Verify the size matches
         let size = store.get_bytes_size(&cid).await?;
@@ -369,16 +381,19 @@ mod tests {
         assert_eq!(store.get_block_count().await?, 2);
 
         // Verify supported codecs
-        let codecs = store.get_supported_codecs();
+        let codecs = store.get_supported_codecs().await;
         assert!(codecs.contains(&Codec::Raw));
         assert!(codecs.contains(&Codec::DagCbor));
 
         // Verify size limits from chunker
         assert_eq!(
-            store.get_node_block_max_size(),
+            store.get_node_block_max_size().await?,
             Some(DEFAULT_MAX_CHUNK_SIZE)
         );
-        assert_eq!(store.get_raw_block_max_size(), Some(DEFAULT_MAX_CHUNK_SIZE));
+        assert_eq!(
+            store.get_raw_block_max_size().await?,
+            Some(DEFAULT_MAX_CHUNK_SIZE)
+        );
 
         Ok(())
     }

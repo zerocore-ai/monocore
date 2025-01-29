@@ -3,10 +3,9 @@ use monocore::{
     cli::{MonocoreArgs, MonocoreSubcommand},
     management, MonocoreResult,
 };
-use tracing::info;
 
 //--------------------------------------------------------------------------------------------------
-// Function: main
+// Functions: main
 //--------------------------------------------------------------------------------------------------
 
 #[tokio::main]
@@ -15,9 +14,9 @@ async fn main() -> MonocoreResult<()> {
     let args = MonocoreArgs::parse();
     match args.subcommand {
         Some(MonocoreSubcommand::Init { path }) => {
-            info!("Initializing monocore project...");
+            tracing::info!("Initializing monocore project...");
             management::init_env(path).await?;
-            info!("Successfully initialized monocore project");
+            tracing::info!("Successfully initialized monocore project");
         }
         Some(_) => (), // TODO: implement other subcommands
         None => {
@@ -29,5 +28,5 @@ async fn main() -> MonocoreResult<()> {
 }
 
 //--------------------------------------------------------------------------------------------------
-// Function: *
+// Functions: *
 //--------------------------------------------------------------------------------------------------

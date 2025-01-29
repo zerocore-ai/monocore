@@ -10,7 +10,7 @@ use async_once_cell::OnceCell;
 
 use monoutils_store::{ipld::cid::Cid, IpldStore, Storable};
 
-use crate::filesystem::{FsError, FsResult};
+use crate::{FsError, FsResult};
 
 //--------------------------------------------------------------------------------------------------
 // Types

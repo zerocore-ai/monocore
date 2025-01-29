@@ -1,6 +1,7 @@
 use std::pin::pin;
 
 use async_stream::try_stream;
+use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -18,16 +19,16 @@ use super::constants::DEFAULT_MAX_CHUNK_SIZE;
 ///
 /// ```text
 /// Input Data:
-/// ┌────────────────────────────────────────────────────────────┐
-/// │ Lorem ipsum dolor sit amet, consectetur adipiscing elit.   │
-/// └────────────────────────────────────────────────────────────┘
+/// ┌────────────────────────────────────────────────────┐
+/// │ Lorem ipsum dolor sit amet, consectetur adipiscing │
+/// └────────────────────────────────────────────────────┘
 ///
 /// FixedSizeChunker (chunk_size = 10):
-/// ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐
-/// │Lorem ipsu│ │m dolor si│ │t amet, co│ │nsectetur │ │adipiscing│ │ elit.  │
-/// └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘ └────────┘
-///    Chunk 1     Chunk 2      Chunk 3      Chunk 4      Chunk 5     Chunk 6
-///  (10 bytes)   (10 bytes)   (10 bytes)   (10 bytes)   (10 bytes)  (6 bytes)
+/// ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+/// │Lorem ipsu│ │m dolor si│ │t amet, co│ │nsectetur │ │adipiscing│
+/// └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
+///    Chunk 1     Chunk 2      Chunk 3      Chunk 4      Chunk 5
+///  (10 bytes)   (10 bytes)   (10 bytes)   (10 bytes)   (10 bytes)
 /// ```
 #[derive(Clone, Debug)]
 pub struct FixedSizeChunker {
@@ -50,12 +51,14 @@ impl FixedSizeChunker {
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
+#[async_trait]
 impl Chunker for FixedSizeChunker {
-    async fn chunk<'a>(
+    async fn chunk(
         &self,
-        reader: impl AsyncRead + Send + 'a,
-    ) -> StoreResult<BoxStream<'a, StoreResult<Bytes>>> {
+        reader: impl AsyncRead + Send + Sync + 'life0,
+    ) -> StoreResult<BoxStream<'_, StoreResult<Bytes>>> {
         let chunk_size = self.chunk_size;
+        tracing::trace!("chunking with chunk size: {}", chunk_size);
 
         let s = try_stream! {
             let reader = pin!(reader);
@@ -69,6 +72,7 @@ impl Chunker for FixedSizeChunker {
                     break;
                 }
 
+                tracing::trace!("yielding chunk of size: {}", chunk.len());
                 yield Bytes::from(chunk);
 
                 chunk_reader = chunk_reader.into_inner().take(chunk_size); // Derives a reader for reading the next chunk.
@@ -78,8 +82,9 @@ impl Chunker for FixedSizeChunker {
         Ok(Box::pin(s))
     }
 
-    fn chunk_max_size(&self) -> Option<u64> {
-        Some(self.chunk_size)
+
+    async fn chunk_max_size(&self) -> StoreResult<Option<u64>> {
+        Ok(Some(self.chunk_size))
     }
 }
 

@@ -1,6 +1,7 @@
 use std::pin::pin;
 
 use async_stream::try_stream;
+use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -27,6 +28,7 @@ use super::{DEFAULT_DESIRED_CHUNK_SIZE, DEFAULT_GEAR_TABLE};
 ///
 /// The average chunk size is controlled by the `desired_chunk_size` parameter, though actual
 /// chunk sizes will vary based on content.
+#[derive(Clone, Debug)]
 pub struct GearCDCChunker {
     /// The gear table used to generate pseudo-random values for each byte.
     /// Each byte maps to a 64-bit value that contributes to the rolling hash.
@@ -56,6 +58,7 @@ pub struct GearCDCChunker {
 ///
 /// This implementation ensures robust chunking behavior for both random and non-random data,
 /// which is essential for effective content-defined chunking in real-world applications.
+#[derive(Clone, Debug)]
 pub struct GearHasher {
     /// The gear table maps each possible byte value to a pseudo-random 64-bit number.
     /// This helps ensure an even distribution of hash values.
@@ -167,11 +170,12 @@ impl GearHasher {
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
+#[async_trait]
 impl Chunker for GearCDCChunker {
-    async fn chunk<'a>(
+    async fn chunk(
         &self,
-        reader: impl AsyncRead + Send + 'a,
-    ) -> StoreResult<BoxStream<'a, StoreResult<Bytes>>> {
+        reader: impl AsyncRead + Send + Sync + 'life0,
+    ) -> StoreResult<BoxStream<'_, StoreResult<Bytes>>> {
         let mask = Self::size_to_mask(self.desired_chunk_size);
         let gear_table = self.gear_table;
 
@@ -208,8 +212,8 @@ impl Chunker for GearCDCChunker {
         Ok(Box::pin(s))
     }
 
-    fn chunk_max_size(&self) -> Option<u64> {
-        None // Variable-size chunks don't have a fixed maximum size
+    async fn chunk_max_size(&self) -> StoreResult<Option<u64>> {
+        Ok(None) // Variable-size chunks don't have a fixed maximum size
     }
 }
 

@@ -1,3 +1,5 @@
+//! `monoutils::seekable` is a module containing seekable utilities for the monocore project.
+
 use std::{
     io::{self, SeekFrom},
     pin::Pin,

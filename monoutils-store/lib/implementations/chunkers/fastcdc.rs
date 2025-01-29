@@ -1,4 +1,5 @@
 use async_stream::try_stream;
+use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use std::pin::pin;
@@ -22,6 +23,7 @@ use super::{
 /// - It can be updated efficiently as new bytes are processed
 /// - It provides good distribution of values for chunk boundary detection
 /// - It is position-sensitive within a 64-byte window
+#[derive(Clone, Debug)]
 pub struct FastHasher {
     /// The gear table maps each possible byte value to a pseudo-random 64-bit number.
     gear_table: [u64; 256],
@@ -58,6 +60,7 @@ pub struct FastHasher {
 ///
 /// [fastcdc]: https://www.usenix.org/system/files/conference/atc16/atc16-paper-xia.pdf
 /// [joshleeb]: https://joshleeb.com/posts/fastcdc.html
+#[derive(Clone, Debug)]
 pub struct FastCDCChunker {
     /// The gear table.
     gear_table: [u64; 256],
@@ -244,11 +247,14 @@ impl Default for FastCDCChunker {
     }
 }
 
+#[async_trait]
 impl Chunker for FastCDCChunker {
-    async fn chunk<'a>(
+    async fn chunk(
         &self,
-        reader: impl AsyncRead + Send + 'a,
-    ) -> StoreResult<BoxStream<'a, StoreResult<Bytes>>> {
+        reader: impl AsyncRead + Send + Sync + 'life0,
+    ) -> StoreResult<BoxStream<'_, StoreResult<Bytes>>> {
+        tracing::trace!("chunking with desired size: {}", self.desired_chunk_size);
+
         let mask_d = FastCDCChunker::size_to_mask(self.desired_chunk_size);
         let (mask_s, mask_l) = FastCDCChunker::derive_masks(self.desired_chunk_size);
         let gear_table = self.gear_table;
@@ -267,6 +273,7 @@ impl Chunker for FastCDCChunker {
                 if n == 0 {
                     // End of input - yield remaining bytes as final chunk if any
                     if !current_chunk.is_empty() {
+                        tracing::trace!("yielding chunk of size: {}", current_chunk.len());
                         yield Bytes::from(current_chunk);
                     }
                     break;
@@ -281,6 +288,7 @@ impl Chunker for FastCDCChunker {
 
                     // Force a cut if we've reached max size
                     if chunk_len >= max_size as usize {
+                        tracing::trace!("yielding chunk at max size: {}", chunk_len);
                         yield Bytes::from(current_chunk);
                         current_chunk = Vec::new();
                         continue;
@@ -298,6 +306,7 @@ impl Chunker for FastCDCChunker {
                         };
 
                         if hasher.boundary_check(mask) && !current_chunk.is_empty() {
+                            tracing::trace!("yielding chunk of size: {}", current_chunk.len());
                             yield Bytes::from(current_chunk);
                             current_chunk = Vec::new();
                         }
@@ -309,8 +318,8 @@ impl Chunker for FastCDCChunker {
         Ok(Box::pin(s))
     }
 
-    fn chunk_max_size(&self) -> Option<u64> {
-        Some(self.max_chunk_size)
+    async fn chunk_max_size(&self) -> StoreResult<Option<u64>> {
+        Ok(Some(self.max_chunk_size))
     }
 }
 

@@ -2,12 +2,19 @@
 
 #![warn(missing_docs)]
 
+mod error;
+
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
+pub mod cli;
 pub mod config;
 pub mod filesystem;
+pub mod management;
+pub mod runtime;
+pub mod server;
 pub mod store;
 pub mod utils;
-pub mod server;
+
+pub use error::*;

@@ -13,7 +13,7 @@ use monoutils_store::{
 use serde::{Deserialize, Serialize};
 use typed_path::Utf8UnixPathBuf;
 
-use crate::filesystem::{FsResult, Metadata, MetadataSerializable};
+use crate::{filesystem::{Metadata, MetadataSerializable}, FsResult};
 
 use super::kind::EntityType;
 

@@ -13,8 +13,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::config::DEFAULT_SYMLINK_DEPTH;
+use crate::FsResult;
 
-use super::{kind::EntityType, AttributesCidLink, FsResult};
+use super::{kind::EntityType, AttributesCidLink};
 
 //--------------------------------------------------------------------------------------------------
 // Constants

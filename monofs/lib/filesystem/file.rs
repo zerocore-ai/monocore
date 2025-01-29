@@ -12,7 +12,7 @@ use monoutils_store::{
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncRead;
 
-use crate::filesystem::{kind::EntityType, FsResult, Metadata, MetadataSerializable};
+use crate::{filesystem::{kind::EntityType, Metadata, MetadataSerializable}, FsResult};
 
 //--------------------------------------------------------------------------------------------------
 // Constants

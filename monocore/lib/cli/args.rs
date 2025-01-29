@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::styles;
 use clap::Parser;
 use typed_path::Utf8UnixPathBuf;
@@ -6,9 +8,9 @@ use typed_path::Utf8UnixPathBuf;
 // Types
 //-------------------------------------------------------------------------------------------------
 
-/// Monocore CLI - A lightweight orchestrator for running containers in microVMs
+/// monocore is a tool for managing lightweight distributed sandboxes
 #[derive(Debug, Parser)]
-#[command(name = "monocore", author, about, styles=styles::styles())]
+#[command(name = "monocore", author, styles=styles::styles())]
 pub struct MonocoreArgs {
     /// The subcommand to run
     #[command(subcommand)]
@@ -31,7 +33,7 @@ pub enum MonocoreSubcommand {
     Init {
         /// Path to initialize the project in
         #[arg(value_name = "PATH")]
-        path: Option<Utf8UnixPathBuf>,
+        path: Option<PathBuf>,
     },
 
     /// Add a new build, sandbox, or group component to the project

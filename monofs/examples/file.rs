@@ -18,7 +18,7 @@
 //!
 //! To run the example:
 //! ```bash
-//! cargo run --example file_ops
+//! cargo run --example file
 //! ```
 
 use monofs::filesystem::File;
@@ -26,11 +26,14 @@ use monoutils_store::{MemoryStore, Storable};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
 //--------------------------------------------------------------------------------------------------
-// Function: main
+// Functions: main
 //--------------------------------------------------------------------------------------------------
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Initialize logging
+    tracing_subscriber::fmt::init();
+
     // Create a new MemoryStore
     let store = MemoryStore::default();
 
@@ -42,8 +45,10 @@ async fn main() -> anyhow::Result<()> {
     let content = b"Hello, monofs!";
     let mut output_stream = file.get_output_stream();
     output_stream.write_all(content).await?;
-    output_stream.shutdown().await?;
+    output_stream.flush().await?;
+    drop(output_stream);
     println!("Wrote content to file");
+
 
     // Read content from the file
     let input_stream = file.get_input_stream().await?;

@@ -1,5 +1,6 @@
 use std::{collections::HashSet, future::Future, pin::Pin};
 
+use async_trait::async_trait;
 use bytes::Bytes;
 use ipld_core::cid::Cid;
 use monoutils::SeekableReader;
@@ -49,13 +50,14 @@ pub enum Codec {
 ///
 // TODO: Add support for deleting blocks with `derefence` method.
 // TODO: Add support for specifying hash type.
+#[async_trait]
 pub trait IpldStore: RawStore + Clone {
     /// Saves an IPLD serializable object to the store and returns the `Cid` to it.
     ///
     /// ## Errors
     ///
     /// If the serialized data is too large, `StoreError::NodeBlockTooLarge` error is returned.
-    fn put_node<T>(&self, data: &T) -> impl Future<Output = StoreResult<Cid>> + Send
+    async fn put_node<T>(&self, data: &T) -> StoreResult<Cid>
     where
         T: Serialize + IpldReferences + Sync;
 
@@ -67,17 +69,14 @@ pub trait IpldStore: RawStore + Clone {
     /// ## Errors
     ///
     /// If the bytes are too large, `StoreError::RawBlockTooLarge` error is returned.
-    fn put_bytes<'a>(
-        &'a self,
-        reader: impl AsyncRead + Send + Sync + 'a,
-    ) -> impl Future<Output = StoreResult<Cid>> + 'a;
+    async fn put_bytes(&self, reader: impl AsyncRead + Send + Sync) -> StoreResult<Cid>;
 
     /// Gets a type stored as an IPLD data from the store by its `Cid`.
     ///
     /// ## Errors
     ///
     /// If the block is not found, `StoreError::BlockNotFound` error is returned.
-    fn get_node<D>(&self, cid: &Cid) -> impl Future<Output = StoreResult<D>> + Send
+    async fn get_node<D>(&self, cid: &Cid) -> StoreResult<D>
     where
         D: DeserializeOwned + Send;
 
@@ -86,34 +85,32 @@ pub trait IpldStore: RawStore + Clone {
     /// ## Errors
     ///
     /// If the block is not found, `StoreError::BlockNotFound` error is returned.
-    fn get_bytes<'a>(
-        &'a self,
-        cid: &'a Cid,
-    ) -> impl Future<Output = StoreResult<Pin<Box<dyn AsyncRead + Send + Sync + 'a>>>> + 'a;
+    async fn get_bytes(
+        &self,
+        cid: &Cid,
+    ) -> StoreResult<Pin<Box<dyn AsyncRead + Send>>>;
 
     /// Gets the size of all the blocks associated with the given `Cid` in bytes.
-    fn get_bytes_size(&self, cid: &Cid) -> impl Future<Output = StoreResult<u64>> + Send;
+    async fn get_bytes_size(&self, cid: &Cid) -> StoreResult<u64>;
 
     /// Checks if the store has a block with the given `Cid`.
-    fn has(&self, cid: &Cid) -> impl Future<Output = bool>;
+    async fn has(&self, cid: &Cid) -> bool;
 
     /// Returns the codecs supported by the store.
-    fn get_supported_codecs(&self) -> HashSet<Codec>;
+    async fn get_supported_codecs(&self) -> HashSet<Codec>;
 
     /// Returns the allowed maximum block size for IPLD and merkle nodes.
     /// If there is no limit, `None` is returned.
-    fn get_node_block_max_size(&self) -> Option<u64>;
+    async fn get_node_block_max_size(&self) -> StoreResult<Option<u64>>;
 
     /// Checks if the store is empty.
-    fn is_empty(&self) -> impl Future<Output = StoreResult<bool>> {
-        async {
-            let count = self.get_block_count().await?;
-            Ok(count == 0)
-        }
+    async fn is_empty(&self) -> StoreResult<bool> {
+        let count = self.get_block_count().await?;
+        Ok(count == 0)
     }
 
     /// Returns the number of blocks in the store.
-    fn get_block_count(&self) -> impl Future<Output = StoreResult<u64>>;
+    async fn get_block_count(&self) -> StoreResult<u64>;
 
     // /// Dereferences a CID and deletes its blocks if it is not referenced by any other CID.
     // ///
@@ -130,30 +127,48 @@ pub trait IpldStore: RawStore + Clone {
 }
 
 /// A trait for stores that support raw blocks.
+///
+/// ## Important
+///
+/// This is a low-level API intended for code implementing an [`IpldStore`].
+/// Users should prefer the higher-level methods from [`IpldStore`] instead:
+/// - Use [`IpldStore::put_bytes`]/[`IpldStore::get_bytes`] for raw bytes
+/// - Use [`IpldStore::put_node`]/[`IpldStore::get_node`] for structured data
+#[async_trait]
 pub trait RawStore: Clone {
-    /// Tries to save `bytes` as a single block to the store. Unlike `put_bytes`, this method does
-    /// not chunk the data and does not create intermediate merkle nodes.
+    /// Tries to save `bytes` as a single block to the store. Unlike [`IpldStore::put_bytes`], this
+    /// method does not chunk the data and does not create intermediate merkle nodes.
+    ///
+    /// ## Important
+    ///
+    /// This is a low-level API intended for code implementing an [`IpldStore`].
+    /// Users should prefer [`IpldStore::put_bytes`] or [`IpldStore::put_node`] instead.
     ///
     /// ## Errors
     ///
     /// If the bytes are too large, `StoreError::RawBlockTooLarge` error is returned.
-    fn put_raw_block(
+    async fn put_raw_block(
         &self,
         bytes: impl Into<Bytes> + Send,
-    ) -> impl Future<Output = StoreResult<Cid>> + Send;
+    ) -> StoreResult<Cid>;
 
     /// Retrieves raw bytes of a single block from the store by its `Cid`.
     ///
-    /// Unlike `get_stream`, this method does not expect chunked data and does not have to retrieve
-    /// intermediate merkle nodes.
+    /// Unlike [`IpldStore::get_bytes`], this method does not expect chunked data and does not have
+    /// to retrieve intermediate merkle nodes.
+    ///
+    /// ## Important
+    ///
+    /// This is a low-level API intended for code implementing an [`IpldStore`].
+    /// Users should prefer [`IpldStore::get_bytes`] or [`IpldStore::get_node`] instead.
     ///
     /// ## Errors
     ///
     /// If the block is not found, `StoreError::BlockNotFound` error is returned.
-    fn get_raw_block(&self, cid: &Cid) -> impl Future<Output = StoreResult<Bytes>> + Send + Sync;
+    async fn get_raw_block(&self, cid: &Cid) -> StoreResult<Bytes>;
 
     /// Returns the allowed maximum block size for raw bytes. If there is no limit, `None` is returned.
-    fn get_raw_block_max_size(&self) -> Option<u64>;
+    async fn get_raw_block_max_size(&self) -> StoreResult<Option<u64>>;
 }
 
 /// Helper extension to the `IpldStore` trait.
@@ -175,12 +190,13 @@ pub trait IpldStoreExt: IpldStore {
 }
 
 /// `IpldStoreSeekable` is a trait that extends the `IpldStore` trait to allow for seeking.
+#[async_trait]
 pub trait IpldStoreSeekable: IpldStore {
     /// Gets a seekable reader for the underlying bytes associated with the given CID.
-    fn get_seekable_bytes<'a>(
-        &'a self,
-        cid: &'a Cid,
-    ) -> impl Future<Output = StoreResult<Pin<Box<dyn SeekableReader + Send + Sync + 'a>>>> + Send;
+    async fn get_seekable_bytes(
+        &self,
+        cid: &Cid,
+    ) -> StoreResult<Pin<Box<dyn SeekableReader + Send + 'static>>>;
 }
 
 /// A trait for types that can be changed to a different store.

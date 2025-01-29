@@ -1,3 +1,5 @@
+//! Utility functions for working with files.
+
 use std::path::Path;
 
 use oci_spec::image::DigestAlgorithm;
