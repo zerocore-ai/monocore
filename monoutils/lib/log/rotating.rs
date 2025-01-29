@@ -40,11 +40,11 @@ use crate::DEFAULT_LOG_MAX_SIZE;
 /// # Example
 ///
 /// ```no_run
-/// use monocore::RotatingLog;
+/// use monoutils::log::RotatingLog;
 ///
 /// #[tokio::main]
 /// async fn main() -> std::io::Result<()> {
-///     let log = RotatingLog::new("app.log", Some(1024 * 1024)).await?; // 1MB max size
+///     let log = RotatingLog::new("app.log").await?; // 1MB max size
 ///     Ok(())
 /// }
 /// ```

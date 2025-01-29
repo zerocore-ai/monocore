@@ -15,14 +15,14 @@
 //! mfsrun nfsserver \
 //!     --host=127.0.0.1 \
 //!     --port=2049 \
-//!     --store-path=/path/to/store
+//!     --store-dir=/path/to/store
 //! ```
 //!
 //! #### NFS Server Parameters
 //!
 //! - `--host`: The address to bind to (default: "127.0.0.1")
 //! - `--port`: The port to listen on (default: 2049)
-//! - `--store-path`: Directory path where the monofs store will be located
+//! - `--store-dir`: Directory path where the monofs store will be located
 //!
 //! ### Supervisor Mode
 //!
@@ -78,7 +78,7 @@ use anyhow::Result;
 use clap::Parser;
 use monofs::{
     cli::{MfsRuntimeArgs, MfsRuntimeSubcommand},
-    runtime::MfsRuntimeMetricsMonitor,
+    runtime::NfsServerMonitor,
     server::MonofsServer,
     utils::path::MFSRUN_LOG_PREFIX,
 };
@@ -90,8 +90,8 @@ use monoutils::runtime::Supervisor;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt::init();
+    // Initialize logging without ANSI colors
+    tracing_subscriber::fmt().with_ansi(false).init();
 
     // Parse command line arguments
     let args = MfsRuntimeArgs::parse();
@@ -120,12 +120,17 @@ async fn main() -> Result<()> {
             port,
             store_dir,
             db_path,
+            mount_dir,
         } => {
             // Get current executable path
             let current_exe = env::current_exe()?;
 
-            // Create metrics monitor
-            let metrics_monitor = MfsRuntimeMetricsMonitor::new(db_path);
+            // Get supervisor PID
+            let supervisor_pid = std::process::id();
+
+            // Create nfs server monitor
+            let nfs_server_monitor =
+                NfsServerMonitor::new(db_path, supervisor_pid, mount_dir).await?;
 
             // Compose child arguments
             let child_args = vec![
@@ -135,14 +140,18 @@ async fn main() -> Result<()> {
                 format!("--store-dir={}", store_dir.display()),
             ];
 
+            // Compose child environment variables
+            let child_envs = vec![("RUST_LOG", "info")];
+
             // Create and start supervisor
             let mut supervisor = Supervisor::new(
                 current_exe,
                 child_args,
+                child_envs,
                 child_name,
                 MFSRUN_LOG_PREFIX,
                 log_dir,
-                metrics_monitor,
+                nfs_server_monitor,
             );
 
             supervisor.start().await?;
