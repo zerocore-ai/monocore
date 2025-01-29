@@ -1,5 +1,8 @@
 //! `monoutils::error` is a module containing error utilities for the monocore project.
 
+use std::error::Error;
+use std::fmt::{self, Display};
+
 use thiserror::Error;
 
 //--------------------------------------------------------------------------------------------------
@@ -18,7 +21,40 @@ pub enum MonoutilsError {
 
     /// An error that occurred when performing an IO operation
     #[error("io error: {0}")]
-    IoError(#[from] std::io::Error),    
+    IoError(#[from] std::io::Error),
+
+    /// Custom error.
+    #[error("Custom error: {0}")]
+    Custom(#[from] AnyError),
+}
+
+/// An error that can represent any error.
+#[derive(Debug)]
+pub struct AnyError {
+    error: anyhow::Error,
+}
+
+//--------------------------------------------------------------------------------------------------
+// Methods
+//--------------------------------------------------------------------------------------------------
+
+impl MonoutilsError {
+    /// Creates a new `Err` result.
+    pub fn custom(error: impl Into<anyhow::Error>) -> MonoutilsError {
+        MonoutilsError::Custom(AnyError {
+            error: error.into(),
+        })
+    }
+}
+
+impl AnyError {
+    /// Downcasts the error to a `T`.
+    pub fn downcast<T>(&self) -> Option<&T>
+    where
+        T: Display + fmt::Debug + Send + Sync + 'static,
+    {
+        self.error.downcast_ref::<T>()
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -30,3 +66,21 @@ pub enum MonoutilsError {
 pub fn Ok<T>(value: T) -> MonoutilsResult<T> {
     Result::Ok(value)
 }
+
+//--------------------------------------------------------------------------------------------------
+// Trait Implementations
+//--------------------------------------------------------------------------------------------------
+
+impl PartialEq for AnyError {
+    fn eq(&self, other: &Self) -> bool {
+        self.error.to_string() == other.error.to_string()
+    }
+}
+
+impl Display for AnyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.error)
+    }
+}
+
+impl Error for AnyError {}

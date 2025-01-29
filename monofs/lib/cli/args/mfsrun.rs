@@ -62,5 +62,9 @@ pub enum MfsRuntimeSubcommand {
         /// Path to the metrics database file
         #[arg(long)]
         db_path: PathBuf,
+
+        /// Directory where the filesystem is mounted
+        #[arg(long)]
+        mount_dir: PathBuf,
     },
 }

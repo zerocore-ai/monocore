@@ -1804,6 +1804,7 @@ dependencies = [
  "monoutils",
  "monoutils-store",
  "nfsserve",
+ "nix",
  "pin-project-lite",
  "pretty-error-debug",
  "serde",
