@@ -1,11 +1,9 @@
-//! Management functions.
+//! Runtime components for the Monofs filesystem.
 
-mod init;
-mod mount;
+mod metrics;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use init::*;
-pub use mount::*;
+pub use metrics::*;

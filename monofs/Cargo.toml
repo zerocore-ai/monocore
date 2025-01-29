@@ -15,6 +15,10 @@ path = "lib/lib.rs"
 name = "monofs"
 path = "bin/monofs.rs"
 
+[[bin]]
+name = "mfsrun"
+path = "bin/mfsrun.rs"
+
 [dependencies]
 monoutils-store.workspace = true
 serde.workspace = true

@@ -39,9 +39,6 @@ use tokio::io::AsyncWriteExt;
 #[command(author, version, about)]
 struct Args {
     /// Path to the filesystem directory
-    #[arg(
-        help = "Path to the filesystem directory. Will be created if it doesn't exist. Root directory CID stored in $path/head"
-    )]
     path: std::path::PathBuf,
 }
 

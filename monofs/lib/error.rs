@@ -1,12 +1,14 @@
 use std::{
     error::Error,
     fmt::{self, Display},
+    io,
 };
 
 use monoutils_store::ipld::cid::Cid;
 use thiserror::Error;
 
 use crate::filesystem::Utf8UnixPathSegment;
+use monoutils::error::MonoutilsError;
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -123,7 +125,32 @@ pub enum FsError {
 
     /// IO error.
     #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
+    IoError(#[from] io::Error),
+
+    /// Mount point is not empty
+    #[error("Mount point is not empty: {0}")]
+    MountPointNotEmpty(String),
+
+    /// Mount operation failed
+    #[error("Mount operation failed: {0}")]
+    MountFailed(String),
+
+    /// No available ports found in range
+    #[error("No available ports found in range {host}:{start}-{end}")]
+    NoAvailablePorts {
+        /// The host to bind the port to
+        host: String,
+
+        /// The start port number
+        start: u32,
+
+        /// The end port number
+        end: u32,
+    },
+
+    /// Supervisor error.
+    #[error("Supervisor error: {0}")]
+    SupervisorError(String),
 }
 
 /// An error that can represent any error.
@@ -182,3 +209,9 @@ impl Display for AnyError {
 }
 
 impl Error for AnyError {}
+
+impl From<MonoutilsError> for FsError {
+    fn from(err: MonoutilsError) -> Self {
+        FsError::SupervisorError(err.to_string())
+    }
+}

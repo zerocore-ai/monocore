@@ -9,13 +9,22 @@ use crate::{filesystem::Utf8UnixPathSegment, FsError, FsResult};
 //--------------------------------------------------------------------------------------------------
 
 /// The default suffix of the directory where the actual filesystem data is stored
-pub const MFS_DATA_SUFFIX: &str = ".mfs";
+pub const MFS_DIR_SUFFIX: &str = "mfs";
+
+/// The directory where project logs are stored
+pub const LOG_SUBDIR: &str = "log";
+
+/// The directory where the filesystem's blocks are stored
+pub const BLOCKS_SUBDIR: &str = "blocks";
 
 /// The filename of the database that stores the filesystem's metadata
 pub const FS_DB_FILENAME: &str = "fs.db";
 
 /// The name of the symlink that links to the actual filesystem data
 pub const MFS_LINK_FILENAME: &str = ".mfs_link";
+
+/// The prefix for mfsrun log files
+pub const MFSRUN_LOG_PREFIX: &str = "mfsrun";
 
 //--------------------------------------------------------------------------------------------------
 // Functions

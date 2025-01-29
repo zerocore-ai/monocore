@@ -27,11 +27,21 @@
 //! # Examples
 //!
 //! ```no_run
-//! use monofs::server::MemoryMonofsNFS;
-//! use monoutils_store::MemoryStore;
+//! use monofs::server::MonofsServer;
 //!
-//! // Create an in-memory NFS server
-//! let server = MemoryMonofsNFS::new(MemoryStore::default());
+//! # #[tokio::main]
+//! # async fn main() -> anyhow::Result<()> {
+//! // Create a new NFS server instance
+//! let server = MonofsServer::new(
+//!     "/path/to/store",  // Store path
+//!     "127.0.0.1",       // Host address
+//!     2049,              // NFS port
+//! );
+//!
+//! // Start the server
+//! server.start().await?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Implementation Details

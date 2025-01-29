@@ -1,11 +1,11 @@
-//! Management functions.
+//! `monoutils::runtime` is a module containing runtime utilities for the monocore project.
 
-mod init;
-mod mount;
+mod supervisor;
+mod metrics;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use init::*;
-pub use mount::*;
+pub use supervisor::*;
+pub use metrics::*;

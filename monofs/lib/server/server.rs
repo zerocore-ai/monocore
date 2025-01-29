@@ -1,9 +1,8 @@
 use getset::Getters;
-use monoutils_store::{FastCDCChunker, FlatLayout, MemoryStore};
 use nfsserve::tcp::{NFSTcp, NFSTcpListener};
 use std::path::PathBuf;
 
-use crate::store::FlatFsStore;
+use crate::store::FlatFsStoreDefault;
 
 use super::MonofsNFS;
 
@@ -13,7 +12,7 @@ use super::MonofsNFS;
 #[getset(get = "pub with_prefix")]
 pub struct MonofsServer {
     /// The path to the store.
-    store_path: PathBuf,
+    store_dir: PathBuf,
 
     /// The host to bind to.
     host: String,
@@ -24,9 +23,9 @@ pub struct MonofsServer {
 
 impl MonofsServer {
     /// Creates a new MonofsServer with the given store path and host:port.
-    pub fn new(store_path: impl Into<PathBuf>, host: impl Into<String>, port: u32) -> Self {
+    pub fn new(store_dir: impl Into<PathBuf>, host: impl Into<String>, port: u32) -> Self {
         Self {
-            store_path: store_path.into(),
+            store_dir: store_dir.into(),
             host: host.into(),
             port,
         }
@@ -35,9 +34,7 @@ impl MonofsServer {
     /// Starts the NFS server and blocks until it is shut down.
     pub async fn start(&self) -> anyhow::Result<()> {
         // Create the store and NFS filesystem
-        let _store =
-            FlatFsStore::<FastCDCChunker, FlatLayout>::new(&self.store_path.to_string_lossy());
-        let store = MemoryStore::<FastCDCChunker, FlatLayout>::new();
+        let store = FlatFsStoreDefault::new(&self.store_dir.to_string_lossy());
         let fs = MonofsNFS::new(store);
 
         // Create and start the NFS listener
@@ -63,7 +60,7 @@ mod tests {
             0, // Use port 0 for testing
         );
 
-        assert_eq!(server.store_path, temp_dir.path());
+        assert_eq!(server.store_dir, temp_dir.path());
         assert_eq!(server.host, "127.0.0.1");
         assert_eq!(server.port, 0);
     }

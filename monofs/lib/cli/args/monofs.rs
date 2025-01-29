@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
-use super::styles;
+use crate::cli::styles;
 use clap::Parser;
+use typed_path::Utf8UnixPathBuf;
 
 //-------------------------------------------------------------------------------------------------
 // Types
@@ -30,9 +31,8 @@ pub enum MonofsSubcommand {
     /// Initialize a new monofs filesystem
     #[command(name = "init")]
     Init {
-        /// System path where the filesystem should be initialized
-        #[arg()]
-        system_path: Option<PathBuf>,
+        /// Directory where the filesystem will be mounted
+        mount_dir: Option<PathBuf>,
     },
 
     /// Create a temporary filesystem
@@ -42,17 +42,15 @@ pub enum MonofsSubcommand {
     /// Clone an existing filesystem
     #[command(name = "clone")]
     Clone {
-        /// Remote or system path to clone from
-        #[arg()]
-        remote_or_system_path: String,
+        /// Remote or local path to clone from
+        uri: String,
     },
 
     /// Sync a filesystem with another filesystem
     #[command(name = "sync")]
     Sync {
-        /// Remote or system path to sync with
-        #[arg()]
-        remote_or_system_path: String,
+        /// Remote or local path to sync with
+        uri: String,
 
         /// Type of sync (e.g. backup, raft, crdt)
         #[arg(short = 't', long)]
@@ -64,7 +62,7 @@ pub enum MonofsSubcommand {
     Rev {
         /// Path to show revisions for
         #[arg(short = 'p', long)]
-        path: Option<String>,
+        path: Option<Utf8UnixPathBuf>,
     },
 
     /// Tag a revision of a file entity
@@ -80,7 +78,7 @@ pub enum MonofsSubcommand {
 
         /// Path to tag
         #[arg(short = 'p', long)]
-        path: Option<String>,
+        path: Option<Utf8UnixPathBuf>,
     },
 
     /// Checkout a revision of a file entity
@@ -92,7 +90,7 @@ pub enum MonofsSubcommand {
 
         /// Path to checkout
         #[arg(short = 'p', long)]
-        path: Option<String>,
+        path: Option<Utf8UnixPathBuf>,
     },
 
     /// Show differences between two revisions of a file entity
@@ -108,7 +106,7 @@ pub enum MonofsSubcommand {
 
         /// Path to compare
         #[arg(short = 'p', long)]
-        path: Option<String>,
+        path: Option<Utf8UnixPathBuf>,
     },
 
     /// Show version information

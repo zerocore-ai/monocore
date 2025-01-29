@@ -1,11 +1,9 @@
-//! Management functions.
+//! `monoutils::config` is a module containing configuration utilities for the monocore project.
 
-mod init;
-mod mount;
+mod default;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use init::*;
-pub use mount::*;
+pub use default::*;

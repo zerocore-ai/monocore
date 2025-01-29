@@ -1,11 +1,9 @@
-//! Management functions.
+//! `monoutils::log` is a module containing logging utilities for the monocore project.
 
-mod init;
-mod mount;
+mod rotating;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use init::*;
-pub use mount::*;
+pub use rotating::*;

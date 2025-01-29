@@ -1,6 +1,18 @@
+//! `monoutils::path` is a module containing path utilities for the monocore project.
+
 use typed_path::{Utf8UnixComponent, Utf8UnixPathBuf};
 
 use crate::{MonoutilsError, MonoutilsResult};
+
+//--------------------------------------------------------------------------------------------------
+// Constants
+//--------------------------------------------------------------------------------------------------
+
+/// The suffix for log files
+pub const LOG_SUFFIX: &str = "log";
+
+/// The filename for the supervisor's log file
+pub const SUPERVISOR_LOG_FILENAME: &str = "supervisor.log";
 
 //--------------------------------------------------------------------------------------------------
 // Types

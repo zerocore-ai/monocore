@@ -1,11 +1,6 @@
-//! Management functions.
-
-mod init;
-mod mount;
-
 //--------------------------------------------------------------------------------------------------
-// Exports
+// Constants
 //--------------------------------------------------------------------------------------------------
 
-pub use init::*;
-pub use mount::*;
+/// Default maximum log file size (10MB)
+pub const DEFAULT_LOG_MAX_SIZE: u64 = 10 * 1024 * 1024;
