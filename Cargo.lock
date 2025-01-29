@@ -1809,6 +1809,7 @@ dependencies = [
  "serde",
  "serde_ipld_dagcbor",
  "serde_json",
+ "sqlx",
  "tempfile",
  "test-log",
  "thiserror 2.0.6",

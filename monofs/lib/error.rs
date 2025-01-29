@@ -127,6 +127,10 @@ pub enum FsError {
     #[error("IO error: {0}")]
     IoError(#[from] io::Error),
 
+    /// An error that occurred during a database operation.
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
+
     /// Mount point is not empty
     #[error("Mount point is not empty: {0}")]
     MountPointNotEmpty(String),
@@ -134,6 +138,10 @@ pub enum FsError {
     /// Mount operation failed
     #[error("Mount operation failed: {0}")]
     MountFailed(String),
+
+    /// Unmount operation failed
+    #[error("Unmount operation failed: {0}")]
+    UnmountFailed(String),
 
     /// No available ports found in range
     #[error("No available ports found in range {host}:{start}-{end}")]
@@ -161,6 +169,24 @@ pub enum FsError {
         /// Where the path came from - either "environment variable" or "default path"
         src: String,
     },
+
+    /// Maximum search depth reached while looking for MFS root
+    #[error("Maximum search depth ({max_depth}) reached while looking for MFS root starting from {path}")]
+    MaxMfsRootSearchDepthReached {
+        /// The maximum depth allowed
+        max_depth: u32,
+
+        /// The path we started searching from
+        path: String,
+    },
+
+    /// No MFS root found
+    #[error("No MFS root found in path hierarchy starting from {0}")]
+    NoMfsRootFound(String),
+
+    /// An error that occurred when a migration error occurred
+    #[error("migration error: {0}")]
+    MigrationError(#[from] sqlx::migrate::MigrateError),
 }
 
 /// An error that can represent any error.

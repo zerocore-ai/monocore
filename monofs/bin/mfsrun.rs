@@ -15,14 +15,14 @@
 //! mfsrun nfsserver \
 //!     --host=127.0.0.1 \
 //!     --port=2049 \
-//!     --store-path=/path/to/store
+//!     --store-dir=/path/to/store
 //! ```
 //!
 //! #### NFS Server Parameters
 //!
 //! - `--host`: The address to bind to (default: "127.0.0.1")
 //! - `--port`: The port to listen on (default: 2049)
-//! - `--store-path`: Directory path where the monofs store will be located
+//! - `--store-dir`: Directory path where the monofs store will be located
 //!
 //! ### Supervisor Mode
 //!

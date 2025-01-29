@@ -18,3 +18,8 @@ pub const DEFAULT_SERVER_PORT: u16 = 3456;
 /// The path where all monocore global data is stored.
 pub static DEFAULT_MONOCORE_HOME: LazyLock<PathBuf> =
     LazyLock::new(|| dirs::home_dir().unwrap().join(MONOCORE_HOME_DIR));
+
+/// The default configuration file content
+pub(crate) const DEFAULT_CONFIG: &str = r#"# Sandbox configurations
+sandboxes: []
+"#;

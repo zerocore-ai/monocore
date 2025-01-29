@@ -54,7 +54,7 @@ pub enum MonofsSubcommand {
 
         /// Type of sync (e.g. backup, raft, crdt)
         #[arg(short = 't', long)]
-        sync_type: String,
+        r#type: String,
     },
 
     /// Show the revisions of a filesystem
@@ -107,6 +107,17 @@ pub enum MonofsSubcommand {
         /// Path to compare
         #[arg(short = 'p', long)]
         path: Option<Utf8UnixPathBuf>,
+    },
+
+    /// Safely unmount the filesystem and stop the NFS server
+    #[command(name = "detach")]
+    Detach {
+        /// Directory where the filesystem is mounted
+        mount_dir: Option<PathBuf>,
+
+        /// Force unmount even if busy
+        #[arg(short = 'f', long)]
+        force: bool,
     },
 
     /// Show version information

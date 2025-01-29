@@ -15,7 +15,7 @@ async fn main() -> MonocoreResult<()> {
     match args.subcommand {
         Some(MonocoreSubcommand::Init { path }) => {
             tracing::info!("Initializing monocore project...");
-            management::init_env(path).await?;
+            management::init_menv(path).await?;
             tracing::info!("Successfully initialized monocore project");
         }
         Some(_) => (), // TODO: implement other subcommands

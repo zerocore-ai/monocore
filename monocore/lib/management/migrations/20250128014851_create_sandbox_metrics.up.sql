@@ -7,10 +7,6 @@ CREATE TABLE IF NOT EXISTS sandbox_metrics (
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     cpu_usage REAL,
     memory_usage INTEGER,
-    disk_read_bytes INTEGER,
-    disk_write_bytes INTEGER,
-    total_disk_read INTEGER,
-    total_disk_write INTEGER,
     FOREIGN KEY(sandbox_id) REFERENCES sandbox(id)
 );
 
