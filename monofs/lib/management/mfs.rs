@@ -1,10 +1,12 @@
+use crate::config::DEFAULT_MFSRUN_BIN_PATH;
 use crate::management::db;
 use crate::management::find;
 use crate::utils::path::{BLOCKS_SUBDIR, FS_DB_FILENAME, LOG_SUBDIR, MFS_LINK_FILENAME};
+use crate::utils::MFSRUN_BIN_PATH_ENV_VAR;
 use crate::FsError;
 use crate::{
     config::{DEFAULT_HOST, DEFAULT_NFS_PORT},
-    utils::path::{self, MFS_DIR_SUFFIX},
+    utils::path::MFS_DIR_SUFFIX,
     FsResult,
 };
 use nix::sys::signal::{self, Signal};
@@ -79,7 +81,8 @@ pub async fn init_mfs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
         .map(|name| name.to_string_lossy().to_string())
         .expect("Failed to get file name for mount point");
 
-    let mfsrun_path = path::resolve_mfsrun_bin_path()?;
+    let mfsrun_path =
+        monoutils::path::resolve_binary_path(MFSRUN_BIN_PATH_ENV_VAR, DEFAULT_MFSRUN_BIN_PATH)?;
 
     tracing::info!("Mounting the filesystem...");
     let status = Command::new(mfsrun_path)

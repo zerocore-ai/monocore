@@ -1,12 +1,8 @@
 //! Path utilities.
 
-use std::path::PathBuf;
-
 use typed_path::Utf8UnixPath;
 
-use crate::{config::DEFAULT_MFSRUN_BIN_PATH, filesystem::Utf8UnixPathSegment, FsError, FsResult};
-
-use super::MFSRUN_BIN_PATH_ENV_VAR;
+use crate::{filesystem::Utf8UnixPathSegment, FsError, FsResult};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
@@ -56,34 +52,6 @@ pub fn split_last(path: &Utf8UnixPath) -> FsResult<(Option<&Utf8UnixPath>, Utf8U
         .and_then(|p| (!p.as_str().is_empty()).then_some(p));
 
     Ok((parent, filename))
-}
-
-/// Resolves the path to the mfsrun binary, checking both environment variable and default locations.
-///
-/// First checks the environment variable specified by MFSRUN_BIN_PATH_ENV_VAR.
-/// If that's not set, falls back to DEFAULT_MFSRUN_BIN_PATH.
-/// Returns an error if the binary is not found at the resolved location.
-pub fn resolve_mfsrun_bin_path() -> FsResult<PathBuf> {
-    const MFSRUN_ENV_SOURCE: &str = "environment variable";
-    const MFSRUN_DEFAULT_SOURCE: &str = "default path";
-
-    let (path, source) = std::env::var(MFSRUN_BIN_PATH_ENV_VAR)
-        .map(|p| (PathBuf::from(p), MFSRUN_ENV_SOURCE))
-        .unwrap_or_else(|_| {
-            (
-                PathBuf::from(DEFAULT_MFSRUN_BIN_PATH),
-                MFSRUN_DEFAULT_SOURCE,
-            )
-        });
-
-    if !path.exists() {
-        return Err(FsError::MfsrunBinaryNotFound {
-            path: path.to_string_lossy().to_string(),
-            src: source.to_string(),
-        });
-    }
-
-    Ok(path)
 }
 
 //--------------------------------------------------------------------------------------------------

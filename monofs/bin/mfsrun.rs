@@ -119,7 +119,7 @@ async fn main() -> Result<()> {
             host,
             port,
             store_dir,
-            db_path,
+            fs_db_path,
             mount_dir,
         } => {
             // Get current executable path
@@ -130,7 +130,7 @@ async fn main() -> Result<()> {
 
             // Create nfs server monitor
             let nfs_server_monitor =
-                NfsServerMonitor::new(db_path, supervisor_pid, mount_dir).await?;
+                NfsServerMonitor::new(fs_db_path, supervisor_pid, mount_dir).await?;
 
             // Compose child arguments
             let child_args = vec![

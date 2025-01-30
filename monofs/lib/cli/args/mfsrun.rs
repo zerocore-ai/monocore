@@ -13,7 +13,7 @@ use crate::{
 
 /// Arguments for the mfsrun command
 #[derive(Debug, Parser)]
-#[command(name = "monofs", author, styles=styles::styles())]
+#[command(name = "mfsrun", author, styles=styles::styles())]
 pub struct MfsRuntimeArgs {
     /// The subcommand to run
     #[command(subcommand)]
@@ -59,9 +59,9 @@ pub enum MfsRuntimeSubcommand {
         #[arg(long)]
         store_dir: PathBuf,
 
-        /// Path to the metrics database file
+        /// Path to the filesystem metrics and metadata database file
         #[arg(long)]
-        db_path: PathBuf,
+        fs_db_path: PathBuf,
 
         /// Directory where the filesystem is mounted
         #[arg(long)]

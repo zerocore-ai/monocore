@@ -1,5 +1,5 @@
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::{io::Write, path::PathBuf};
 
 use async_trait::async_trait;
 use monoutils::{MonoutilsError, MonoutilsResult, ProcessMonitor, RotatingLog};
@@ -7,43 +7,35 @@ use sqlx::{Pool, Sqlite};
 use tokio::io::AsyncReadExt;
 use tokio::process::{ChildStderr, ChildStdout};
 
-use crate::{management, FsResult};
+use crate::{management, MonocoreResult};
 
 //--------------------------------------------------------------------------------------------------
 // Types
 //--------------------------------------------------------------------------------------------------
 
-/// A process monitor for the NFS server
-pub struct NfsServerMonitor {
-    /// The database for tracking filesystem metrics and metadata.
-    fs_db: Pool<Sqlite>,
+/// A process monitor for MicroVMs
+pub struct MicroVmMonitor {
+    /// The database for tracking sandbox metrics and metadata
+    sandbox_db: Pool<Sqlite>,
 
     /// The supervisor PID
     supervisor_pid: u32,
 
-    /// The mount directory
-    mount_dir: PathBuf,
-
-    /// The NFS server log path
-    nfsserver_log_path: Option<PathBuf>,
+    /// The MicroVM log path
+    microvm_log_path: Option<PathBuf>,
 }
 
 //--------------------------------------------------------------------------------------------------
 // Methods
 //--------------------------------------------------------------------------------------------------
 
-impl NfsServerMonitor {
-    /// Create a new NFS server monitor
-    pub async fn new(
-        fs_db_path: impl AsRef<Path>,
-        supervisor_pid: u32,
-        mount_dir: PathBuf,
-    ) -> FsResult<Self> {
+impl MicroVmMonitor {
+    /// Create a new MicroVM monitor
+    pub async fn new(database: impl AsRef<Path>, supervisor_pid: u32) -> MonocoreResult<Self> {
         Ok(Self {
-            fs_db: management::get_fs_db_pool(fs_db_path.as_ref()).await?,
+            sandbox_db: management::get_sandbox_db_pool(database.as_ref()).await?,
             supervisor_pid,
-            mount_dir,
-            nfsserver_log_path: None,
+            microvm_log_path: None,
         })
     }
 }
@@ -53,7 +45,7 @@ impl NfsServerMonitor {
 //--------------------------------------------------------------------------------------------------
 
 #[async_trait]
-impl ProcessMonitor for NfsServerMonitor {
+impl ProcessMonitor for MicroVmMonitor {
     async fn start(
         &mut self,
         pid: u32,
@@ -61,24 +53,23 @@ impl ProcessMonitor for NfsServerMonitor {
         mut stderr: ChildStderr,
         log_path: PathBuf,
     ) -> MonoutilsResult<()> {
-        let nfs_server_log = RotatingLog::new(&log_path).await?;
-        let mut stdout_writer = nfs_server_log.get_sync_writer();
-        let mut stderr_writer = nfs_server_log.get_sync_writer();
-        let nfs_server_pid = pid;
+        let microvm_log = RotatingLog::new(&log_path).await?;
+        let mut stdout_writer = microvm_log.get_sync_writer();
+        let mut stderr_writer = microvm_log.get_sync_writer();
+        let microvm_pid = pid;
 
-        self.nfsserver_log_path = Some(log_path);
+        self.microvm_log_path = Some(log_path);
 
-        // Insert filesystem entry into fs_db
+        // Insert sandbox entry into database
         sqlx::query(
             r#"
-            INSERT INTO filesystems (mount_dir, supervisor_pid, nfsserver_pid)
-            VALUES (?, ?, ?)
+            INSERT INTO sandboxes (supervisor_pid, microvm_pid)
+            VALUES (?, ?)
             "#,
         )
-        .bind(self.mount_dir.to_string_lossy().to_string())
         .bind(self.supervisor_pid)
-        .bind(nfs_server_pid)
-        .execute(&self.fs_db)
+        .bind(microvm_pid)
+        .execute(&self.sandbox_db)
         .await
         .map_err(MonoutilsError::custom)?;
 
@@ -91,10 +82,10 @@ impl ProcessMonitor for NfsServerMonitor {
                     break;
                 }
                 if let Err(e) = stdout_writer.write_all(&buf[..n]) {
-                    tracing::error!(nfs_server_pid = nfs_server_pid, error = %e, "Failed to write to nfs server stdout log");
+                    tracing::error!(microvm_pid = microvm_pid, error = %e, "Failed to write to microvm stdout log");
                 }
                 if let Err(e) = stdout_writer.flush() {
-                    tracing::error!(nfs_server_pid = nfs_server_pid, error = %e, "Failed to flush nfs server stdout log");
+                    tracing::error!(microvm_pid = microvm_pid, error = %e, "Failed to flush microvm stdout log");
                 }
             }
         });
@@ -107,10 +98,10 @@ impl ProcessMonitor for NfsServerMonitor {
                     break;
                 }
                 if let Err(e) = stderr_writer.write_all(&buf[..n]) {
-                    tracing::error!(nfs_server_pid = nfs_server_pid, error = %e, "Failed to write to nfs server stderr log");
+                    tracing::error!(microvm_pid = microvm_pid, error = %e, "Failed to write to microvm stderr log");
                 }
                 if let Err(e) = stderr_writer.flush() {
-                    tracing::error!(nfs_server_pid = nfs_server_pid, error = %e, "Failed to flush nfs server stderr log");
+                    tracing::error!(microvm_pid = microvm_pid, error = %e, "Failed to flush microvm stderr log");
                 }
             }
         });
@@ -119,28 +110,24 @@ impl ProcessMonitor for NfsServerMonitor {
     }
 
     async fn stop(&mut self) -> MonoutilsResult<()> {
-        // Remove filesystem entry from fs_db
+        // Remove sandbox entry from database
         sqlx::query(
             r#"
-            DELETE FROM filesystems
-            WHERE mount_dir = ? AND supervisor_pid = ?
+            DELETE FROM sandboxes
+            WHERE supervisor_pid = ?
             "#,
         )
-        .bind(self.mount_dir.to_string_lossy().to_string())
         .bind(self.supervisor_pid)
-        .execute(&self.fs_db)
+        .execute(&self.sandbox_db)
         .await
         .map_err(MonoutilsError::custom)?;
 
         // Delete the log file if it exists
-        if let Some(log_path) = &self.nfsserver_log_path {
+        if let Some(log_path) = &self.microvm_log_path {
             if let Err(e) = tokio::fs::remove_file(log_path).await {
-                tracing::warn!(error = %e, "Failed to delete nfs server log file");
+                tracing::warn!(error = %e, "Failed to delete microvm log file");
             }
         }
-
-        // Reset the log path
-        self.nfsserver_log_path = None;
 
         Ok(())
     }
