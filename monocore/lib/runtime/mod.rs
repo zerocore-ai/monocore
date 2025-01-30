@@ -1,9 +1,9 @@
 //! Runtime components for the Monocore runtime.
 
-mod orchestrator;
+mod monitor;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use orchestrator::*;
+pub use monitor::*;

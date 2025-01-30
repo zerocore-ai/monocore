@@ -19,6 +19,10 @@ pub enum MonoutilsError {
     #[error("path validation error: {0}")]
     PathValidation(String),
 
+    /// An error that occurred when resolving a binary
+    #[error("binary not found at: {0}\nSource: {1}")]
+    BinaryNotFound(String, String),
+
     /// An error that occurred when performing an IO operation
     #[error("io error: {0}")]
     IoError(#[from] std::io::Error),

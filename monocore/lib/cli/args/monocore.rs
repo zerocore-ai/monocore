@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::styles;
+use crate::cli::styles;
 use clap::Parser;
 use typed_path::Utf8UnixPathBuf;
 
