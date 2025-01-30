@@ -131,6 +131,9 @@ impl ProcessMonitor for NfsServerMonitor {
             }
         }
 
+        // Reset the log path
+        self.nfsserver_log_path = None;
+
         Ok(())
     }
 }

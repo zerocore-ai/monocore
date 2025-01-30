@@ -82,7 +82,7 @@ use monofs::{
     server::MonofsServer,
     utils::path::MFSRUN_LOG_PREFIX,
 };
-use monoutils::runtime::Supervisor;
+use monoutils::{runtime::Supervisor, SupervisorPolicy};
 
 //--------------------------------------------------------------------------------------------------
 // Functions: main
@@ -152,6 +152,7 @@ async fn main() -> Result<()> {
                 MFSRUN_LOG_PREFIX,
                 log_dir,
                 nfs_server_monitor,
+                SupervisorPolicy::RestartOnFailure,
             );
 
             supervisor.start().await?;
