@@ -9,6 +9,8 @@ use std::{
 };
 use thiserror::Error;
 
+use crate::oci::DockerRegistryResponseError;
+
 //--------------------------------------------------------------------------------------------------
 // Types
 //--------------------------------------------------------------------------------------------------
@@ -254,6 +256,10 @@ pub enum MonocoreError {
     /// An error that occurred when a migration error occurred
     #[error("migration error: {0}")]
     MigrationError(#[from] MigrateError),
+
+    /// An error that occurred when a Docker registry response error occurred
+    #[error("docker registry response error: {0}")]
+    DockerRegistryResponseError(#[from] DockerRegistryResponseError),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

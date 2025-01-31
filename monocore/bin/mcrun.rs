@@ -45,13 +45,6 @@ use monocore::{
 use monoutils::runtime::Supervisor;
 
 //--------------------------------------------------------------------------------------------------
-// Constants
-//--------------------------------------------------------------------------------------------------
-
-/// Log file prefix for mcrun processes
-const MCRUN_LOG_PREFIX: &str = "mcrun";
-
-//--------------------------------------------------------------------------------------------------
 // Functions: main
 //--------------------------------------------------------------------------------------------------
 
@@ -117,13 +110,14 @@ async fn main() -> Result<()> {
             sandbox_db_path,
         } => {
             // Get current executable path
-            let current_exe = env::current_exe()?;
+            let child_exe = env::current_exe()?;
 
             // Get supervisor PID
             let supervisor_pid = std::process::id();
 
             // Create microvm monitor
-            let microvm_monitor = MicroVmMonitor::new(sandbox_db_path, supervisor_pid).await?;
+            let process_monitor =
+                MicroVmMonitor::new(supervisor_pid, sandbox_db_path, log_dir.clone()).await?;
 
             // Compose child arguments - these are placeholders that will be overridden
             let child_args = vec![
@@ -137,13 +131,12 @@ async fn main() -> Result<()> {
 
             // Create and start supervisor
             let mut supervisor = Supervisor::new(
-                current_exe,
+                child_exe,
                 child_args,
                 child_envs,
                 child_name,
-                MCRUN_LOG_PREFIX,
                 log_dir,
-                microvm_monitor,
+                process_monitor,
             );
 
             supervisor.start().await?;

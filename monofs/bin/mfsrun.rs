@@ -80,7 +80,6 @@ use monofs::{
     cli::{MfsRuntimeArgs, MfsRuntimeSubcommand},
     runtime::NfsServerMonitor,
     server::MonofsServer,
-    utils::path::MFSRUN_LOG_PREFIX,
 };
 use monoutils::runtime::Supervisor;
 
@@ -123,14 +122,15 @@ async fn main() -> Result<()> {
             mount_dir,
         } => {
             // Get current executable path
-            let current_exe = env::current_exe()?;
+            let child_exe = env::current_exe()?;
 
             // Get supervisor PID
             let supervisor_pid = std::process::id();
 
             // Create nfs server monitor
-            let nfs_server_monitor =
-                NfsServerMonitor::new(fs_db_path, supervisor_pid, mount_dir).await?;
+            let process_monitor =
+                NfsServerMonitor::new(supervisor_pid, fs_db_path, mount_dir, log_dir.clone())
+                    .await?;
 
             // Compose child arguments
             let child_args = vec![
@@ -145,13 +145,12 @@ async fn main() -> Result<()> {
 
             // Create and start supervisor
             let mut supervisor = Supervisor::new(
-                current_exe,
+                child_exe,
                 child_args,
                 child_envs,
                 child_name,
-                MFSRUN_LOG_PREFIX,
                 log_dir,
-                nfs_server_monitor,
+                process_monitor,
             );
 
             supervisor.start().await?;

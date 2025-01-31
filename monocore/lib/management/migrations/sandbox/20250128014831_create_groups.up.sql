@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS groups (
     name TEXT NOT NULL,
     subnet TEXT NOT NULL,
     reach TEXT NOT NULL,
-    config TEXT,
+    full_json TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     modified_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
