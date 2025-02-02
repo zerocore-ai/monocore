@@ -1,6 +1,7 @@
 use crate::config::DEFAULT_MFSRUN_BIN_PATH;
 use crate::management::db;
 use crate::management::find;
+use crate::management::FS_DB_MIGRATOR;
 use crate::utils::path::{BLOCKS_SUBDIR, FS_DB_FILENAME, LOG_SUBDIR, MFS_LINK_FILENAME};
 use crate::utils::MFSRUN_BIN_PATH_ENV_VAR;
 use crate::FsError;
@@ -60,14 +61,14 @@ pub async fn init_mfs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
     tracing::info!("Log directory available at {}", log_dir.display());
 
     // Create the fs database file
-    let db_path = mfs_data_dir.join(FS_DB_FILENAME);
-    if !db_path.exists() {
-        fs::File::create(&db_path).await?;
-        tracing::info!("Created fs database at {}", db_path.display());
+    let fs_db_path = mfs_data_dir.join(FS_DB_FILENAME);
+    if !fs_db_path.exists() {
+        fs::File::create(&fs_db_path).await?;
+        tracing::info!("Created fs database at {}", fs_db_path.display());
     }
 
-    // Initialize the database schema
-    db::init_fs_db(&db_path).await?;
+    // Initialize the filesystem database schema
+    db::init_db(&fs_db_path, &FS_DB_MIGRATOR).await?;
     tracing::info!("Initialized fs database schema");
 
     // Create the blocks directory
@@ -98,7 +99,7 @@ pub async fn init_mfs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
         .arg("--store-dir")
         .arg(&blocks_dir)
         .arg("--db-path")
-        .arg(&db_path)
+        .arg(&fs_db_path)
         .arg("--mount-dir")
         .arg(&mount_dir)
         .spawn()?;
@@ -223,10 +224,10 @@ async fn get_fs_db_path(mfs_root: impl AsRef<Path>) -> FsResult<PathBuf> {
 
 /// Get the supervisor PID for a mount directory from the filesystem database
 async fn get_supervisor_pid(
-    db_path: impl AsRef<Path>,
+    fs_db_path: impl AsRef<Path>,
     mount_dir: impl AsRef<Path>,
 ) -> FsResult<Option<i32>> {
-    let pool = db::get_fs_db_pool(db_path.as_ref()).await?;
+    let pool = db::get_db_pool(fs_db_path.as_ref()).await?;
 
     let mount_dir = mount_dir.as_ref().to_string_lossy().to_string();
 

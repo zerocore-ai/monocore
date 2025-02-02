@@ -4,7 +4,8 @@
 CREATE TABLE IF NOT EXISTS sandboxes (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
-    pid INTEGER,
+    supervisor_pid INTEGER,
+    microvm_pid INTEGER,
     status TEXT NOT NULL,
     rootfs_path TEXT NOT NULL,
     group_id INTEGER,

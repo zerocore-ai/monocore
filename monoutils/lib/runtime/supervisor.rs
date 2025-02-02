@@ -1,14 +1,11 @@
 use nix::unistd::Pid;
+use std::path::PathBuf;
 use std::process::Stdio;
-use std::{
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
-};
 use tokio::fs::create_dir_all;
 use tokio::process::Command;
 use tokio::signal::unix::{signal, SignalKind};
 
-use crate::path::{LOG_SUFFIX, SUPERVISOR_LOG_FILENAME};
+use crate::path::SUPERVISOR_LOG_FILENAME;
 use crate::{MonoutilsResult, ProcessMonitor, RotatingLog};
 
 //--------------------------------------------------------------------------------------------------
@@ -29,20 +26,17 @@ where
     /// Name of the child process
     child_name: String,
 
-    /// Prefix for the child's log file
-    child_log_prefix: String,
+    /// The managed child process ID
+    child_pid: Option<u32>,
+
+    /// Environment variables for the child process
+    child_envs: Vec<(String, String)>,
 
     /// Path to the supervisor's log directory
     log_dir: PathBuf,
 
     /// The metrics monitor
     process_monitor: M,
-
-    /// The managed child process ID
-    child_pid: Option<u32>,
-
-    /// Environment variables for the child process
-    child_envs: Vec<(String, String)>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -64,39 +58,25 @@ where
     /// * `process_monitor` - The process monitor to use
     /// * `child_envs` - Environment variables for the child process
     pub fn new(
-        child_exe: impl AsRef<Path>,
+        child_exe: impl Into<PathBuf>,
         child_args: impl IntoIterator<Item = impl Into<String>>,
         child_envs: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
         child_name: impl Into<String>,
-        child_log_prefix: impl Into<String>,
-        log_dir: impl AsRef<Path>,
+        log_dir: impl Into<PathBuf>,
         process_monitor: M,
     ) -> Self {
         Self {
-            child_exe: child_exe.as_ref().to_path_buf(),
+            child_exe: child_exe.into(),
             child_args: child_args.into_iter().map(Into::into).collect(),
             child_envs: child_envs
                 .into_iter()
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
             child_name: child_name.into(),
-            child_log_prefix: child_log_prefix.into(),
-            log_dir: log_dir.as_ref().to_path_buf(),
-            process_monitor,
             child_pid: None,
+            log_dir: log_dir.into(),
+            process_monitor,
         }
-    }
-
-    /// Generates a unique child ID using name, process ID, and current timestamp.
-    ///
-    /// The ID format is: "{name}-{pid}-{timestamp}"
-    fn generate_child_id(&self, child_pid: u32) -> String {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        format!("{}-{}-{}", self.child_name, child_pid, timestamp)
     }
 
     /// Starts the supervisor and the child process.
@@ -123,18 +103,11 @@ where
         let child_pid = child.id().expect("Failed to get child process ID");
         self.child_pid = Some(child_pid);
 
-        // Generate unique child ID
-        let child_id = self.generate_child_id(child_pid);
-
-        // Setup child's log path
-        let child_log_name = format!("{}-{}.{}", self.child_log_prefix, child_id, LOG_SUFFIX);
-        let child_log_path = self.log_dir.join(child_log_name);
-
         // Take ownership of child's stdout/stderr and start monitoring
         let stdout = child.stdout.take().expect("Failed to take child stdout");
         let stderr = child.stderr.take().expect("Failed to take child stderr");
         self.process_monitor
-            .start(child_pid, stdout, stderr, child_log_path)
+            .start(child_pid, self.child_name.clone(), stdout, stderr)
             .await?;
 
         // Setup signal handlers

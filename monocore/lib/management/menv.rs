@@ -4,11 +4,7 @@ use tokio::{fs, io::AsyncWriteExt};
 
 use crate::utils::path::{LOG_SUBDIR, MONOCORE_ENV_DIR, SANDBOX_DB_FILENAME};
 
-use super::db;
-
-//--------------------------------------------------------------------------------------------------
-// Constants
-//--------------------------------------------------------------------------------------------------
+use super::{db, SANDBOX_DB_MIGRATOR};
 
 //--------------------------------------------------------------------------------------------------
 // Functions
@@ -48,10 +44,15 @@ pub async fn init_menv(project_path: Option<PathBuf>) -> MonocoreResult<()> {
     let db_path = menv_path.join(SANDBOX_DB_FILENAME);
 
     // Initialize sandbox database
-    db::init_sandbox_db(&db_path).await?;
+    db::init_db(&db_path, &SANDBOX_DB_MIGRATOR).await?;
+    tracing::info!("Initialized sandbox database at {}", db_path.display());
 
     // Create default config file if it doesn't exist
     create_default_config(&project_path).await?;
+    tracing::info!(
+        "Created default config file at {}",
+        project_path.join("monocore.yaml").display()
+    );
 
     Ok(())
 }
