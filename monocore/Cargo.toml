@@ -76,12 +76,12 @@ bon = "3.3.0"
 ipnetwork = { version = "0.21.0", features = ["serde"] }
 sqlx.workspace = true
 monoutils.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
 test-log.workspace = true
 criterion.workspace = true
 rand.workspace = true
-regex = "1.10.3"
 
 [features]
 default = []

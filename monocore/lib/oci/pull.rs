@@ -7,6 +7,8 @@ use oci_spec::image::{Digest, ImageConfiguration, ImageIndex, ImageManifest};
 
 use crate::MonocoreResult;
 
+use super::ReferenceSelector;
+
 //--------------------------------------------------------------------------------------------------
 // Traits
 //--------------------------------------------------------------------------------------------------
@@ -18,19 +20,18 @@ pub trait OciRegistryPull {
     /// Pulls an OCI image from the specified repository. This includes downloading
     /// the image manifest, fetching the image configuration, and downloading the image layers.
     ///
-    /// If no tag is provided, defaults to the "latest" tag according to OCI specifications.
-    async fn pull_image(
-        &self,
-        repository: &str,
-        tag: Option<&str>, // Defaults to "latest"
-    ) -> MonocoreResult<()>;
+    /// The image can be selected either by tag or digest using the [`ReferenceSelector`] enum.
+    async fn pull_image(&self, repository: &str, selector: ReferenceSelector)
+        -> MonocoreResult<()>;
 
     /// Fetches the image index (manifest list) for multi-platform support.
     /// Retrieves the appropriate manifest for the target platform.
+    ///
+    /// The image can be selected either by tag or digest using the [`ReferenceSelector`] enum.
     async fn fetch_index(
         &self,
         repository: &str,
-        tag: Option<&str>, // Defaults to "latest"
+        selector: ReferenceSelector,
     ) -> MonocoreResult<ImageIndex>;
 
     /// Fetches an image manifest by digest.

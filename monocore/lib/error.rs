@@ -260,6 +260,14 @@ pub enum MonocoreError {
     /// An error that occurred when a Docker registry response error occurred
     #[error("docker registry response error: {0}")]
     DockerRegistryResponseError(#[from] DockerRegistryResponseError),
+
+    /// An error that occurred when parsing an image reference selector with an invalid format
+    #[error("invalid image reference    selector format: {0}")]
+    InvalidReferenceSelectorFormat(String),
+
+    /// An error that occurred when parsing an invalid digest in an image reference selector
+    #[error("invalid image reference selector digest: {0}")]
+    InvalidReferenceSelectorDigest(String),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

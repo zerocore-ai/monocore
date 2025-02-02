@@ -22,6 +22,12 @@ pub const DEFAULT_MCRUN_BIN_PATH: &str = "./mcrun";
 /// The default path for the monofs binary.
 pub const DEFAULT_MONOFS_BIN_PATH: &str = "./monofs";
 
+/// The default OCI registry domain.
+pub const DEFAULT_OCI_REGISTRY_DOMAIN: &str = "sandboxes.io";
+
+/// The default OCI reference tag.
+pub const DEFAULT_OCI_REFERENCE_TAG: &str = "default";
+
 /// The default configuration file content
 pub(crate) const DEFAULT_CONFIG: &str = r#"# Sandbox configurations
 sandboxes: []
