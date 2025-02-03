@@ -5,11 +5,9 @@ use futures::stream::BoxStream;
 use std::pin::pin;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-use crate::{Chunker, StoreError, StoreResult};
-
-use super::{
-    constants::DEFAULT_MAX_CHUNK_SIZE, DEFAULT_DESIRED_CHUNK_SIZE, DEFAULT_GEAR_TABLE,
-    DEFAULT_MIN_CHUNK_SIZE,
+use crate::{
+    Chunker, StoreError, StoreResult, DEFAULT_DESIRED_CHUNK_SIZE, DEFAULT_GEAR_TABLE,
+    DEFAULT_MAX_CHUNK_SIZE, DEFAULT_MIN_CHUNK_SIZE,
 };
 
 //--------------------------------------------------------------------------------------------------

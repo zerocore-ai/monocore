@@ -85,10 +85,7 @@ pub trait IpldStore: RawStore + Clone {
     /// ## Errors
     ///
     /// If the block is not found, `StoreError::BlockNotFound` error is returned.
-    async fn get_bytes(
-        &self,
-        cid: &Cid,
-    ) -> StoreResult<Pin<Box<dyn AsyncRead + Send>>>;
+    async fn get_bytes(&self, cid: &Cid) -> StoreResult<Pin<Box<dyn AsyncRead + Send>>>;
 
     /// Gets the size of all the blocks associated with the given `Cid` in bytes.
     async fn get_bytes_size(&self, cid: &Cid) -> StoreResult<u64>;
@@ -101,7 +98,7 @@ pub trait IpldStore: RawStore + Clone {
 
     /// Returns the allowed maximum block size for IPLD and merkle nodes.
     /// If there is no limit, `None` is returned.
-    async fn get_node_block_max_size(&self) -> StoreResult<Option<u64>>;
+    async fn get_max_node_block_size(&self) -> StoreResult<Option<u64>>;
 
     /// Checks if the store is empty.
     async fn is_empty(&self) -> StoreResult<bool> {
@@ -139,6 +136,12 @@ pub trait RawStore: Clone {
     /// Tries to save `bytes` as a single block to the store. Unlike [`IpldStore::put_bytes`], this
     /// method does not chunk the data and does not create intermediate merkle nodes.
     ///
+    /// ## Arguments
+    ///
+    /// - `bytes`: The bytes to save.
+    /// - `is_node`: If true, the block is considered a node block and the size is checked against
+    ///   the node block size.
+    ///
     /// ## Important
     ///
     /// This is a low-level API intended for code implementing an [`IpldStore`].
@@ -168,7 +171,7 @@ pub trait RawStore: Clone {
     async fn get_raw_block(&self, cid: &Cid) -> StoreResult<Bytes>;
 
     /// Returns the allowed maximum block size for raw bytes. If there is no limit, `None` is returned.
-    async fn get_raw_block_max_size(&self) -> StoreResult<Option<u64>>;
+    async fn get_max_raw_block_size(&self) -> StoreResult<Option<u64>>;
 }
 
 /// Helper extension to the `IpldStore` trait.
