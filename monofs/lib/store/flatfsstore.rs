@@ -7,7 +7,7 @@ use monoutils::SeekableReader;
 use monoutils_store::{ipld::cid::Cid, FastCDCChunker, FixedSizeChunker};
 use monoutils_store::{
     Chunker, Codec, FlatLayout, IpldReferences, IpldStore, IpldStoreSeekable, Layout,
-    LayoutSeekable, RawStore, StoreError, StoreResult,
+    LayoutSeekable, RawStore, StoreError, StoreResult, DEFAULT_MAX_NODE_BLOCK_SIZE,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::fs::{self, File};
@@ -215,7 +215,7 @@ where
         let bytes = serde_ipld_dagcbor::to_vec(&data).map_err(StoreError::custom)?;
 
         // Check if the data exceeds the node maximum block size
-        if let Some(max_size) = self.get_node_block_max_size().await? {
+        if let Some(max_size) = self.get_max_node_block_size().await? {
             if bytes.len() as u64 > max_size {
                 return Err(StoreError::NodeBlockTooLarge(bytes.len() as u64, max_size));
             }
@@ -278,8 +278,8 @@ where
         codecs
     }
 
-    async fn get_node_block_max_size(&self) -> StoreResult<Option<u64>> {
-        Ok(self.chunker.chunk_max_size().await?)
+    async fn get_max_node_block_size(&self) -> StoreResult<Option<u64>> {
+        Ok(Some(DEFAULT_MAX_NODE_BLOCK_SIZE))
     }
 
     async fn get_block_count(&self) -> StoreResult<u64> {
@@ -388,7 +388,7 @@ where
 {
     async fn put_raw_block(&self, bytes: impl Into<Bytes> + Send) -> StoreResult<Cid> {
         let bytes = bytes.into();
-        if let Some(max_size) = self.get_raw_block_max_size().await? {
+        if let Some(max_size) = self.get_max_raw_block_size().await? {
             if bytes.len() as u64 > max_size {
                 return Err(StoreError::RawBlockTooLarge(bytes.len() as u64, max_size));
             }
@@ -420,8 +420,12 @@ where
         Ok(bytes.into())
     }
 
-    async fn get_raw_block_max_size(&self) -> StoreResult<Option<u64>> {
-        Ok(self.chunker.chunk_max_size().await?)
+    async fn get_max_raw_block_size(&self) -> StoreResult<Option<u64>> {
+        Ok(self
+            .chunker
+            .chunk_max_size()
+            .await?
+            .max(Some(DEFAULT_MAX_NODE_BLOCK_SIZE)))
     }
 }
 
@@ -446,7 +450,7 @@ where
 #[cfg(test)]
 mod tests {
     use monoutils_store::codetable::{Code, MultihashDigest};
-    use monoutils_store::DEFAULT_MAX_CHUNK_SIZE;
+    use monoutils_store::{DEFAULT_MAX_CHUNK_SIZE, DEFAULT_MAX_NODE_BLOCK_SIZE};
     use tokio::fs;
     use tokio::io::AsyncReadExt;
 
@@ -617,12 +621,12 @@ mod tests {
 
         // Verify size limits from chunker
         assert_eq!(
-            store.get_node_block_max_size().await?,
-            Some(DEFAULT_MAX_CHUNK_SIZE)
+            store.get_max_node_block_size().await?,
+            Some(DEFAULT_MAX_NODE_BLOCK_SIZE)
         );
         assert_eq!(
-            store.get_raw_block_max_size().await?,
-            Some(DEFAULT_MAX_CHUNK_SIZE)
+            store.get_max_raw_block_size().await?,
+            Some(DEFAULT_MAX_NODE_BLOCK_SIZE)
         );
 
         Ok(())

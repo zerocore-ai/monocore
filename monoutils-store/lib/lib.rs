@@ -4,6 +4,7 @@
 #![allow(clippy::module_inception)]
 
 mod chunker;
+mod constants;
 mod error;
 mod implementations;
 mod layout;
@@ -18,6 +19,7 @@ pub mod utils;
 //--------------------------------------------------------------------------------------------------
 
 pub use chunker::*;
+pub use constants::*;
 pub use error::*;
 pub use implementations::*;
 pub use layout::*;

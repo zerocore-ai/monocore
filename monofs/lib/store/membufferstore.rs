@@ -88,8 +88,8 @@ where
         self.inner.get_supported_codecs().await
     }
 
-    async fn get_node_block_max_size(&self) -> StoreResult<Option<u64>> {
-        self.inner.get_node_block_max_size().await
+    async fn get_max_node_block_size(&self) -> StoreResult<Option<u64>> {
+        self.inner.get_max_node_block_size().await
     }
 
     async fn get_block_count(&self) -> StoreResult<u64> {
@@ -110,7 +110,7 @@ where
         self.inner.get_raw_block(cid).await
     }
 
-    async fn get_raw_block_max_size(&self) -> StoreResult<Option<u64>> {
-        self.inner.get_raw_block_max_size().await
+    async fn get_max_raw_block_size(&self) -> StoreResult<Option<u64>> {
+        self.inner.get_max_raw_block_size().await
     }
 }

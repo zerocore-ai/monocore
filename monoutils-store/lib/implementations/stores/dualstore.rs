@@ -214,9 +214,9 @@ where
         codecs
     }
 
-    async fn get_node_block_max_size(&self) -> StoreResult<Option<u64>> {
-        let max_size_a = self.store_a.get_node_block_max_size().await?;
-        let max_size_b = self.store_b.get_node_block_max_size().await?;
+    async fn get_max_node_block_size(&self) -> StoreResult<Option<u64>> {
+        let max_size_a = self.store_a.get_max_node_block_size().await?;
+        let max_size_b = self.store_b.get_max_node_block_size().await?;
         Ok(max_size_a.max(max_size_b))
     }
 
@@ -250,9 +250,9 @@ where
         }
     }
 
-    async fn get_raw_block_max_size(&self) -> StoreResult<Option<u64>> {
-        let max_size_a = self.store_a.get_raw_block_max_size().await?;
-        let max_size_b = self.store_b.get_raw_block_max_size().await?;
+    async fn get_max_raw_block_size(&self) -> StoreResult<Option<u64>> {
+        let max_size_a = self.store_a.get_max_raw_block_size().await?;
+        let max_size_b = self.store_b.get_max_raw_block_size().await?;
         Ok(max_size_a.max(max_size_b))
     }
 }

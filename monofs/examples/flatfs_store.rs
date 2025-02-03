@@ -154,7 +154,7 @@ async fn main() -> Result<()> {
         println!("    - {:?}", codec);
     }
 
-    if let Some(max_size) = store.get_node_block_max_size().await? {
+    if let Some(max_size) = store.get_max_node_block_size().await? {
         println!("  Max node block size: {} bytes", max_size);
     }
 

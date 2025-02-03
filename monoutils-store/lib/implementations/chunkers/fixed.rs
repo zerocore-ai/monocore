@@ -6,9 +6,7 @@ use bytes::Bytes;
 use futures::stream::BoxStream;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-use crate::{Chunker, StoreError, StoreResult};
-
-use super::constants::DEFAULT_MAX_CHUNK_SIZE;
+use crate::{Chunker, StoreError, StoreResult, DEFAULT_MAX_CHUNK_SIZE};
 
 //--------------------------------------------------------------------------------------------------
 // Types
