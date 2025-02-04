@@ -4,15 +4,17 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
 use monoutils::SeekableReader;
+use monoutils_store::ipld::codec::Links;
 use monoutils_store::{ipld::cid::Cid, FastCDCChunker, FixedSizeChunker};
 use monoutils_store::{
     Chunker, Codec, FlatLayout, IpldReferences, IpldStore, IpldStoreSeekable, Layout,
     LayoutSeekable, RawStore, StoreError, StoreResult, DEFAULT_MAX_NODE_BLOCK_SIZE,
 };
 use serde::{de::DeserializeOwned, Serialize};
+use serde_ipld_dagcbor::codec::DagCborCodec;
 use tokio::fs::{self, File};
 use tokio::io::AsyncRead;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
 //--------------------------------------------------------------------------------------------------
 // Types: FlatFsStore
@@ -82,6 +84,15 @@ pub enum DirLevels {
 ///
 /// The default one-level structure is the most common approach, used by systems like IPFS and Git,
 /// providing a good balance between directory depth and file distribution (1024 possible subdirectories).
+///
+/// ## Reference Counting and Garbage Collection
+///
+/// The store uses reference counting to track block usage and enable automatic garbage collection.
+/// Each block file stores a reference count that is incremented when the block is referenced by other
+/// blocks and decremented during garbage collection. When a block's reference count reaches zero and
+/// it is garbage collected, its referenced blocks are also processed recursively. This ensures that
+/// blocks are only removed when they are no longer needed, while also cleaning up any unreferenced
+/// dependencies.
 #[derive(Debug, Clone)]
 pub struct FlatFsStore<C = FastCDCChunker, L = FlatLayout>
 where
@@ -184,15 +195,81 @@ where
 
     /// Ensure the parent directories exist for a given block path
     async fn ensure_directories(&self, block_path: &PathBuf) -> StoreResult<()> {
-        tracing::trace!("about to ensure directories: {:?}", block_path);
         if let Some(parent) = block_path.parent() {
-            tracing::trace!("path parent: {:?}", parent);
             fs::create_dir_all(parent)
                 .await
                 .map_err(|e| StoreError::custom(e))?;
-            tracing::trace!("created directories");
         }
-        tracing::trace!("done ensuring directories");
+        Ok(())
+    }
+
+    /// Reads the reference count from a file
+    async fn read_refcount(&self, file: &mut File) -> StoreResult<u64> {
+        let mut refcount_bytes = [0u8; 8];
+        file.seek(SeekFrom::Start(0))
+            .await
+            .map_err(StoreError::custom)?;
+        file.read_exact(&mut refcount_bytes)
+            .await
+            .map_err(StoreError::custom)?;
+        Ok(u64::from_be_bytes(refcount_bytes))
+    }
+
+    /// Updates the reference count in a file
+    async fn write_refcount(&self, file: &mut File, refcount: u64) -> StoreResult<()> {
+        file.seek(SeekFrom::Start(0))
+            .await
+            .map_err(StoreError::custom)?;
+        file.write_all(&refcount.to_be_bytes())
+            .await
+            .map_err(StoreError::custom)?;
+        Ok(())
+    }
+
+    /// Reads the block data from a file (skipping the refcount)
+    async fn read_block_data(&self, file: &mut File) -> StoreResult<Bytes> {
+        file.seek(SeekFrom::Start(8))
+            .await
+            .map_err(StoreError::custom)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)
+            .await
+            .map_err(StoreError::custom)?;
+        Ok(data.into())
+    }
+
+    /// Writes a new block with initial refcount
+    async fn write_new_block(&self, block_path: &PathBuf, bytes: &[u8]) -> StoreResult<()> {
+        self.ensure_directories(block_path).await?;
+        let mut file = File::create(block_path).await.map_err(StoreError::custom)?;
+
+        // Write initial refcount (0)
+        file.write_all(&0u64.to_be_bytes())
+            .await
+            .map_err(StoreError::custom)?;
+
+        // Write block data
+        file.write_all(bytes).await.map_err(StoreError::custom)?;
+        Ok(())
+    }
+
+    /// Increments reference counts for the given CIDs
+    async fn increment_reference_counts(
+        &self,
+        cids: impl Iterator<Item = &Cid>,
+    ) -> StoreResult<()> {
+        for cid in cids {
+            let block_path = self.get_block_path(cid);
+            if let Ok(mut file) = File::options()
+                .read(true)
+                .write(true)
+                .open(&block_path)
+                .await
+            {
+                let refcount = self.read_refcount(&mut file).await?;
+                self.write_refcount(&mut file, refcount + 1).await?;
+            }
+        }
         Ok(())
     }
 }
@@ -225,11 +302,12 @@ where
         let cid = monoutils_store::make_cid(Codec::DagCbor, &bytes);
         let block_path = self.get_block_path(&cid);
 
-        self.ensure_directories(&block_path).await?;
-        let mut file = File::create(&block_path)
-            .await
-            .map_err(StoreError::custom)?;
-        file.write_all(&bytes).await.map_err(StoreError::custom)?;
+        if !block_path.exists() {
+            self.write_new_block(&block_path, &bytes).await?;
+            // Increment reference counts for referenced blocks
+            self.increment_reference_counts(data.get_references())
+                .await?;
+        }
 
         Ok(cid)
     }
@@ -252,7 +330,12 @@ where
     where
         T: DeserializeOwned,
     {
-        let bytes = self.get_raw_block(cid).await?;
+        let block_path = self.get_block_path(cid);
+        let mut file = File::open(&block_path)
+            .await
+            .map_err(|_| StoreError::BlockNotFound(*cid))?;
+
+        let bytes = self.read_block_data(&mut file).await?;
         match cid.codec().try_into()? {
             Codec::DagCbor => serde_ipld_dagcbor::from_slice(&bytes).map_err(StoreError::custom),
             codec => Err(StoreError::UnexpectedBlockCodec(Codec::DagCbor, codec)),
@@ -378,6 +461,99 @@ where
         }
         Ok(count)
     }
+
+    async fn supports_garbage_collection(&self) -> bool {
+        true
+    }
+
+    async fn garbage_collect(&self, cid: &Cid) -> StoreResult<HashSet<Cid>> {
+        let mut removed_cids = HashSet::new();
+        let block_path = self.get_block_path(cid);
+
+        // Check if the CID exists and has refcount of exactly 0
+        let refs = {
+            if let Ok(mut file) = File::options()
+                .read(true)
+                .write(true)
+                .open(&block_path)
+                .await
+            {
+                let count = self.read_refcount(&mut file).await?;
+                if count == 0 {
+                    // Try to deserialize the block to get its references
+                    let bytes = self.read_block_data(&mut file).await?;
+                    let codec: Codec = cid.codec().try_into()?;
+
+                    // Drop file handle before potential deletion
+                    drop(file);
+
+                    match codec {
+                        Codec::DagCbor => {
+                            // Extract CID references using the Links trait
+                            let refs = DagCborCodec::links(&bytes)
+                                .map_err(StoreError::custom)?
+                                .collect::<Vec<_>>();
+
+                            // Remove the block since refcount is 0
+                            fs::remove_file(&block_path)
+                                .await
+                                .map_err(StoreError::custom)?;
+                            removed_cids.insert(*cid);
+
+                            Some(refs)
+                        }
+                        Codec::Raw => {
+                            // For raw blocks, just remove them if refcount is 0
+                            fs::remove_file(&block_path)
+                                .await
+                                .map_err(StoreError::custom)?;
+                            removed_cids.insert(*cid);
+                            None
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        // Process dependencies if we had any
+        if let Some(refs) = refs {
+            for ref_cid in refs {
+                let block_path = self.get_block_path(&ref_cid);
+                // Decrement refcount and check if we should collect
+                let should_collect = {
+                    if let Ok(mut file) = File::options()
+                        .read(true)
+                        .write(true)
+                        .open(&block_path)
+                        .await
+                    {
+                        let count = self.read_refcount(&mut file).await?;
+                        if count > 0 {
+                            self.write_refcount(&mut file, count - 1).await?;
+                            count == 1 // Will be 0 after decrement
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                };
+
+                // If refcount reached 0, recursively collect it
+                if should_collect {
+                    let sub_removed = self.garbage_collect(&ref_cid).await?;
+                    removed_cids.extend(sub_removed);
+                }
+            }
+        }
+
+        Ok(removed_cids)
+    }
 }
 
 #[async_trait]
@@ -397,13 +573,9 @@ where
         let cid = monoutils_store::make_cid(Codec::Raw, bytes.as_ref());
         let block_path = self.get_block_path(&cid);
 
-        tracing::trace!("ensuring directories: {:?}", block_path);
-        self.ensure_directories(&block_path).await?;
-        tracing::trace!("created directories");
-        let mut file = File::create(&block_path)
-            .await
-            .map_err(StoreError::custom)?;
-        file.write_all(&bytes).await.map_err(StoreError::custom)?;
+        if !block_path.exists() {
+            self.write_new_block(&block_path, &bytes).await?;
+        }
 
         Ok(cid)
     }
@@ -413,11 +585,12 @@ where
         let mut file = File::open(&block_path)
             .await
             .map_err(|_| StoreError::BlockNotFound(*cid))?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)
-            .await
-            .map_err(StoreError::custom)?;
-        Ok(bytes.into())
+
+        let bytes = self.read_block_data(&mut file).await?;
+        match cid.codec().try_into()? {
+            Codec::Raw => Ok(bytes),
+            codec => Err(StoreError::UnexpectedBlockCodec(Codec::Raw, codec)),
+        }
     }
 
     async fn get_max_raw_block_size(&self) -> StoreResult<Option<u64>> {
@@ -631,6 +804,191 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_flatfsstore_garbage_collect() -> anyhow::Result<()> {
+        let (store, _temp) = fixtures::setup_store(DirLevels::One).await;
+
+        // Create a node that references another block
+        let data = b"Hello, World!".to_vec();
+        let data_cid = store.put_raw_block(data.clone()).await?;
+
+        let node = TestNode {
+            name: "test".to_string(),
+            value: 42,
+            refs: vec![data_cid],
+        };
+        let node_cid = store.put_node(&node).await?;
+
+        // Verify both blocks exist
+        assert!(store.has(&data_cid).await);
+        assert!(store.has(&node_cid).await);
+
+        // Read back the node to verify refs are properly serialized
+        let retrieved_node: TestNode = store.get_node(&node_cid).await?;
+        assert_eq!(retrieved_node.refs, vec![data_cid]);
+
+        // Try to garbage collect data_cid - should fail because node references it
+        let removed = store.garbage_collect(&data_cid).await?;
+        assert!(removed.is_empty());
+        assert!(store.has(&data_cid).await);
+
+        // Garbage collect node_cid - should succeed and trigger data_cid collection
+        let removed = store.garbage_collect(&node_cid).await?;
+        assert!(removed.contains(&node_cid));
+        assert!(removed.contains(&data_cid));
+        assert!(!store.has(&node_cid).await);
+        assert!(!store.has(&data_cid).await);
+        assert!(store.is_empty().await?);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_flatfsstore_complex_garbage_collect() -> anyhow::Result<()> {
+        let (store, _temp) = fixtures::setup_store(DirLevels::One).await;
+
+        // Create some raw data blocks
+        let data1 = b"Data block 1".to_vec();
+        let data2 = b"Data block 2".to_vec();
+        let data3 = b"Data block 3".to_vec();
+        let data1_cid = store.put_raw_block(data1.clone()).await?;
+        let data2_cid = store.put_raw_block(data2.clone()).await?;
+        let data3_cid = store.put_raw_block(data3.clone()).await?;
+
+        // ======================== Tree Structure ========================
+        //
+        //             root[value: 5, rc: 0]
+        //                 /            \
+        //                /              \
+        //               /                \
+        //  middle1[value: 3, rc: 1]      middle2[value: 4, rc: 1]
+        //        /           \                /              \
+        //       /             \              /                \
+        //      /               \            /                  \
+        //  leaf1[value: 1, rc: 1]   leaf2[value: 2, rc: 2]      \
+        //     |                           |                      \
+        //     |                           |                       \
+        //  data1[rc: 1]             data2[rc: 1]            data3[rc: 1]
+        //
+        // ===============================================================
+
+        // Create leaf nodes
+        let leaf1 = TestNode {
+            name: "leaf1".to_string(),
+            value: 1,
+            refs: vec![data1_cid],
+        };
+        let leaf2 = TestNode {
+            name: "leaf2".to_string(),
+            value: 2,
+            refs: vec![data2_cid],
+        };
+        let leaf1_cid = store.put_node(&leaf1).await?;
+        let leaf2_cid = store.put_node(&leaf2).await?;
+
+        // Create middle nodes
+        let middle1 = TestNode {
+            name: "middle1".to_string(),
+            value: 3,
+            refs: vec![leaf1_cid, leaf2_cid],
+        };
+        let middle2 = TestNode {
+            name: "middle2".to_string(),
+            value: 4,
+            refs: vec![leaf2_cid, data3_cid], // Note: leaf2 is referenced twice
+        };
+        let middle1_cid = store.put_node(&middle1).await?;
+        let middle2_cid = store.put_node(&middle2).await?;
+
+        // Create root node
+        let root = TestNode {
+            name: "root".to_string(),
+            value: 5,
+            refs: vec![middle1_cid, middle2_cid],
+        };
+        let root_cid = store.put_node(&root).await?;
+
+        // Try to collect leaf1 - should fail as it's referenced by middle1
+        let removed = store.garbage_collect(&leaf1_cid).await?;
+        assert!(
+            removed.is_empty(),
+            "No nodes should be removed when collecting referenced leaf1"
+        );
+        assert!(store.has(&leaf1_cid).await);
+        assert!(store.has(&data1_cid).await);
+
+        // Try to collect middle1 - should fail as it's referenced by root
+        let removed = store.garbage_collect(&middle1_cid).await?;
+        assert!(
+            removed.is_empty(),
+            "No nodes should be removed when collecting referenced middle1"
+        );
+        assert!(store.has(&middle1_cid).await);
+        assert!(store.has(&leaf1_cid).await);
+        assert!(store.has(&leaf2_cid).await);
+
+        // Try to collect data2 - should fail as it's referenced by leaf2
+        let removed = store.garbage_collect(&data2_cid).await?;
+        assert!(
+            removed.is_empty(),
+            "No nodes should be removed when collecting referenced data2"
+        );
+        assert!(store.has(&data2_cid).await);
+
+        // Finally collect root node - this should collect everything since root has refcount 0
+        let removed = store.garbage_collect(&root_cid).await?;
+
+        // Verify all nodes are in the removed set
+        assert!(
+            removed.contains(&root_cid),
+            "Root node should be in removed set"
+        );
+        assert!(
+            removed.contains(&middle1_cid),
+            "Middle1 node should be in removed set"
+        );
+        assert!(
+            removed.contains(&middle2_cid),
+            "Middle2 node should be in removed set"
+        );
+        assert!(
+            removed.contains(&leaf1_cid),
+            "Leaf1 node should be in removed set"
+        );
+        assert!(
+            removed.contains(&leaf2_cid),
+            "Leaf2 node should be in removed set"
+        );
+        assert!(
+            removed.contains(&data1_cid),
+            "Data1 block should be in removed set"
+        );
+        assert!(
+            removed.contains(&data2_cid),
+            "Data2 block should be in removed set"
+        );
+        assert!(
+            removed.contains(&data3_cid),
+            "Data3 block should be in removed set"
+        );
+
+        // Verify the size of removed set matches expected number of nodes
+        assert_eq!(removed.len(), 8, "Should have removed exactly 8 nodes");
+
+        // Verify nodes are no longer in store
+        assert!(!store.has(&root_cid).await);
+        assert!(!store.has(&middle1_cid).await);
+        assert!(!store.has(&middle2_cid).await);
+        assert!(!store.has(&leaf1_cid).await);
+        assert!(!store.has(&leaf2_cid).await);
+        assert!(!store.has(&data1_cid).await);
+        assert!(!store.has(&data2_cid).await);
+        assert!(!store.has(&data3_cid).await);
+        assert!(store.is_empty().await?);
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -651,7 +1009,6 @@ mod fixtures {
     pub(super) struct TestNode {
         pub(super) name: String,
         pub(super) value: i32,
-        #[serde(skip)]
         pub(super) refs: Vec<Cid>,
     }
 

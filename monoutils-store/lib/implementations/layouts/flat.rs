@@ -406,7 +406,7 @@ mod tests {
     #[tokio::test]
     async fn test_flat_layout_organize_and_retrieve() -> anyhow::Result<()> {
         let store = MemoryStore::default();
-        let (data, _, chunk_stream) = fixtures::data_and_chunk_stream();
+        let (data, _, chunk_stream) = helper::data_and_chunk_stream();
 
         // Organize chunks into a DAG.
         let layout = FlatLayout::default();
@@ -448,7 +448,7 @@ mod tests {
     #[tokio::test]
     async fn test_flat_layout_seek() -> anyhow::Result<()> {
         let store = MemoryStore::default();
-        let (data, _, chunk_stream) = fixtures::data_and_chunk_stream();
+        let (data, _, chunk_stream) = helper::data_and_chunk_stream();
 
         // Organize chunks into a DAG.
         let layout = FlatLayout::default();
@@ -541,7 +541,7 @@ mod tests {
         assert_eq!(size, single_chunk.len() as u64);
 
         // Test multi-chunk data
-        let (data, _, chunk_stream) = fixtures::data_and_chunk_stream();
+        let (data, _, chunk_stream) = helper::data_and_chunk_stream();
         let cid_stream = layout.organize(chunk_stream, store.clone()).await?;
         let multi_cid = cid_stream.try_collect::<Vec<_>>().await?.pop().unwrap();
         let size = layout.get_size(&multi_cid, store.clone()).await?;
@@ -571,7 +571,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod fixtures {
+mod helper {
     use futures::{stream, Stream};
 
     use super::*;
