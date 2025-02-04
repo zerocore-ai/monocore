@@ -7,9 +7,10 @@ use std::{
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
-use ipld_core::cid::Cid;
+use ipld_core::{cid::Cid, codec::Links};
 use monoutils::SeekableReader;
 use serde::{de::DeserializeOwned, Serialize};
+use serde_ipld_dagcbor::codec::DagCborCodec;
 use tokio::{io::AsyncRead, sync::RwLock};
 
 use crate::{
@@ -24,11 +25,28 @@ use crate::{
 
 /// An in-memory storage for IPLD nodes and bytes.
 ///
-/// This store maintains a reference count for each stored block. Reference counting is used to
-/// determine when a block can be safely removed from the store.
+/// This store provides a thread-safe in-memory implementation for storing [IPLD (InterPlanetary
+/// Linked Data)][ipld] nodes and raw bytes. It supports:
+///
+/// - Storage of both IPLD nodes (DagCbor encoded) and raw bytes
+/// - Content-addressed storage using [CIDs][cid]
+/// - Automatic chunking of large data using configurable chunking strategies
+/// - Flexible data layout patterns through the Layout trait
+/// - Reference counting for automatic garbage collection
+///
+/// The store maintains a reference count for each block, tracking both direct storage and references
+/// from other IPLD nodes. This reference counting is particularly effective for IPLD data since it
+/// forms a directed acyclic graph (DAG), meaning there can never be cyclical references. This
+/// property ensures reference counting will correctly identify unreachable blocks when they are
+/// no longer referenced.
+///
+/// When a block's reference count reaches zero, it becomes eligible for garbage collection along
+/// with any of its referenced blocks (recursively) that also reach zero references.
+///
+/// [cid]: https://docs.ipfs.tech/concepts/content-addressing/
+/// [ipld]: https://ipld.io/
 #[derive(Debug, Clone)]
 // TODO: Use `BalancedDagLayout` as default
-// TODO: Use `FastCDCChunker` as default chunker
 pub struct MemoryStore<C = FixedSizeChunker, L = FlatLayout>
 where
     C: Chunker,
@@ -87,34 +105,37 @@ where
     }
 
     /// Prints all the blocks in the store.
-    pub fn debug(&self)
+    pub async fn print_blocks(&self)
     where
         C: Clone + Send,
         L: Clone + Send,
     {
         let store = self.clone();
-        tokio::spawn(async move {
-            let blocks = store.blocks.read().await;
-            for (cid, (size, bytes)) in blocks.iter() {
-                println!("\ncid: {} ({:?})\nkey: {}", cid, size, hex::encode(bytes));
-            }
-        });
+        let blocks = store.blocks.read().await;
+        for (cid, (refcount, bytes)) in blocks.iter() {
+            println!("[{:03}] {}: {}", refcount, cid, hex::encode(bytes));
+        }
     }
 
     /// Increments the reference count of the blocks with the given `Cid`s.
-    async fn inc_refs(&self, cids: impl Iterator<Item = &Cid>) {
+    async fn increment_reference_counts(&self, cids: impl Iterator<Item = &Cid>) {
         for cid in cids {
-            if let Some((size, _)) = self.blocks.write().await.get_mut(cid) {
-                *size += 1;
+            if let Some((count, _)) = self.blocks.write().await.get_mut(cid) {
+                *count += 1;
             }
         }
     }
 
     /// Stores raw bytes in the store without any size checks.
-    async fn store_raw(&self, bytes: Bytes, codec: Codec) -> Cid {
+    /// Returns a tuple of (Cid, bool) where the bool indicates if the data already existed in the store.
+    async fn store_raw(&self, bytes: Bytes, codec: Codec) -> (Cid, bool) {
         let cid = utils::make_cid(codec, &bytes);
-        self.blocks.write().await.insert(cid, (1, bytes));
-        cid
+        let mut blocks = self.blocks.write().await;
+        let existed = blocks.contains_key(&cid);
+        if !existed {
+            blocks.insert(cid, (0, bytes));
+        }
+        (cid, existed)
     }
 }
 
@@ -142,10 +163,14 @@ where
             }
         }
 
-        // Increment the reference count of the block.
-        self.inc_refs(data.get_references()).await;
+        let (cid, existed) = self.store_raw(bytes, Codec::DagCbor).await;
 
-        Ok(self.store_raw(bytes, Codec::DagCbor).await)
+        // Only increment reference counts if this is a new entry
+        if !existed {
+            self.increment_reference_counts(data.get_references()).await;
+        }
+
+        Ok(cid)
     }
 
     async fn put_bytes(&self, reader: impl AsyncRead + Send + Sync) -> StoreResult<Cid> {
@@ -206,6 +231,71 @@ where
     async fn get_block_count(&self) -> StoreResult<u64> {
         Ok(self.blocks.read().await.len() as u64)
     }
+
+    async fn supports_garbage_collection(&self) -> bool {
+        true
+    }
+
+    async fn garbage_collect(&self, cid: &Cid) -> StoreResult<HashSet<Cid>> {
+        let mut removed_cids = HashSet::new();
+
+        // Check if the CID exists and has refcount of exactly 0
+        let refs = {
+            let mut blocks = self.blocks.write().await;
+            match blocks.get(cid) {
+                Some((count, bytes)) if *count == 0 => {
+                    // Try to deserialize the block to get its references
+                    let codec: Codec = cid.codec().try_into()?;
+                    match codec {
+                        Codec::DagCbor => {
+                            // Extract CID references using the Links trait
+                            let refs = DagCborCodec::links(&bytes)
+                                .map_err(StoreError::custom)?
+                                .collect::<Vec<_>>();
+
+                            // Remove the block since refcount is 0
+                            blocks.remove(cid);
+                            removed_cids.insert(*cid);
+
+                            Some(refs)
+                        }
+                        Codec::Raw => {
+                            // For raw blocks, just remove them if refcount is 0
+                            blocks.remove(cid);
+                            removed_cids.insert(*cid);
+                            None
+                        }
+                        _ => None,
+                    }
+                }
+                _ => None,
+            }
+        };
+
+        // Process dependencies if we had any
+        if let Some(refs) = refs {
+            for ref_cid in refs {
+                // Decrement refcount and check if we should collect
+                let should_collect = {
+                    let mut blocks = self.blocks.write().await;
+                    if let Some((count, _)) = blocks.get_mut(&ref_cid) {
+                        *count = count.saturating_sub(1);
+                        *count == 0
+                    } else {
+                        false
+                    }
+                };
+
+                // If refcount reached 0, recursively collect it
+                if should_collect {
+                    let sub_removed = self.garbage_collect(&ref_cid).await?;
+                    removed_cids.extend(sub_removed);
+                }
+            }
+        }
+
+        Ok(removed_cids)
+    }
 }
 
 #[async_trait]
@@ -222,7 +312,7 @@ where
             }
         }
 
-        Ok(self.store_raw(bytes, Codec::Raw).await)
+        Ok(self.store_raw(bytes, Codec::Raw).await.0)
     }
 
     async fn get_raw_block(&self, cid: &Cid) -> StoreResult<Bytes> {
@@ -277,7 +367,7 @@ impl Default for MemoryStore {
 mod tests {
     use crate::DEFAULT_MAX_CHUNK_SIZE;
 
-    use super::fixtures::TestNode;
+    use super::helper::TestNode;
     use super::*;
     use multihash_codetable::{Code, MultihashDigest};
     use tokio::io::AsyncReadExt;
@@ -402,10 +492,217 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_memory_store_garbage_collect() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+
+        // Create a node that references another block
+        let data = b"Hello, World!".to_vec();
+        let data_cid = store.put_raw_block(data.clone()).await?;
+
+        let node = TestNode {
+            name: "test".to_string(),
+            value: 42,
+            refs: vec![data_cid],
+        };
+        let node_cid = store.put_node(&node).await?;
+
+        // Verify both blocks exist
+        assert!(store.has(&data_cid).await);
+        assert!(store.has(&node_cid).await);
+
+        println!("store before gc");
+        store.print_blocks().await;
+
+        // Read back the node to verify refs are properly serialized
+        let retrieved_node: TestNode = store.get_node(&node_cid).await?;
+        assert_eq!(retrieved_node.refs, vec![data_cid]);
+
+        // Try to garbage collect data_cid - should fail because node references it
+        let removed = store.garbage_collect(&data_cid).await?;
+        assert!(removed.is_empty());
+        assert!(store.has(&data_cid).await);
+
+        println!("\nstore after failed gc");
+        store.print_blocks().await;
+
+        // Garbage collect node_cid - should succeed and trigger data_cid collection
+        let removed = store.garbage_collect(&node_cid).await?;
+
+        println!("\nstore after successful gc");
+        store.print_blocks().await;
+
+        assert!(removed.contains(&node_cid));
+        assert!(removed.contains(&data_cid));
+        assert!(!store.has(&node_cid).await);
+        assert!(!store.has(&data_cid).await);
+        assert!(store.is_empty().await?);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_memory_store_complex_garbage_collect() -> anyhow::Result<()> {
+        let store = MemoryStore::default();
+
+        // Create some raw data blocks
+        let data1 = b"Data block 1".to_vec();
+        let data2 = b"Data block 2".to_vec();
+        let data3 = b"Data block 3".to_vec();
+        let data1_cid = store.put_raw_block(data1.clone()).await?;
+        let data2_cid = store.put_raw_block(data2.clone()).await?;
+        let data3_cid = store.put_raw_block(data3.clone()).await?;
+
+        // ======================== Tree Structure ========================
+        //
+        //             root[value: 5, rc: 0]
+        //                 /            \
+        //                /              \
+        //               /                \
+        //  middle1[value: 3, rc: 1]      middle2[value: 4, rc: 1]
+        //        /           \                /              \
+        //       /             \              /                \
+        //      /               \            /                  \
+        //  leaf1[value: 1, rc: 1]   leaf2[value: 2, rc: 2]      \
+        //     |                     |                            \
+        //     |                     |                             \
+        //  data1[rc: 1]       data2[rc: 1]                  data3[rc: 1]
+        //
+        // ===============================================================
+
+        // Create leaf nodes
+        let leaf1 = TestNode {
+            name: "leaf1".to_string(),
+            value: 1,
+            refs: vec![data1_cid],
+        };
+        let leaf2 = TestNode {
+            name: "leaf2".to_string(),
+            value: 2,
+            refs: vec![data2_cid],
+        };
+        let leaf1_cid = store.put_node(&leaf1).await?;
+        let leaf2_cid = store.put_node(&leaf2).await?;
+
+        // Create middle nodes
+        let middle1 = TestNode {
+            name: "middle1".to_string(),
+            value: 3,
+            refs: vec![leaf1_cid, leaf2_cid],
+        };
+        let middle2 = TestNode {
+            name: "middle2".to_string(),
+            value: 4,
+            refs: vec![leaf2_cid, data3_cid], // Note: leaf2 is referenced twice
+        };
+        let middle1_cid = store.put_node(&middle1).await?;
+        let middle2_cid = store.put_node(&middle2).await?;
+
+        // Create root node
+        let root = TestNode {
+            name: "root".to_string(),
+            value: 5,
+            refs: vec![middle1_cid, middle2_cid],
+        };
+        let root_cid = store.put_node(&root).await?;
+
+        println!("\nInitial store state:");
+        store.print_blocks().await;
+
+        // Try to collect leaf1 - should fail as it's referenced by middle1
+        let removed = store.garbage_collect(&leaf1_cid).await?;
+        assert!(
+            removed.is_empty(),
+            "No nodes should be removed when collecting referenced leaf1"
+        );
+        assert!(store.has(&leaf1_cid).await);
+        assert!(store.has(&data1_cid).await);
+
+        println!("\nAfter attempting to collect leaf1:");
+        store.print_blocks().await;
+
+        // Try to collect middle1 - should fail as it's referenced by root
+        let removed = store.garbage_collect(&middle1_cid).await?;
+        assert!(
+            removed.is_empty(),
+            "No nodes should be removed when collecting referenced middle1"
+        );
+        assert!(store.has(&middle1_cid).await);
+        assert!(store.has(&leaf1_cid).await);
+        assert!(store.has(&leaf2_cid).await);
+
+        println!("\nAfter attempting to collect middle1:");
+        store.print_blocks().await;
+
+        // Try to collect data2 - should fail as it's referenced by leaf2
+        let removed = store.garbage_collect(&data2_cid).await?;
+        assert!(
+            removed.is_empty(),
+            "No nodes should be removed when collecting referenced data2"
+        );
+        assert!(store.has(&data2_cid).await);
+
+        println!("\nAfter attempting to collect data2:");
+        store.print_blocks().await;
+
+        // Finally collect root node - this should collect everything since root has refcount 0
+        let removed = store.garbage_collect(&root_cid).await?;
+        // Verify all nodes are in the removed set
+        assert!(
+            removed.contains(&root_cid),
+            "Root node should be in removed set"
+        );
+        assert!(
+            removed.contains(&middle1_cid),
+            "Middle1 node should be in removed set"
+        );
+        assert!(
+            removed.contains(&middle2_cid),
+            "Middle2 node should be in removed set"
+        );
+        assert!(
+            removed.contains(&leaf1_cid),
+            "Leaf1 node should be in removed set"
+        );
+        assert!(
+            removed.contains(&leaf2_cid),
+            "Leaf2 node should be in removed set"
+        );
+        assert!(
+            removed.contains(&data1_cid),
+            "Data1 block should be in removed set"
+        );
+        assert!(
+            removed.contains(&data2_cid),
+            "Data2 block should be in removed set"
+        );
+        assert!(
+            removed.contains(&data3_cid),
+            "Data3 block should be in removed set"
+        );
+        // Verify the size of removed set matches expected number of nodes
+        assert_eq!(removed.len(), 8, "Should have removed exactly 8 nodes");
+        // Verify nodes are no longer in store
+        assert!(!store.has(&root_cid).await);
+        assert!(!store.has(&middle1_cid).await);
+        assert!(!store.has(&middle2_cid).await);
+        assert!(!store.has(&leaf1_cid).await);
+        assert!(!store.has(&leaf2_cid).await);
+        assert!(!store.has(&data1_cid).await);
+        assert!(!store.has(&data2_cid).await);
+        assert!(!store.has(&data3_cid).await);
+        assert!(store.is_empty().await?);
+
+        println!("\nAfter collecting root:");
+        store.print_blocks().await;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
-mod fixtures {
+mod helper {
     use serde::Deserialize;
 
     use super::*;
@@ -414,7 +711,6 @@ mod fixtures {
     pub(super) struct TestNode {
         pub(super) name: String,
         pub(super) value: i32,
-        #[serde(skip)]
         pub(super) refs: Vec<Cid>,
     }
 

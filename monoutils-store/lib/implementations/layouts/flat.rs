@@ -260,9 +260,7 @@ impl Layout for FlatLayout {
             let mut children = Vec::new();
             while let Some(Ok(chunk)) = stream.next().await {
                 let len = chunk.len();
-                tracing::trace!("organizing by putting raw block: {:?}", len);
                 let cid = store.put_raw_block(chunk).await?;
-                tracing::trace!("successfully put raw block");
                 children.push((cid, len));
                 yield cid;
             }
