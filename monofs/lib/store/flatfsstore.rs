@@ -299,7 +299,7 @@ where
         }
 
         // Create CID and store the block
-        let cid = monoutils_store::make_cid(Codec::DagCbor, &bytes);
+        let cid = monoutils_store::generate_cid(Codec::DagCbor, &bytes);
         let block_path = self.get_block_path(&cid);
 
         if !block_path.exists() {
@@ -570,7 +570,7 @@ where
             }
         }
 
-        let cid = monoutils_store::make_cid(Codec::Raw, bytes.as_ref());
+        let cid = monoutils_store::generate_cid(Codec::Raw, bytes.as_ref());
         let block_path = self.get_block_path(&cid);
 
         if !block_path.exists() {
