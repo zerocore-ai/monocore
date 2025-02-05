@@ -129,7 +129,7 @@ where
     /// Stores raw bytes in the store without any size checks.
     /// Returns a tuple of (Cid, bool) where the bool indicates if the data already existed in the store.
     async fn store_raw(&self, bytes: Bytes, codec: Codec) -> (Cid, bool) {
-        let cid = utils::make_cid(codec, &bytes);
+        let cid = utils::generate_cid(codec, &bytes);
         let mut blocks = self.blocks.write().await;
         let existed = blocks.contains_key(&cid);
         if !existed {
@@ -149,12 +149,12 @@ where
     C: Chunker + Clone + Send + Sync + 'static,
     L: Layout + Clone + Send + Sync + 'static,
 {
-    async fn put_node<T>(&self, data: &T) -> StoreResult<Cid>
+    async fn put_node<T>(&self, node: &T) -> StoreResult<Cid>
     where
         T: Serialize + IpldReferences + Sync,
     {
         // Serialize the data to bytes.
-        let bytes = Bytes::from(serde_ipld_dagcbor::to_vec(&data).map_err(StoreError::custom)?);
+        let bytes = Bytes::from(serde_ipld_dagcbor::to_vec(&node).map_err(StoreError::custom)?);
 
         // Check if the data exceeds the node maximum block size.
         if let Some(max_size) = self.get_max_node_block_size().await? {
@@ -167,7 +167,7 @@ where
 
         // Only increment reference counts if this is a new entry
         if !existed {
-            self.increment_reference_counts(data.get_references()).await;
+            self.increment_reference_counts(node.get_references()).await;
         }
 
         Ok(cid)

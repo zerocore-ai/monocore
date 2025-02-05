@@ -60,7 +60,7 @@ pub trait IpldStore: RawStore + Clone {
     ///
     /// ## Arguments
     ///
-    /// * `data` - The object to store
+    /// * `node` - The object to store
     ///
     /// ## Returns
     ///
@@ -69,7 +69,7 @@ pub trait IpldStore: RawStore + Clone {
     /// ## Errors
     ///
     /// Returns `StoreError::NodeBlockTooLarge` if the serialized data exceeds the store's maximum node block size.
-    async fn put_node<T>(&self, data: &T) -> StoreResult<Cid>
+    async fn put_node<T>(&self, node: &T) -> StoreResult<Cid>
     where
         T: Serialize + IpldReferences + Sync;
 
@@ -321,6 +321,15 @@ pub trait StoreSwitchable {
     fn change_store<U: IpldStore>(self, new_store: U) -> Self::WithStore<U>;
 }
 
+/// A trait for stores that can be configured.
+pub trait StoreConfig {
+    /// The type of the configuration.
+    type Config: Serialize + DeserializeOwned;
+
+    /// Returns the configuration for the store.
+    fn get_config(&self) -> Self::Config;
+}
+
 //--------------------------------------------------------------------------------------------------
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
@@ -334,7 +343,7 @@ impl TryFrom<u64> for Codec {
             0x71 => Ok(Codec::DagCbor),
             0x0129 => Ok(Codec::DagJson),
             0x70 => Ok(Codec::DagPb),
-            _ => Err(StoreError::UnsupportedCodec(value)),
+            v => Ok(Codec::Unknown(v)),
         }
     }
 }
