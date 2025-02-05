@@ -15,6 +15,7 @@ use serde_ipld_dagcbor::codec::DagCborCodec;
 use tokio::fs::{self, File};
 use tokio::io::AsyncRead;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
+use typed_builder::TypedBuilder;
 
 //--------------------------------------------------------------------------------------------------
 // Types: FlatFsStore
@@ -85,95 +86,110 @@ pub enum DirLevels {
 /// The default one-level structure is the most common approach, used by systems like IPFS and Git,
 /// providing a good balance between directory depth and file distribution (1024 possible subdirectories).
 ///
-/// ## Reference Counting and Garbage Collection
+/// ## Reference Counting
 ///
-/// The store uses reference counting to track block usage and enable automatic garbage collection.
-/// Each block file stores a reference count that is incremented when the block is referenced by other
+/// The store optionally supports reference counting to track block usage and enable automatic garbage collection.
+/// When enabled, each block file stores a reference count that is incremented when the block is referenced by other
 /// blocks and decremented during garbage collection. When a block's reference count reaches zero and
 /// it is garbage collected, its referenced blocks are also processed recursively. This ensures that
 /// blocks are only removed when they are no longer needed, while also cleaning up any unreferenced
 /// dependencies.
-#[derive(Debug, Clone)]
-pub struct FlatFsStore<C = FastCDCChunker, L = FlatLayout>
+///
+/// Reference counting must be enabled or disabled at store initialization and cannot be changed afterwards.
+/// When disabled, blocks are stored without reference counts and garbage collection is not available.
+///
+/// ## Chunking and Layout
+///
+/// The store uses a configurable chunking strategy to split data into smaller blocks. The chunker
+/// is configurable via the `chunker` field. The layout strategy is configurable via the `layout`
+/// field.
+#[derive(Debug, Clone, TypedBuilder)]
+pub struct FlatFsStoreImpl<C = FastCDCChunker, L = FlatLayout>
 where
-    C: Chunker,
-    L: Layout,
+    C: Chunker + Default,
+    L: Layout + Default,
 {
+    #[builder(setter(into))]
     path: PathBuf,
     dir_levels: DirLevels,
+    #[builder(default = C::default())]
     chunker: C,
+    #[builder(default = L::default())]
     layout: L,
+    #[builder(default = true)]
+    enable_refcount: bool,
 }
 
-/// A [`FlatFsStore`] with a [`FastCDCChunker`] and [`FlatLayout`].
-pub type FlatFsStoreDefault = FlatFsStore<FastCDCChunker, FlatLayout>;
+/// A flat filesystem store that organizes blocks in a configurable directory structure based on
+/// the CID digest.
+///
+/// The store supports three different directory structures:
+/// - Zero levels: All blocks stored directly in the root directory
+/// - One level (default): Blocks stored in subdirectories based on the first two characters of the CID digest
+/// - Two levels: Blocks stored in nested subdirectories based on the first four characters of the CID digest
+///
+/// Example directory structure (using one-level organization):
+/// ```text
+/// store_root/
+/// ├── 00/
+/// │   ├── 001234567890abcdef...  (block file)
+/// │   └── 00fedcba987654321...  (block file)
+/// ├── a1/
+/// │   └── a1b2c3d4e5f67890...   (block file)
+/// └── ff/
+///     └── ff0123456789abcd...   (block file)
+/// ```
+///
+/// The default one-level structure is the most common approach, used by systems like IPFS and Git,
+/// providing a good balance between directory depth and file distribution (1024 possible subdirectories).
+///
+/// ## Reference Counting
+///
+/// The store optionally supports reference counting to track block usage and enable automatic garbage collection.
+/// When enabled, each block file stores a reference count that is incremented when the block is referenced by other
+/// blocks and decremented during garbage collection. When a block's reference count reaches zero and
+/// it is garbage collected, its referenced blocks are also processed recursively. This ensures that
+/// blocks are only removed when they are no longer needed, while also cleaning up any unreferenced
+/// dependencies.
+///
+/// Reference counting must be enabled or disabled at store initialization and cannot be changed afterwards.
+/// When disabled, blocks are stored without reference counts and garbage collection is not available.
+///
+/// ## Chunking and Layout
+///
+/// This version of the store uses a [`FastCDCChunker`] for chunking and [`FlatLayout`] for layout.
+pub type FlatFsStore = FlatFsStoreImpl<FastCDCChunker, FlatLayout>;
 
-/// A [`FlatFsStore`] with a [`FixedSizeChunker`] and [`FlatLayout`].
-pub type FlatFsStoreFixed = FlatFsStore<FixedSizeChunker, FlatLayout>;
+/// A [`FlatFsStoreImpl`] with a [`FixedSizeChunker`] for chunking and [`FlatLayout`] for layout.
+pub type FlatFsStoreFixed = FlatFsStoreImpl<FixedSizeChunker, FlatLayout>;
 
 //--------------------------------------------------------------------------------------------------
 // Methods: FlatFsStore
 //--------------------------------------------------------------------------------------------------
 
-impl<C, L> FlatFsStore<C, L>
+impl<C, L> FlatFsStoreImpl<C, L>
 where
-    C: Chunker,
-    L: Layout,
+    C: Chunker + Default,
+    L: Layout + Default,
 {
     /// Creates a new `FlatFsStore` with the given root path, chunker, and layout.
+    /// Reference counting is enabled by default.
     ///
     /// The root path is where all the blocks will be stored. If the path doesn't exist, it will be
     /// created when the first block is stored.
-    pub fn new(path: impl AsRef<str>) -> Self
-    where
-        C: Default,
-        L: Default,
-    {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
-            path: PathBuf::from(path.as_ref()),
+            path: path.into(),
             dir_levels: DirLevels::default(),
             chunker: Default::default(),
             layout: Default::default(),
+            enable_refcount: true,
         }
     }
 
-    /// Creates a new `FlatFsStore` with the given root path, chunker, and layout.
-    pub fn with_chunker_and_layout(path: impl AsRef<str>, chunker: C, layout: L) -> Self {
-        Self {
-            path: PathBuf::from(path.as_ref()),
-            dir_levels: DirLevels::default(),
-            chunker,
-            layout,
-        }
-    }
-
-    /// Creates a new `FlatFsStore` with the given root path and default chunker and layout.
-    pub fn with_dir_levels(path: impl AsRef<str>, dir_levels: DirLevels) -> Self
-    where
-        C: Default,
-        L: Default,
-    {
-        Self {
-            path: PathBuf::from(path.as_ref()),
-            dir_levels,
-            chunker: Default::default(),
-            layout: Default::default(),
-        }
-    }
-
-    /// Creates a new `FlatFsStore` with the given root path, directory structure, chunker, and layout.
-    pub fn with_dir_levels_chunker_and_layout(
-        path: impl AsRef<str>,
-        dir_levels: DirLevels,
-        chunker: C,
-        layout: L,
-    ) -> Self {
-        Self {
-            path: PathBuf::from(path.as_ref()),
-            dir_levels,
-            chunker,
-            layout,
-        }
+    /// Returns whether reference counting is enabled for this store.
+    pub fn is_refcount_enabled(&self) -> bool {
+        self.enable_refcount
     }
 
     /// Get the path for a given CID using the configured directory structure
@@ -226,11 +242,17 @@ where
         Ok(())
     }
 
-    /// Reads the block data from a file (skipping the refcount)
+    /// Reads the block data from a file (skipping the refcount if enabled)
     async fn read_block_data(&self, file: &mut File) -> StoreResult<Bytes> {
-        file.seek(SeekFrom::Start(8))
-            .await
-            .map_err(StoreError::custom)?;
+        if self.enable_refcount {
+            file.seek(SeekFrom::Start(8))
+                .await
+                .map_err(StoreError::custom)?;
+        } else {
+            file.seek(SeekFrom::Start(0))
+                .await
+                .map_err(StoreError::custom)?;
+        }
         let mut data = Vec::new();
         file.read_to_end(&mut data)
             .await
@@ -243,10 +265,12 @@ where
         self.ensure_directories(block_path).await?;
         let mut file = File::create(block_path).await.map_err(StoreError::custom)?;
 
-        // Write initial refcount (0)
-        file.write_all(&0u64.to_be_bytes())
-            .await
-            .map_err(StoreError::custom)?;
+        if self.enable_refcount {
+            // Write initial refcount (0)
+            file.write_all(&0u64.to_be_bytes())
+                .await
+                .map_err(StoreError::custom)?;
+        }
 
         // Write block data
         file.write_all(bytes).await.map_err(StoreError::custom)?;
@@ -258,6 +282,10 @@ where
         &self,
         cids: impl Iterator<Item = &Cid>,
     ) -> StoreResult<()> {
+        if !self.enable_refcount {
+            return Ok(());
+        }
+
         for cid in cids {
             let block_path = self.get_block_path(cid);
             if let Ok(mut file) = File::options()
@@ -279,10 +307,10 @@ where
 //--------------------------------------------------------------------------------------------------
 
 #[async_trait]
-impl<C, L> IpldStore for FlatFsStore<C, L>
+impl<C, L> IpldStore for FlatFsStoreImpl<C, L>
 where
-    C: Chunker + Clone + Send + Sync + 'static,
-    L: Layout + Clone + Send + Sync + 'static,
+    C: Chunker + Default + Clone + Send + Sync + 'static,
+    L: Layout + Default + Clone + Send + Sync + 'static,
 {
     async fn put_node<T>(&self, data: &T) -> StoreResult<Cid>
     where
@@ -463,10 +491,14 @@ where
     }
 
     async fn supports_garbage_collection(&self) -> bool {
-        true
+        self.enable_refcount
     }
 
     async fn garbage_collect(&self, cid: &Cid) -> StoreResult<HashSet<Cid>> {
+        if !self.enable_refcount {
+            return Ok(HashSet::new());
+        }
+
         let mut removed_cids = HashSet::new();
         let block_path = self.get_block_path(cid);
 
@@ -557,10 +589,10 @@ where
 }
 
 #[async_trait]
-impl<C, L> RawStore for FlatFsStore<C, L>
+impl<C, L> RawStore for FlatFsStoreImpl<C, L>
 where
-    C: Chunker + Clone + Send + Sync,
-    L: Layout + Clone + Send + Sync,
+    C: Chunker + Default + Clone + Send + Sync,
+    L: Layout + Default + Clone + Send + Sync,
 {
     async fn put_raw_block(&self, bytes: impl Into<Bytes> + Send) -> StoreResult<Cid> {
         let bytes = bytes.into();
@@ -603,10 +635,10 @@ where
 }
 
 #[async_trait]
-impl<C, L> IpldStoreSeekable for FlatFsStore<C, L>
+impl<C, L> IpldStoreSeekable for FlatFsStoreImpl<C, L>
 where
-    C: Chunker + Clone + Send + Sync + 'static,
-    L: LayoutSeekable + Clone + Send + Sync + 'static,
+    C: Chunker + Default + Clone + Send + Sync + 'static,
+    L: LayoutSeekable + Default + Clone + Send + Sync + 'static,
 {
     async fn get_seekable_bytes(
         &self,
@@ -624,8 +656,8 @@ where
 mod tests {
     use monoutils_store::codetable::{Code, MultihashDigest};
     use monoutils_store::{DEFAULT_MAX_CHUNK_SIZE, DEFAULT_MAX_NODE_BLOCK_SIZE};
+    use tempfile::TempDir;
     use tokio::fs;
-    use tokio::io::AsyncReadExt;
 
     use super::fixtures::{self, TestNode};
     use super::*;
@@ -989,6 +1021,73 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_flatfsstore_disabled_refcount() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let store = FlatFsStore::builder()
+            .path(temp_dir.path())
+            .dir_levels(DirLevels::default())
+            .enable_refcount(false)
+            .build();
+
+        // Store some test data
+        let data = b"Hello, World!".to_vec();
+        let cid = store.put_raw_block(data.clone()).await?;
+        let block_path = store.get_block_path(&cid);
+
+        // Verify the data was written correctly
+        let file_contents = fs::read(&block_path).await?;
+        assert_eq!(
+            &file_contents,
+            data.as_slice(),
+            "File should contain only raw data without refcount header"
+        );
+        assert_eq!(
+            file_contents.len(),
+            data.len(),
+            "File size should match data size exactly"
+        );
+
+        // Verify we can read it back through the store API
+        let retrieved = store.get_raw_block(&cid).await?;
+        assert_eq!(retrieved.as_ref(), data.as_slice());
+
+        // Verify garbage collection is disabled
+        assert!(!store.supports_garbage_collection().await);
+        let removed = store.garbage_collect(&cid).await?;
+        assert!(removed.is_empty(), "Garbage collection should be no-op");
+        assert!(
+            store.has(&cid).await,
+            "Block should still exist after gc attempt"
+        );
+
+        // Test with a node containing references
+        let node = TestNode {
+            name: "test".to_string(),
+            value: 42,
+            refs: vec![cid],
+        };
+        let node_cid = store.put_node(&node).await?;
+        let node_path = store.get_block_path(&node_cid);
+
+        // Read the raw node file contents
+        let node_file_contents = fs::read(&node_path).await?;
+
+        // Deserialize using CBOR to verify the data
+        let stored_node: TestNode = serde_ipld_dagcbor::from_slice(&node_file_contents)?;
+        assert_eq!(stored_node, node, "Node data should be preserved");
+
+        // Verify the node can still reference other blocks without refcounting
+        let retrieved_node: TestNode = store.get_node(&node_cid).await?;
+        assert_eq!(retrieved_node.refs, vec![cid]);
+
+        // Try to read the referenced block
+        let referenced_data = store.get_raw_block(&cid).await?;
+        assert_eq!(referenced_data.as_ref(), data.as_slice());
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -999,9 +1098,12 @@ mod fixtures {
     use super::*;
 
     // Helper function to create a store with a temporary directory
-    pub(super) async fn setup_store(dir_levels: DirLevels) -> (FlatFsStoreDefault, TempDir) {
+    pub(super) async fn setup_store(dir_levels: DirLevels) -> (FlatFsStore, TempDir) {
         let temp_dir = TempDir::new().unwrap();
-        let store = FlatFsStore::with_dir_levels(temp_dir.path().to_str().unwrap(), dir_levels);
+        let store = FlatFsStore::builder()
+            .dir_levels(dir_levels)
+            .path(temp_dir.path())
+            .build();
         (store, temp_dir)
     }
 

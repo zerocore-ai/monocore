@@ -21,7 +21,7 @@
 
 use anyhow::Result;
 use clap::Parser;
-use monofs::store::FlatFsStoreDefault;
+use monofs::store::FlatFsStore;
 use monoutils_store::ipld::cid::Cid;
 use monoutils_store::{IpldReferences, IpldStore};
 use serde::{Deserialize, Serialize};
@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
     println!("\nUsing store directory: {}\n", args.path.display());
 
     // Initialize the store with blocks directory
-    let store = FlatFsStoreDefault::new(blocks_path.to_str().unwrap());
+    let store = FlatFsStore::new(blocks_path);
 
     // Path to head CID file
     let head_path = args.path.join("head");

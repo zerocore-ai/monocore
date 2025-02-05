@@ -2,7 +2,7 @@ use getset::Getters;
 use nfsserve::tcp::{NFSTcp, NFSTcpListener};
 use std::path::PathBuf;
 
-use crate::store::FlatFsStoreDefault;
+use crate::store::FlatFsStore;
 
 use super::MonofsNFS;
 
@@ -34,7 +34,7 @@ impl MonofsServer {
     /// Starts the NFS server and blocks until it is shut down.
     pub async fn start(&self) -> anyhow::Result<()> {
         // Create the store and NFS filesystem
-        let store = FlatFsStoreDefault::new(&self.store_dir.to_string_lossy());
+        let store = FlatFsStore::new(&self.store_dir);
         let fs = MonofsNFS::new(store);
 
         // Create and start the NFS listener
