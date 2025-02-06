@@ -37,7 +37,7 @@ pub const DIR_TYPE_TAG: &str = "monofs.dir";
 /// Entities in `monofs` are designed to be immutable and clone-on-write meaning writes create
 /// forks of the entity.
 #[derive(Clone)]
-pub struct Dir<S>
+pub struct  Dir<S>
 where
     S: IpldStore,
 {

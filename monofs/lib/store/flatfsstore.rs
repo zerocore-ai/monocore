@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{collections::HashSet, path::PathBuf, pin::Pin};
 
 use async_trait::async_trait;
@@ -111,11 +112,15 @@ where
 {
     #[builder(setter(into))]
     path: PathBuf,
+
     dir_levels: DirLevels,
-    #[builder(default = C::default())]
-    chunker: C,
-    #[builder(default = L::default())]
-    layout: L,
+
+    #[builder(default = Arc::new(C::default()))]
+    chunker: Arc<C>,
+
+    #[builder(default = Arc::new(L::default()))]
+    layout: Arc<L>,
+
     #[builder(default = true)]
     enable_refcount: bool,
 }
@@ -890,18 +895,24 @@ mod tests {
 
         // ======================== Tree Structure ========================
         //
-        //             root[value: 5, rc: 0]
+        //             root[val: 5, rc: 0]
         //                 /            \
         //                /              \
         //               /                \
-        //  middle1[value: 3, rc: 1]      middle2[value: 4, rc: 1]
-        //        /           \                /              \
-        //       /             \              /                \
-        //      /               \            /                  \
-        //  leaf1[value: 1, rc: 1]   leaf2[value: 2, rc: 2]      \
+        //              /                  \
+        //             /                    \
+        // middle1[val: 3, rc: 1]      middle2[val: 4, rc: 1]
+        //        /            \                /          \
+        //       /              \              /            \
+        //      /                \            /              \
+        //     /                  \          /                \
+        //    /                    \        /                  \
+        // leaf1[val: 1, rc: 1]  leaf2[val: 2, rc: 2]           \
+        //     |                           |                     \
         //     |                           |                      \
         //     |                           |                       \
-        //  data1[rc: 1]             data2[rc: 1]            data3[rc: 1]
+        //     |                           |                        \
+        // data1[rc: 1]             data2[rc: 1]             data3[rc: 1]
         //
         // ===============================================================
 

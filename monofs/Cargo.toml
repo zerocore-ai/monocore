@@ -52,3 +52,5 @@ typed-builder.workspace = true
 
 [dev-dependencies]
 test-log.workspace = true
+gag = "1.0"
+os_pipe = "1.1"

@@ -1,5 +1,6 @@
 //! Utility functions.
 
+pub mod dir;
 pub mod env;
 pub mod path;
 
@@ -7,5 +8,6 @@ pub mod path;
 // Exports
 //--------------------------------------------------------------------------------------------------
 
+pub use dir::*;
 pub use env::*;
 pub use path::*;
