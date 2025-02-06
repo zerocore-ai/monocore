@@ -2,6 +2,7 @@
 
 mod flatfsstore;
 mod membufferstore;
+mod layeredfsstore;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -9,3 +10,5 @@ mod membufferstore;
 
 pub use flatfsstore::*;
 pub use membufferstore::*;
+pub use layeredfsstore::*;
+

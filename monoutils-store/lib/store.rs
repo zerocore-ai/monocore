@@ -48,6 +48,8 @@ pub enum Codec {
 /// using `Arc`) since several operations on `IpldStore` require cloning the store. Using types with
 /// expensive clone operations may impact performance.
 ///
+/// See [`MemoryStore`][crate::MemoryStore] for an example of an implementation.
+///
 /// [cid]: https://docs.ipfs.tech/concepts/content-addressing/
 /// [ipld]: https://ipld.io/
 #[async_trait]
@@ -55,12 +57,15 @@ pub trait IpldStore: RawStore + Clone {
     /// Stores a serializable object in the store using the appropriate IPLD codec.
     ///
     /// The object must implement both `Serialize` and `IpldReferences`. The object will be serialized
-    /// using one of the supported IPLD codecs (see [`get_supported_codecs`]). Any CIDs referenced by
-    /// the object (via [`IpldReferences`]) will have their reference counts incremented.
+    /// using one of the supported IPLD codecs (see [`get_supported_codecs`]).
     ///
     /// ## Arguments
     ///
     /// * `node` - The object to store
+    ///
+    /// ## Important
+    ///
+    /// CIDs for nodes cannot be generated using the `Codec::Raw` codec.
     ///
     /// ## Returns
     ///
@@ -173,10 +178,6 @@ pub trait IpldStore: RawStore + Clone {
     /// ## Returns
     ///
     /// Returns the size limit in bytes, or None if there is no limit.
-    ///
-    /// ## Errors
-    ///
-    /// Returns an error if the store cannot determine its size limit.
     async fn get_max_node_block_size(&self) -> StoreResult<Option<u64>>;
 
     /// Checks if the store contains any blocks.
@@ -184,10 +185,6 @@ pub trait IpldStore: RawStore + Clone {
     /// ## Returns
     ///
     /// Returns true if the store has no blocks, false otherwise.
-    ///
-    /// ## Errors
-    ///
-    /// Returns an error if the store cannot determine if it's empty.
     async fn is_empty(&self) -> StoreResult<bool> {
         let count = self.get_block_count().await?;
         Ok(count == 0)
@@ -247,14 +244,14 @@ pub trait RawStore: Clone {
     ///
     /// ## Arguments
     ///
-    /// - `bytes`: The bytes to save.
-    /// - `is_node`: If true, the block is considered a node block and the size is checked against
-    ///   the node block size.
+    /// * `bytes` - The bytes to save.
     ///
     /// ## Important
     ///
     /// This is a low-level API intended for code implementing an [`IpldStore`].
     /// Users should prefer [`IpldStore::put_bytes`] or [`IpldStore::put_node`] instead.
+    ///
+    /// CIDs for raw blocks are generated using the `Codec::Raw` codec.
     ///
     /// ## Errors
     ///

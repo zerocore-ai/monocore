@@ -32,5 +32,7 @@ tokio-util = { workspace = true, features = ["io"] }
 monoutils.workspace = true
 tracing.workspace = true
 typed-builder.workspace = true
+getset.workspace = true
+
 [dev-dependencies]
 rand.workspace = true

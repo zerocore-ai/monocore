@@ -1,7 +1,7 @@
 use std::iter;
 
 use bytes::Bytes;
-use ipld_core::cid::Cid;
+use ipld_core::{cid::Cid, ipld::Ipld};
 
 //--------------------------------------------------------------------------------------------------
 // Traits
@@ -92,6 +92,29 @@ where
         match self {
             Some(value) => Box::new(value.get_references()),
             None => Box::new(iter::empty()),
+        }
+    }
+}
+
+impl IpldReferences for Ipld {
+    fn get_references<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Cid> + Send + 'a> {
+        match self {
+            // Base types with no references
+            Ipld::Null
+            | Ipld::Bool(_)
+            | Ipld::Integer(_)
+            | Ipld::Float(_)
+            | Ipld::String(_)
+            | Ipld::Bytes(_) => Box::new(iter::empty()),
+
+            // Direct CID reference
+            Ipld::Link(cid) => Box::new(iter::once(cid)),
+
+            // Recursive types that may contain references
+            Ipld::List(items) => Box::new(items.iter().flat_map(|item| item.get_references())),
+
+            // Map values may contain references
+            Ipld::Map(map) => Box::new(map.values().flat_map(|value| value.get_references())),
         }
     }
 }

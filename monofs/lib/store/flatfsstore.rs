@@ -4,6 +4,7 @@ use std::{collections::HashSet, path::PathBuf, pin::Pin};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
+use getset::Getters;
 use monoutils::SeekableReader;
 use monoutils_store::ipld::codec::Links;
 use monoutils_store::{ipld::cid::Cid, FastCDCChunker, FixedSizeChunker};
@@ -104,23 +105,30 @@ pub enum DirLevels {
 /// The store uses a configurable chunking strategy to split data into smaller blocks. The chunker
 /// is configurable via the `chunker` field. The layout strategy is configurable via the `layout`
 /// field.
-#[derive(Debug, Clone, TypedBuilder)]
+#[derive(Debug, Clone, TypedBuilder, Getters)]
+#[getset(get = "pub with_prefix")]
 pub struct FlatFsStoreImpl<C = FastCDCChunker, L = FlatLayout>
 where
     C: Chunker + Default,
     L: Layout + Default,
 {
+    /// The root path for the store.
     #[builder(setter(into))]
     path: PathBuf,
 
+    /// The number of directory levels to use for organizing blocks.
+    #[builder(default)]
     dir_levels: DirLevels,
 
-    #[builder(default = Arc::new(C::default()))]
+    /// The chunking algorithm used to split data into chunks.
+    #[builder(default)]
     chunker: Arc<C>,
 
-    #[builder(default = Arc::new(L::default()))]
+    /// The layout strategy used to store chunked data.
+    #[builder(default)]
     layout: Arc<L>,
 
+    /// Whether to enable reference counting for garbage collection.
     #[builder(default = true)]
     enable_refcount: bool,
 }
