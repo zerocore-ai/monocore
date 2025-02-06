@@ -48,6 +48,9 @@ clap.workspace = true
 pin-project-lite = "0.2.15"
 sqlx.workspace = true
 nix.workspace = true
+typed-builder.workspace = true
 
 [dev-dependencies]
 test-log.workspace = true
+gag = "1.0"
+os_pipe = "1.1"

@@ -1079,6 +1079,7 @@ mod tests {
         // Create a complex rename scenario and verify store state
         dir.find_or_create("state_test/source/file.txt", true)
             .await?;
+
         // Create target directory first
         dir.find_or_create("state_test/target", false).await?;
 

@@ -12,6 +12,7 @@ use monoutils::SeekableReader;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_ipld_dagcbor::codec::DagCborCodec;
 use tokio::{io::AsyncRead, sync::RwLock};
+use typed_builder::TypedBuilder;
 
 use crate::{
     utils, Chunker, Codec, FastCDCChunker, FixedSizeChunker, FlatLayout, IpldReferences, IpldStore,
@@ -34,6 +35,8 @@ use crate::{
 /// - Flexible data layout patterns through the Layout trait
 /// - Reference counting for automatic garbage collection
 ///
+/// ## Reference Counting
+///
 /// The store maintains a reference count for each block, tracking both direct storage and references
 /// from other IPLD nodes. This reference counting is particularly effective for IPLD data since it
 /// forms a directed acyclic graph (DAG), meaning there can never be cyclical references. This
@@ -43,14 +46,20 @@ use crate::{
 /// When a block's reference count reaches zero, it becomes eligible for garbage collection along
 /// with any of its referenced blocks (recursively) that also reach zero references.
 ///
+/// ## Chunking and Layout
+///
+/// The store uses a configurable chunking strategy to split data into smaller blocks. The chunker
+/// is configurable via the `chunker` field. The layout strategy is configurable via the `layout`
+/// field.
+///
 /// [cid]: https://docs.ipfs.tech/concepts/content-addressing/
 /// [ipld]: https://ipld.io/
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TypedBuilder)]
 // TODO: Use `BalancedDagLayout` as default
-pub struct MemoryStore<C = FixedSizeChunker, L = FlatLayout>
+pub struct MemoryStoreImpl<C = FixedSizeChunker, L = FlatLayout>
 where
-    C: Chunker,
-    L: Layout,
+    C: Chunker + Default,
+    L: Layout + Default,
 {
     /// Represents the blocks stored in the store.
     ///
@@ -58,29 +67,59 @@ where
     /// limit, so it is chunked into smaller blocks.
     ///
     /// The `usize` is used for counting the references to blocks within the store.
+    #[builder(default = Arc::new(RwLock::new(HashMap::new())))]
     blocks: Arc<RwLock<HashMap<Cid, (usize, Bytes)>>>,
 
     /// The chunking algorithm used to split data into chunks.
-    chunker: C,
+    #[builder(default = Arc::new(C::default()))]
+    chunker: Arc<C>,
 
     /// The layout strategy used to store chunked data.
-    layout: L,
+    #[builder(default = Arc::new(L::default()))]
+    layout: Arc<L>,
 }
 
-/// The default [`MemoryStore`] using [`FastCDCChunker`] and [`FlatLayout`].
-pub type MemoryStoreDefault = MemoryStore<FastCDCChunker, FlatLayout>;
+/// An in-memory storage for IPLD nodes and bytes.
+///
+/// This store provides a thread-safe in-memory implementation for storing [IPLD (InterPlanetary
+/// Linked Data)][ipld] nodes and raw bytes. It supports:
+///
+/// - Storage of both IPLD nodes (DagCbor encoded) and raw bytes
+/// - Content-addressed storage using [CIDs][cid]
+/// - Automatic chunking of large data using configurable chunking strategies
+/// - Flexible data layout patterns through the Layout trait
+/// - Reference counting for automatic garbage collection
+///
+/// ## Reference Counting
+///
+/// The store maintains a reference count for each block, tracking both direct storage and references
+/// from other IPLD nodes. This reference counting is particularly effective for IPLD data since it
+/// forms a directed acyclic graph (DAG), meaning there can never be cyclical references. This
+/// property ensures reference counting will correctly identify unreachable blocks when they are
+/// no longer referenced.
+///
+/// When a block's reference count reaches zero, it becomes eligible for garbage collection along
+/// with any of its referenced blocks (recursively) that also reach zero references.
+///
+/// ## Chunking and Layout
+///
+/// This version of the store uses a [`FastCDCChunker`] for chunking and [`FlatLayout`] for layout.
+///
+/// [cid]: https://docs.ipfs.tech/concepts/content-addressing/
+/// [ipld]: https://ipld.io/
+pub type MemoryStore = MemoryStoreImpl<FastCDCChunker, FlatLayout>;
 
-/// A [`MemoryStore`] with a [`FixedSizeChunker`] and [`FlatLayout`].
-pub type MemoryStoreFixed = MemoryStore<FixedSizeChunker, FlatLayout>;
+/// A [`MemoryStoreImpl`] that uses a [`FixedSizeChunker`] for chunking and [`FlatLayout`] for layout.
+pub type MemoryStoreFixed = MemoryStoreImpl<FixedSizeChunker, FlatLayout>;
 
 //--------------------------------------------------------------------------------------------------
 // Methods
 //--------------------------------------------------------------------------------------------------
 
-impl<C, L> MemoryStore<C, L>
+impl<C, L> MemoryStoreImpl<C, L>
 where
-    C: Chunker,
-    L: Layout,
+    C: Chunker + Default,
+    L: Layout + Default,
 {
     /// Creates a new `MemoryStore` with default chunker and layout.
     pub fn new() -> Self
@@ -90,17 +129,8 @@ where
     {
         Self {
             blocks: Arc::new(RwLock::new(HashMap::new())),
-            chunker: C::default(),
-            layout: L::default(),
-        }
-    }
-
-    /// Creates a new `MemoryStore` with the given `chunker` and `layout`.
-    pub fn with_chunker_and_layout(chunker: C, layout: L) -> Self {
-        MemoryStore {
-            blocks: Arc::new(RwLock::new(HashMap::new())),
-            chunker,
-            layout,
+            chunker: Arc::new(C::default()),
+            layout: Arc::new(L::default()),
         }
     }
 
@@ -144,10 +174,10 @@ where
 //--------------------------------------------------------------------------------------------------
 
 #[async_trait]
-impl<C, L> IpldStore for MemoryStore<C, L>
+impl<C, L> IpldStore for MemoryStoreImpl<C, L>
 where
-    C: Chunker + Clone + Send + Sync + 'static,
-    L: Layout + Clone + Send + Sync + 'static,
+    C: Chunker + Default + Clone + Send + Sync + 'static,
+    L: Layout + Default + Clone + Send + Sync + 'static,
 {
     async fn put_node<T>(&self, node: &T) -> StoreResult<Cid>
     where
@@ -299,10 +329,10 @@ where
 }
 
 #[async_trait]
-impl<C, L> RawStore for MemoryStore<C, L>
+impl<C, L> RawStore for MemoryStoreImpl<C, L>
 where
-    C: Chunker + Clone + Send + Sync,
-    L: Layout + Clone + Send + Sync,
+    C: Chunker + Default + Clone + Send + Sync,
+    L: Layout + Default + Clone + Send + Sync,
 {
     async fn put_raw_block(&self, bytes: impl Into<Bytes> + Send) -> StoreResult<Cid> {
         let bytes = bytes.into();
@@ -336,10 +366,10 @@ where
 }
 
 #[async_trait]
-impl<C, L> IpldStoreSeekable for MemoryStore<C, L>
+impl<C, L> IpldStoreSeekable for MemoryStoreImpl<C, L>
 where
-    C: Chunker + Clone + Send + Sync + 'static,
-    L: LayoutSeekable + Clone + Send + Sync + 'static,
+    C: Chunker + Default + Clone + Send + Sync + 'static,
+    L: LayoutSeekable + Default + Clone + Send + Sync + 'static,
 {
     async fn get_seekable_bytes(
         &self,
@@ -349,12 +379,16 @@ where
     }
 }
 
-impl Default for MemoryStore {
+impl<C, L> Default for MemoryStoreImpl<C, L>
+where
+    C: Chunker + Default,
+    L: Layout + Default,
+{
     fn default() -> Self {
-        MemoryStore {
+        Self {
             blocks: Arc::new(RwLock::new(HashMap::new())),
-            chunker: FixedSizeChunker::default(),
-            layout: FlatLayout::default(),
+            chunker: Arc::new(C::default()),
+            layout: Arc::new(L::default()),
         }
     }
 }
@@ -556,18 +590,24 @@ mod tests {
 
         // ======================== Tree Structure ========================
         //
-        //             root[value: 5, rc: 0]
+        //             root[val: 5, rc: 0]
         //                 /            \
         //                /              \
         //               /                \
-        //  middle1[value: 3, rc: 1]      middle2[value: 4, rc: 1]
-        //        /           \                /              \
-        //       /             \              /                \
-        //      /               \            /                  \
-        //  leaf1[value: 1, rc: 1]   leaf2[value: 2, rc: 2]      \
+        //              /                  \
+        //             /                    \
+        // middle1[val: 3, rc: 1]      middle2[val: 4, rc: 1]
+        //        /            \                /          \
+        //       /              \              /            \
+        //      /                \            /              \
+        //     /                  \          /                \
+        //    /                    \        /                  \
+        // leaf1[val: 1, rc: 1]  leaf2[val: 2, rc: 2]           \
+        //     |                           |                     \
         //     |                           |                      \
         //     |                           |                       \
-        //  data1[rc: 1]             data2[rc: 1]            data3[rc: 1]
+        //     |                           |                        \
+        // data1[rc: 1]             data2[rc: 1]             data3[rc: 1]
         //
         // ===============================================================
 

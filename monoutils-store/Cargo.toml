@@ -24,7 +24,6 @@ pretty-error-debug.workspace = true
 ipld-core.workspace = true
 multihash.workspace = true
 multihash-codetable = { workspace = true, features = ["blake3"] }
-lru = "0.12.3"
 serde = { workspace = true, features = ["derive"] }
 serde_ipld_dagcbor.workspace = true
 thiserror.workspace = true
@@ -32,6 +31,6 @@ tokio = { workspace = true, features = ["sync"] }
 tokio-util = { workspace = true, features = ["io"] }
 monoutils.workspace = true
 tracing.workspace = true
-
+typed-builder.workspace = true
 [dev-dependencies]
 rand.workspace = true

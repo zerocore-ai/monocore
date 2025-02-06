@@ -1,4 +1,4 @@
-use std::pin::pin;
+use std::{pin::pin, sync::Arc};
 
 use async_stream::try_stream;
 use async_trait::async_trait;
@@ -30,7 +30,7 @@ use crate::{Chunker, StoreError, StoreResult, DEFAULT_DESIRED_CHUNK_SIZE, DEFAUL
 pub struct GearCDCChunker {
     /// The gear table used to generate pseudo-random values for each byte.
     /// Each byte maps to a 64-bit value that contributes to the rolling hash.
-    gear_table: [u64; 256],
+    gear_table: Arc<[u64; 256]>,
 
     /// The target average chunk size.
     /// The actual chunk size will vary based on content, but will average around this value.
@@ -60,7 +60,7 @@ pub struct GearCDCChunker {
 pub struct GearHasher {
     /// The gear table maps each possible byte value to a pseudo-random 64-bit number.
     /// This helps ensure an even distribution of hash values.
-    gear_table: [u64; 256],
+    gear_table: Arc<[u64; 256]>,
 
     /// The current hash value, updated as new bytes are processed.
     /// The hash update includes feedback from high bits to ensure good mixing
@@ -76,7 +76,7 @@ impl GearCDCChunker {
     /// Creates a new `GearCDCChunker` with the given `desired_chunk_size`.
     pub fn new(desired_chunk_size: u64, gear_table: [u64; 256]) -> Self {
         Self {
-            gear_table,
+            gear_table: Arc::new(gear_table),
             desired_chunk_size,
         }
     }
@@ -110,7 +110,7 @@ impl GearCDCChunker {
 
 impl GearHasher {
     /// Creates a new `GearHasher` with the given `desired_chunk_size`.
-    pub fn new(gear_table: [u64; 256]) -> Self {
+    pub fn new(gear_table: Arc<[u64; 256]>) -> Self {
         Self {
             gear_table,
             hash: 0,
@@ -175,7 +175,7 @@ impl Chunker for GearCDCChunker {
         reader: impl AsyncRead + Send + Sync + 'life0,
     ) -> StoreResult<BoxStream<'_, StoreResult<Bytes>>> {
         let mask = Self::size_to_mask(self.desired_chunk_size);
-        let gear_table = self.gear_table;
+        let gear_table = self.gear_table.clone();
 
         let s = try_stream! {
             let mut reader = pin!(reader);
@@ -218,12 +218,6 @@ impl Chunker for GearCDCChunker {
 impl Default for GearCDCChunker {
     fn default() -> Self {
         Self::new(DEFAULT_DESIRED_CHUNK_SIZE, DEFAULT_GEAR_TABLE)
-    }
-}
-
-impl Default for GearHasher {
-    fn default() -> Self {
-        Self::new(DEFAULT_GEAR_TABLE)
     }
 }
 
@@ -274,7 +268,7 @@ mod tests {
             gear_table[i] = i as u64;
         }
 
-        let mut hasher = GearHasher::new(gear_table);
+        let mut hasher = GearHasher::new(Arc::new(gear_table));
 
         // Test initial state
         assert_eq!(hasher.fingerprint(), 0);
@@ -302,7 +296,7 @@ mod tests {
     #[test]
     fn test_gear_hasher_wrapping() {
         let gear_table = [1u64; 256]; // All 1s for simplicity
-        let mut hasher = GearHasher::new(gear_table);
+        let mut hasher = GearHasher::new(Arc::new(gear_table));
 
         // Roll enough times to cause wrapping
         for _ in 0..100 {

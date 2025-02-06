@@ -509,7 +509,7 @@ mod tests {
     use tokio::test;
 
     #[test]
-    #[ignore]
+    #[ignore = "makes network requests to Docker registry to pull an image"]
     async fn test_docker_pull_image() -> anyhow::Result<()> {
         let (client, temp_download_dir, _temp_db_dir) = helper::setup_test_client().await;
         let repository = "library/alpine";
@@ -582,7 +582,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "makes network requests to Docker registry to fetch image index"]
     async fn test_docker_fetch_index() -> anyhow::Result<()> {
         let (client, _temp_download_dir, _temp_db_dir) = helper::setup_test_client().await;
         let repository = "library/alpine";
@@ -615,7 +615,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "makes network requests to Docker registry to fetch image manifest"]
     async fn test_docker_fetch_manifest() -> anyhow::Result<()> {
         let (client, _temp_download_dir, _temp_db_dir) = helper::setup_test_client().await;
         let repository = "library/alpine";
@@ -659,7 +659,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "makes network requests to Docker registry to fetch image config"]
     async fn test_docker_fetch_config() -> anyhow::Result<()> {
         let (client, _temp_download_dir, _temp_db_dir) = helper::setup_test_client().await;
         let repository = "library/alpine";
@@ -703,7 +703,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "makes network requests to Docker registry to fetch image blob"]
     async fn test_docker_fetch_image_blob() -> anyhow::Result<()> {
         let (client, temp_download_dir, _temp_db_dir) = helper::setup_test_client().await;
         let repository = "library/alpine";
@@ -747,7 +747,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "makes network requests to Docker registry to get authentication credentials"]
     async fn test_docker_get_access_credentials() -> anyhow::Result<()> {
         let (client, _temp_download_dir, _temp_db_dir) = helper::setup_test_client().await;
 
