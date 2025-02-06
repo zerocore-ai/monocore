@@ -24,10 +24,9 @@ use clap::Parser;
 use monofs::{
     filesystem::{Dir, Entity, File},
     store::FlatFsStore,
+    utils,
 };
 use monoutils_store::{ipld::cid::Cid, IpldStore, Storable};
-use std::future::Future;
-use std::pin::Pin;
 use tokio::io::AsyncWriteExt;
 
 //--------------------------------------------------------------------------------------------------
@@ -92,7 +91,7 @@ async fn main() -> Result<()> {
 
     // Always display the current filesystem structure
     println!("\nFilesystem contents:");
-    print_dir_contents(&root, 0).await?;
+    utils::print_dir_tree(&root).await?;
 
     Ok(())
 }
@@ -158,7 +157,7 @@ async fn perform_example_operations<S: IpldStore + Send + Sync + 'static>(
 
     // 3. List contents recursively
     println!("\n3. Listing filesystem contents:");
-    print_dir_contents(root, 0).await?;
+    utils::print_dir_tree(root).await?;
 
     // 4. Demonstrate file operations
     println!("\n4. Demonstrating file operations:");
@@ -177,36 +176,4 @@ async fn perform_example_operations<S: IpldStore + Send + Sync + 'static>(
     println!("Removed projects/rust/main.rs");
 
     Ok(())
-}
-
-//--------------------------------------------------------------------------------------------------
-// Functions
-//--------------------------------------------------------------------------------------------------
-
-/// Recursively prints the contents of a directory with proper indentation
-fn print_dir_contents<S: IpldStore + Send + Sync + 'static>(
-    dir: &Dir<S>,
-    depth: usize,
-) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-    Box::pin(async move {
-        let indent = "  ".repeat(depth);
-
-        for (name, link) in dir.get_entries() {
-            let entity = link.resolve_entity(dir.get_store().clone()).await?;
-
-            match entity {
-                Entity::Dir(subdir) => {
-                    println!("{}📁 {}/", indent, name);
-                    print_dir_contents(&subdir, depth + 1).await?;
-                }
-                Entity::File(file) => {
-                    let size = file.get_size().await?;
-                    println!("{}📄 {} ({} bytes)", indent, name, size);
-                }
-                _ => println!("{}🔗 {}", indent, name),
-            }
-        }
-
-        Ok(())
-    })
 }

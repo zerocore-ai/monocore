@@ -2,7 +2,7 @@ use async_stream::try_stream;
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
-use std::pin::pin;
+use std::{pin::pin, sync::Arc};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct FastHasher {
     /// The gear table maps each possible byte value to a pseudo-random 64-bit number.
-    gear_table: [u64; 256],
+    gear_table: Arc<[u64; 256]>,
 
     /// The current hash value, updated as new bytes are processed.
     hash: u64,
@@ -61,7 +61,7 @@ pub struct FastHasher {
 #[derive(Clone, Debug)]
 pub struct FastCDCChunker {
     /// The gear table.
-    gear_table: [u64; 256],
+    gear_table: Arc<[u64; 256]>,
 
     /// The desired chunk size.
     desired_chunk_size: u64,
@@ -79,7 +79,7 @@ pub struct FastCDCChunker {
 
 impl FastHasher {
     /// Creates a new `FastHasher` with the given gear table.
-    pub fn new(gear_table: [u64; 256]) -> Self {
+    pub fn new(gear_table: Arc<[u64; 256]>) -> Self {
         Self {
             gear_table,
             hash: 0,
@@ -151,7 +151,7 @@ impl FastCDCChunker {
         );
 
         Self {
-            gear_table,
+            gear_table: Arc::new(gear_table),
             desired_chunk_size,
             min_chunk_size,
             max_chunk_size,
@@ -228,12 +228,6 @@ impl FastCDCChunker {
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
-impl Default for FastHasher {
-    fn default() -> Self {
-        Self::new(DEFAULT_GEAR_TABLE)
-    }
-}
-
 impl Default for FastCDCChunker {
     fn default() -> Self {
         Self::new(
@@ -255,7 +249,7 @@ impl Chunker for FastCDCChunker {
 
         let mask_d = FastCDCChunker::size_to_mask(self.desired_chunk_size);
         let (mask_s, mask_l) = FastCDCChunker::derive_masks(self.desired_chunk_size);
-        let gear_table = self.gear_table;
+        let gear_table = self.gear_table.clone();
         let min_size = self.min_chunk_size;
         let max_size = self.max_chunk_size;
         let desired_size = self.desired_chunk_size;
