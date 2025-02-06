@@ -17,19 +17,60 @@ use crate::FsResult;
 // Types: MemoryBufferStore
 //--------------------------------------------------------------------------------------------------
 
-/// An [`IpldStore`] with two underlying stores: an ephemeral in-memory
-/// store for writes and a user-provided store for back-up reads.
+/// A write-through caching [`IpldStore`] that combines an in-memory write buffer with a persistent store.
 ///
-/// This store is useful for creating a temporary buffer for writes that is stored in memory.
+/// This store implements a write-through caching pattern with two layers:
+/// 1. A fast, ephemeral in-memory buffer store for writes
+/// 2. A persistent underlying store that serves as the source of truth
+///
+/// ## Write Behavior
+/// - All writes go to the memory buffer first
+/// - Data in the buffer can be explicitly flushed to the underlying store using [`flush`](Self::flush)
+/// - The buffer is cleared after a successful flush
+///
+/// ## Read Behavior
+/// - Reads check the memory buffer first
+/// - If not found in the buffer, falls back to reading from the underlying store
+///
+/// ## Use Cases
+/// This store is particularly useful when you need to:
+/// - Buffer multiple writes in memory before persisting them
+/// - Optimize write performance by batching writes to the underlying store
+/// - Maintain data durability by having a persistent underlying store
+///
+/// ## Example
+/// ```ignore
+/// let underlying_store = FlatFsStore::new(path);
+/// let buffer_store = MemoryBufferStore::new(underlying_store);
+///
+/// // Write structured data using put_node
+/// let node = MyStruct { /* ... */ };
+/// let node_cid = buffer_store.put_node(&node).await?;
+///
+/// // Write raw bytes using put_bytes (preferred over put_raw_block)
+/// let bytes = /* ... */;
+/// let bytes_cid = buffer_store.put_bytes(bytes).await?;
+///
+/// // Later, flush buffer to underlying store
+/// let blocks_flushed = buffer_store.flush().await?;
+/// ```
+///
+/// ## API Usage
+/// For storing data, prefer these high-level APIs:
+/// - [`put_node`](IpldStore::put_node) for storing structured data (IPLD nodes)
+/// - [`put_bytes`](IpldStore::put_bytes) for storing raw bytes
+///
+/// Avoid using [`put_raw_block`](RawStore::put_raw_block) directly as it's a low-level API
+/// intended for implementing stores, not for general use.
 #[derive(Debug, Clone)]
 pub struct MemoryBufferStore<S>
 where
     S: IpldStore,
 {
     inner: DualStore<
-        // Write buffer store
+        // Buffer store
         MemoryStore,
-        // Backup store
+        // Underlying store
         S,
     >,
 }
@@ -42,30 +83,30 @@ impl<S> MemoryBufferStore<S>
 where
     S: IpldStore,
 {
-    /// Creates a new `MemoryBufferStore` with the given backup store.
-    pub fn new(backup_store: S) -> Self {
+    /// Creates a new `MemoryBufferStore` with the given underlying store.
+    pub fn new(underlying_store: S) -> Self {
         Self {
             inner: DualStore::new(
                 MemoryStore::default(),
-                backup_store,
+                underlying_store,
                 DualStoreConfig::default(),
             ),
         }
     }
 
-    /// Flushes all blocks from the memory buffer to the backup store and clears the buffer.
+    /// Flushes all blocks from the memory buffer to the underlying store and clears the buffer.
     ///
     /// This method will:
-    /// 1. Copy all blocks from the memory buffer to the backup store, preserving their codec type
+    /// 1. Copy all blocks from the memory buffer to the underlying store, preserving their codec type
     /// 2. For DagCbor blocks, properly handle IPLD references
     /// 3. Clear the memory buffer after successful copying
     ///
     /// ## Returns
     ///
-    /// Returns the number of blocks that were flushed to the backup store.
+    /// Returns the number of blocks that were flushed to the underlying store.
     pub async fn flush(&self) -> FsResult<u64> {
         let memory_store = self.inner.get_store_a();
-        let backup_store = self.inner.get_store_b();
+        let underlying_store = self.inner.get_store_b();
         let mut blocks_flushed = 0;
 
         // Get all CIDs from memory store
@@ -79,8 +120,8 @@ where
 
         // For each block in memory store
         for (cid, (_, block_data)) in blocks.iter() {
-            // Skip if block already exists in backup store
-            if backup_store.has(cid).await {
+            // Skip if block already exists in underlying store
+            if underlying_store.has(cid).await {
                 continue;
             }
 
@@ -88,7 +129,7 @@ where
             match cid.codec().try_into()? {
                 // For raw blocks, just copy them directly
                 Codec::Raw => {
-                    backup_store.put_raw_block(block_data.clone()).await?;
+                    underlying_store.put_raw_block(block_data.clone()).await?;
                     blocks_flushed += 1;
                 }
                 // For DagCbor blocks, deserialize to preserve references
@@ -96,8 +137,8 @@ where
                     // Deserialize the block to Ipld to preserve references
                     let ipld: Ipld = serde_ipld_dagcbor::from_slice(block_data)?;
 
-                    // Put the node in the backup store, which will handle reference counting
-                    backup_store.put_node(&ipld).await?;
+                    // Put the node in the underlying store, which will handle reference counting
+                    underlying_store.put_node(&ipld).await?;
                     blocks_flushed += 1;
                 }
                 // Return error for unsupported codecs
@@ -196,10 +237,12 @@ mod tests {
     use super::*;
     use monoutils_store::MemoryStore;
 
+    use super::helper::TestNode;
+
     #[tokio::test]
-    async fn test_flush_empty_store() -> anyhow::Result<()> {
-        let backup_store = MemoryStore::default();
-        let buffer_store = MemoryBufferStore::new(backup_store.clone());
+    async fn test_memory_buffer_store_flush_empty_store() -> anyhow::Result<()> {
+        let underlying_store = MemoryStore::default();
+        let buffer_store = MemoryBufferStore::new(underlying_store.clone());
 
         // Flushing an empty store should return 0
         let flushed = buffer_store.flush().await?;
@@ -209,9 +252,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_flush_with_data() -> anyhow::Result<()> {
-        let backup_store = MemoryStore::default();
-        let buffer_store = MemoryBufferStore::new(backup_store.clone());
+    async fn test_memory_buffer_store_flush_with_data() -> anyhow::Result<()> {
+        let underlying_store = MemoryStore::default();
+        let buffer_store = MemoryBufferStore::new(underlying_store.clone());
 
         // Add some data to the buffer
         let data1 = b"test data 1".to_vec();
@@ -219,19 +262,19 @@ mod tests {
         let cid1 = buffer_store.put_raw_block(data1.clone()).await?;
         let cid2 = buffer_store.put_raw_block(data2.clone()).await?;
 
-        // Verify data is in buffer but not in backup
+        // Verify data is in buffer but not in underlying store
         assert!(buffer_store.has(&cid1).await);
         assert!(buffer_store.has(&cid2).await);
-        assert!(!backup_store.has(&cid1).await);
-        assert!(!backup_store.has(&cid2).await);
+        assert!(!underlying_store.has(&cid1).await);
+        assert!(!underlying_store.has(&cid2).await);
 
         // Flush the buffer
         let flushed = buffer_store.flush().await?;
         assert_eq!(flushed, 2);
 
-        // Verify data is now in backup store
-        assert!(backup_store.has(&cid1).await);
-        assert!(backup_store.has(&cid2).await);
+        // Verify data is now in underlying store
+        assert!(underlying_store.has(&cid1).await);
+        assert!(underlying_store.has(&cid2).await);
 
         // Verify buffer is cleared
         assert_eq!(buffer_store.inner.get_store_a().get_block_count().await?, 0);
@@ -246,16 +289,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_flush_with_existing_data() -> anyhow::Result<()> {
-        let backup_store = MemoryStore::default();
-        let buffer_store = MemoryBufferStore::new(backup_store.clone());
+    async fn test_memory_buffer_store_flush_with_existing_data() -> anyhow::Result<()> {
+        let underlying_store = MemoryStore::default();
+        let buffer_store = MemoryBufferStore::new(underlying_store.clone());
 
         // Add data to both stores
         let data1 = b"test data 1".to_vec();
         let data2 = b"test data 2".to_vec();
 
         // Put data1 in both stores
-        let cid1 = backup_store.put_raw_block(data1.clone()).await?;
+        let cid1 = underlying_store.put_raw_block(data1.clone()).await?;
         buffer_store.put_raw_block(data1.clone()).await?;
 
         // Put data2 only in buffer
@@ -265,13 +308,101 @@ mod tests {
         let flushed = buffer_store.flush().await?;
         assert_eq!(flushed, 1);
 
-        // Verify both pieces of data are in backup store
-        assert!(backup_store.has(&cid1).await);
-        assert!(backup_store.has(&cid2).await);
+        // Verify both pieces of data are in underlying store
+        assert!(underlying_store.has(&cid1).await);
+        assert!(underlying_store.has(&cid2).await);
 
         // Verify buffer is cleared
         assert_eq!(buffer_store.inner.get_store_a().get_block_count().await?, 0);
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_memory_buffer_store_flush_with_nodes() -> anyhow::Result<()> {
+        let underlying_store = MemoryStore::default();
+        let buffer_store = MemoryBufferStore::new(underlying_store.clone());
+
+        // Create some raw data first
+        let data1 = b"test data 1".to_vec();
+        let data2 = b"test data 2".to_vec();
+        let cid1 = buffer_store.put_raw_block(data1.clone()).await?;
+        let cid2 = buffer_store.put_raw_block(data2.clone()).await?;
+
+        // Create nodes that reference the raw data
+        let leaf_node = TestNode {
+            name: "leaf".to_string(),
+            value: 1,
+            refs: vec![cid1],
+        };
+        let leaf_cid = buffer_store.put_node(&leaf_node).await?;
+
+        let root_node = TestNode {
+            name: "root".to_string(),
+            value: 2,
+            refs: vec![leaf_cid, cid2],
+        };
+        let root_cid = buffer_store.put_node(&root_node).await?;
+
+        // Verify data is in buffer but not in underlying store
+        assert!(buffer_store.has(&cid1).await);
+        assert!(buffer_store.has(&cid2).await);
+        assert!(buffer_store.has(&leaf_cid).await);
+        assert!(buffer_store.has(&root_cid).await);
+        assert!(!underlying_store.has(&cid1).await);
+        assert!(!underlying_store.has(&cid2).await);
+        assert!(!underlying_store.has(&leaf_cid).await);
+        assert!(!underlying_store.has(&root_cid).await);
+
+        // Flush the buffer
+        let flushed = buffer_store.flush().await?;
+        assert_eq!(flushed, 4); // Should flush all 4 blocks
+
+        // Verify all data is now in underlying store
+        assert!(underlying_store.has(&cid1).await);
+        assert!(underlying_store.has(&cid2).await);
+        assert!(underlying_store.has(&leaf_cid).await);
+        assert!(underlying_store.has(&root_cid).await);
+
+        // Verify buffer is cleared
+        assert_eq!(buffer_store.inner.get_store_a().get_block_count().await?, 0);
+
+        // Verify we can still read the data through the buffer store
+        let retrieved_root: TestNode = buffer_store.get_node(&root_cid).await?;
+        assert_eq!(retrieved_root.name, "root");
+        assert_eq!(retrieved_root.value, 2);
+        assert_eq!(retrieved_root.refs, vec![leaf_cid, cid2]);
+
+        let retrieved_leaf: TestNode = buffer_store.get_node(&leaf_cid).await?;
+        assert_eq!(retrieved_leaf.name, "leaf");
+        assert_eq!(retrieved_leaf.value, 1);
+        assert_eq!(retrieved_leaf.refs, vec![cid1]);
+
+        // Verify raw blocks are also accessible
+        let retrieved1 = buffer_store.get_raw_block(&cid1).await?;
+        let retrieved2 = buffer_store.get_raw_block(&cid2).await?;
+        assert_eq!(retrieved1.as_ref(), data1.as_slice());
+        assert_eq!(retrieved2.as_ref(), data2.as_slice());
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod helper {
+    use super::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    pub(super) struct TestNode {
+        pub(super) name: String,
+        pub(super) value: i32,
+        pub(super) refs: Vec<Cid>,
+    }
+
+    impl IpldReferences for TestNode {
+        fn get_references<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Cid> + Send + 'a> {
+            Box::new(self.refs.iter())
+        }
     }
 }
