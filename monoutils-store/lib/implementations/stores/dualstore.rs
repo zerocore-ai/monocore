@@ -2,6 +2,7 @@ use std::{collections::HashSet, pin::Pin};
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use getset::Getters;
 use ipld_core::cid::Cid;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::io::AsyncRead;
@@ -38,14 +39,20 @@ use crate::{Codec, IpldReferences, IpldStore, RawStore, StoreError, StoreResult}
 ///
 /// let dual_store = DualStore::new(store_a, store_b, config);
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
+#[getset(get = "pub with_prefix")]
 pub struct DualStore<A, B>
 where
     A: IpldStore,
     B: IpldStore,
 {
+    /// The first store.
     store_a: A,
+
+    /// The second store.
     store_b: B,
+
+    /// The configuration for the dual store.
     config: DualStoreConfig,
 }
 

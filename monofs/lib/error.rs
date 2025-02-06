@@ -1,7 +1,5 @@
 use std::{
-    error::Error,
-    fmt::{self, Display},
-    io,
+    convert::Infallible, error::Error, fmt::{self, Display}, io
 };
 
 use monoutils_store::ipld::cid::Cid;
@@ -187,6 +185,10 @@ pub enum FsError {
     /// An error that occurred when a migration error occurred
     #[error("migration error: {0}")]
     MigrationError(#[from] sqlx::migrate::MigrateError),
+
+    /// An error that occurred when a CBOR decode error occurred
+    #[error("CBOR decode error: {0}")]
+    CborDecodeError(#[from] serde_ipld_dagcbor::DecodeError<Infallible>),
 }
 
 /// An error that can represent any error.

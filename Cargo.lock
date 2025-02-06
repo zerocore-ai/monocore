@@ -1863,6 +1863,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
+ "getset",
  "hex",
  "ipld-core",
  "monoutils",

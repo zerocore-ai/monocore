@@ -7,6 +7,7 @@ use std::{
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
+use getset::Getters;
 use ipld_core::{cid::Cid, codec::Links};
 use monoutils::SeekableReader;
 use serde::{de::DeserializeOwned, Serialize};
@@ -54,7 +55,8 @@ use crate::{
 ///
 /// [cid]: https://docs.ipfs.tech/concepts/content-addressing/
 /// [ipld]: https://ipld.io/
-#[derive(Debug, Clone, TypedBuilder)]
+#[derive(Debug, Clone, TypedBuilder, Getters)]
+#[getset(get = "pub with_prefix")]
 // TODO: Use `BalancedDagLayout` as default
 pub struct MemoryStoreImpl<C = FixedSizeChunker, L = FlatLayout>
 where
@@ -71,11 +73,11 @@ where
     blocks: Arc<RwLock<HashMap<Cid, (usize, Bytes)>>>,
 
     /// The chunking algorithm used to split data into chunks.
-    #[builder(default = Arc::new(C::default()))]
+    #[builder(default)]
     chunker: Arc<C>,
 
     /// The layout strategy used to store chunked data.
-    #[builder(default = Arc::new(L::default()))]
+    #[builder(default)]
     layout: Arc<L>,
 }
 
@@ -166,6 +168,12 @@ where
             blocks.insert(cid, (0, bytes));
         }
         (cid, existed)
+    }
+
+    /// Clears all blocks from the store.
+    pub async fn clear(&self) -> StoreResult<()> {
+        self.blocks.write().await.clear();
+        Ok(())
     }
 }
 
