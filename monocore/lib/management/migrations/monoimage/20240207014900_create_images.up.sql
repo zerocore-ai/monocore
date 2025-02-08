@@ -13,4 +13,3 @@ CREATE TABLE IF NOT EXISTS images (
 
 -- Create index
 CREATE INDEX IF NOT EXISTS idx_images_reference ON images(reference);
-

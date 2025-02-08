@@ -16,6 +16,9 @@ pub static SANDBOX_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrat
 /// Migrator for the OCI database
 pub static OCI_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrations/oci");
 
+/// Migrator for the monoimage database
+pub static MONOIMAGE_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrations/monoimage");
+
 //--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------
@@ -26,7 +29,10 @@ pub static OCI_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrations
 ///
 /// * `db_path` - Path where the SQLite database file should be created
 /// * `migrator` - SQLx migrator containing database schema migrations to run
-pub async fn init_db(db_path: impl AsRef<Path>, migrator: &Migrator) -> MonocoreResult<()> {
+pub async fn init_db(
+    db_path: impl AsRef<Path>,
+    migrator: &Migrator,
+) -> MonocoreResult<Pool<Sqlite>> {
     let db_path = db_path.as_ref();
 
     // Ensure parent directory exists
@@ -48,7 +54,7 @@ pub async fn init_db(db_path: impl AsRef<Path>, migrator: &Migrator) -> Monocore
     // Run migrations
     migrator.run(&pool).await?;
 
-    Ok(())
+    Ok(pool)
 }
 
 /// Creates and returns a connection pool for SQLite database operations.
@@ -81,15 +87,7 @@ pub async fn get_or_create_db_pool(
     migrator: &Migrator,
 ) -> MonocoreResult<Pool<Sqlite>> {
     // Initialize the database if it doesn't exist
-    init_db(&db_path, migrator).await?;
-
-    // Create and return the connection pool
-    let pool = SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect(&format!("sqlite://{}?mode=rwc", db_path.as_ref().display()))
-        .await?;
-
-    Ok(pool)
+    init_db(&db_path, migrator).await
 }
 
 /// Saves an image to the database and returns its ID

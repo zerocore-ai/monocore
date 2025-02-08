@@ -2,6 +2,7 @@ use crate::config::DEFAULT_OCI_REFERENCE_REPO_NAMESPACE;
 use crate::config::DEFAULT_OCI_REFERENCE_TAG;
 use crate::error::MonocoreError;
 use crate::utils::env::get_oci_registry;
+use getset::Getters;
 use oci_spec::image::Digest;
 use regex::Regex;
 use std::fmt;
@@ -15,7 +16,8 @@ use std::str::FromStr;
 ///
 /// This struct includes the registry, repository, and a selector that combines a tag and an optional digest.
 /// If no registry or tag is provided in the input string, default values will be used.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters)]
+#[getset(get = "pub with_prefix")]
 pub struct Reference {
     /// The registry where the image is hosted.
     registry: String,
@@ -104,25 +106,34 @@ impl FromStr for Reference {
         }
 
         if let Some(at_idx) = s.find('@') {
-            let (pre, digest_part) = s.split_at(at_idx);
-            let digest_str = &digest_part[1..]; // Skip '@'
-            let parsed_digest = digest_str.parse::<Digest>().map_err(|e| {
-                MonocoreError::ImageReferenceError(format!("invalid digest: {}", e))
-            })?;
+            let potential_digest = &s[at_idx + 1..];
+            if potential_digest.contains(":") {
+                // Treat as digest branch
+                let (pre, digest_part) = s.split_at(at_idx);
+                let digest_str = &digest_part[1..]; // Skip '@'
+                let parsed_digest = digest_str.parse::<Digest>().map_err(|e| {
+                    MonocoreError::ImageReferenceError(format!("invalid digest: {}", e))
+                })?;
 
-            let (registry, remainder) = extract_registry_and_path(pre, &default_registry);
-            let (repository, tag) = extract_repository_and_tag(remainder)?;
+                let (registry, remainder) = extract_registry_and_path(pre, &default_registry);
+                let (repository, tag) = extract_repository_and_tag(remainder)?;
 
-            // Validate registry, repository and tag
-            validate_registry(&registry)?;
-            validate_repository(&repository)?;
-            validate_tag(&tag)?;
+                // Validate registry, repository and tag
+                validate_registry(&registry)?;
+                validate_repository(&repository)?;
+                validate_tag(&tag)?;
 
-            Ok(Reference {
-                registry,
-                repository,
-                selector: ReferenceSelector::tag_with_digest(tag, parsed_digest),
-            })
+                Ok(Reference {
+                    registry,
+                    repository,
+                    selector: ReferenceSelector::tag_with_digest(tag, parsed_digest),
+                })
+            } else {
+                return Err(MonocoreError::ImageReferenceError(format!(
+                    "invalid digest: {}",
+                    potential_digest
+                )));
+            }
         } else {
             let (registry, remainder) = extract_registry_and_path(s, &default_registry);
             let (repository, tag) = extract_repository_and_tag(remainder)?;
@@ -641,10 +652,11 @@ mod tests {
 
     #[test]
     fn test_reference_invalid_tag() {
-        // Tag contains an invalid character '@'
-        let s = "docker.io/library/alpine:t@g";
+        // Tag contains an invalid character '!'
+        let s = "docker.io/library/alpine:t!ag";
         let err = s.parse::<Reference>().unwrap_err();
-        assert!(err.to_string().contains("invalid tag"));
+        let err_str = err.to_string();
+        assert!(err_str.contains("invalid tag"));
     }
 
     #[test]

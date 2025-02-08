@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS layers (
     digest TEXT NOT NULL,
     size_bytes INTEGER NOT NULL,
     diff_id TEXT,
+    head_cid TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     modified_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (manifest_id) REFERENCES manifests(id) ON DELETE CASCADE

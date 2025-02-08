@@ -1,13 +1,11 @@
-//! Management components for the Monocore runtime.
+//! The `monoimage` module provides functionality for interacting with the Sandboxes Registry.
 
-mod db;
-mod image;
-mod menv;
+mod constants;
+mod registry;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use db::*;
-pub use image::*;
-pub use menv::*;
+pub use constants::*;
+pub use registry::*;

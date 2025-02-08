@@ -20,7 +20,7 @@
   </p>
 </div>
 
-**`monofs`** is a content-addressed filesystem designed for distributed applications. It is based largely on the [WNFS](https://github.com/wnfs-wg/rs-wnfs) public filesystem.
+**`monofs`** is a versioned content-addressed filesystem designed for distributed applications. It is based largely on the [WNFS](https://github.com/wnfs-wg/rs-wnfs) public filesystem.
 
 > [!WARNING]
 > This project is in early development and is not yet ready for production use.
@@ -40,7 +40,7 @@
 ### Installation
 
 ```sh
-curl -sSfL https://install.monofs.dev | sh
+curl -sSfL https://get.monofs.dev | sh
 ```
 
 ### Quick Start

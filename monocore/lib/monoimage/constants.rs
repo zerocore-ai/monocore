@@ -1,13 +1,6 @@
-//! Management components for the Monocore runtime.
-
-mod db;
-mod image;
-mod menv;
-
 //--------------------------------------------------------------------------------------------------
-// Exports
+// Constants
 //--------------------------------------------------------------------------------------------------
 
-pub use db::*;
-pub use image::*;
-pub use menv::*;
+/// The domain name of the Sandboxes Registry, used to construct image references.
+pub const SANDBOXES_REFERENCE_REGISTRY_DOMAIN: &str = "sandboxes.io";

@@ -16,17 +16,14 @@ pub const DEFAULT_RAM_MIB: u32 = 1024;
 pub static DEFAULT_MONOCORE_HOME: LazyLock<PathBuf> =
     LazyLock::new(|| dirs::home_dir().unwrap().join(MONOCORE_HOME_DIR));
 
-/// The default path for the mcrun binary.
-pub const DEFAULT_MCRUN_BIN_PATH: &str = "./mcrun";
-
-/// The default path for the monofs binary.
-pub const DEFAULT_MONOFS_BIN_PATH: &str = "./monofs";
-
 /// The default OCI registry domain.
-pub const DEFAULT_OCI_REGISTRY_DOMAIN: &str = "sandboxes.io";
+pub const DEFAULT_OCI_REGISTRY: &str = "sandboxes.io";
 
 /// The default OCI reference tag.
-pub const DEFAULT_OCI_REFERENCE_TAG: &str = "default";
+pub const DEFAULT_OCI_REFERENCE_TAG: &str = "latest";
+
+/// The default OCI reference repository namespace.
+pub const DEFAULT_OCI_REFERENCE_REPO_NAMESPACE: &str = "library";
 
 /// The default configuration file content
 pub(crate) const DEFAULT_CONFIG: &str = r#"# Sandbox configurations

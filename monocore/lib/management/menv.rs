@@ -44,7 +44,7 @@ pub async fn init_menv(project_path: Option<PathBuf>) -> MonocoreResult<()> {
     let db_path = menv_path.join(SANDBOX_DB_FILENAME);
 
     // Initialize sandbox database
-    db::init_db(&db_path, &SANDBOX_DB_MIGRATOR).await?;
+    let _ = db::init_db(&db_path, &SANDBOX_DB_MIGRATOR).await?;
     tracing::info!("Initialized sandbox database at {}", db_path.display());
 
     // Create default config file if it doesn't exist

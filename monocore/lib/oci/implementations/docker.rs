@@ -271,11 +271,16 @@ impl OciRegistryPull for DockerRegistry {
 
         // Construct reference based on selector type
         let reference = match &selector {
-            ReferenceSelector::Tag(tag) => {
-                format!("{DOCKER_REFERENCE_REGISTRY_DOMAIN}/{repository}:{tag}")
+            ReferenceSelector::Tag { tag, digest } => {
+                let digest_part = digest
+                    .as_ref()
+                    .map(|d| format!("@{}:{}", d.algorithm(), d.digest()))
+                    .unwrap_or_default();
+                format!("{DOCKER_REFERENCE_REGISTRY_DOMAIN}/{repository}:{tag}{digest_part}")
             }
-            ReferenceSelector::Digest { algorithm, hex } => {
-                format!("{DOCKER_REFERENCE_REGISTRY_DOMAIN}/{repository}@{algorithm}:{hex}")
+            ReferenceSelector::Digest(digest) => {
+                let digest_part = format!("@{}:{}", digest.algorithm(), digest.digest());
+                format!("{DOCKER_REFERENCE_REGISTRY_DOMAIN}/{repository}{digest_part}")
             }
         };
 
@@ -366,10 +371,16 @@ impl OciRegistryPull for DockerRegistry {
             .token;
 
         // Construct URL based on selector type
-        let reference = match selector {
-            ReferenceSelector::Tag(tag) => tag,
-            ReferenceSelector::Digest { algorithm, hex } => {
-                format!("{algorithm}:{hex}")
+        let reference = match &selector {
+            ReferenceSelector::Tag { tag, digest } => {
+                let digest_part = digest
+                    .as_ref()
+                    .map(|d| format!("@{}:{}", d.algorithm(), d.digest()))
+                    .unwrap_or_default();
+                format!("{tag}{digest_part}")
+            }
+            ReferenceSelector::Digest(digest) => {
+                format!("@{}:{}", digest.algorithm(), digest.digest())
             }
         };
 
@@ -514,7 +525,9 @@ mod tests {
         let (client, temp_download_dir, _temp_db_dir) = helper::setup_test_client().await;
         let repository = "library/alpine";
         let tag = "latest";
-        let result = client.pull_image(repository, tag.parse()?).await;
+        let result = client
+            .pull_image(repository, ReferenceSelector::tag(tag))
+            .await;
         assert!(result.is_ok());
 
         // Verify image record in database
@@ -588,7 +601,9 @@ mod tests {
         let repository = "library/alpine";
         let tag = "latest";
 
-        let result = client.fetch_index(repository, tag.parse()?).await;
+        let result = client
+            .fetch_index(repository, ReferenceSelector::tag(tag))
+            .await;
         assert!(result.is_ok());
 
         let index = result.unwrap();
@@ -622,7 +637,7 @@ mod tests {
 
         // First get the manifest digest from the index
         let index = client
-            .fetch_index(repository, ReferenceSelector::Tag("latest".to_string()))
+            .fetch_index(repository, ReferenceSelector::tag("latest"))
             .await?;
 
         let manifest_desc = index.manifests().first().unwrap();
@@ -666,7 +681,7 @@ mod tests {
 
         // Get the config digest from manifest
         let index = client
-            .fetch_index(repository, ReferenceSelector::Tag("latest".to_string()))
+            .fetch_index(repository, ReferenceSelector::tag("latest"))
             .await?;
 
         let manifest = client
@@ -710,7 +725,7 @@ mod tests {
 
         // Get a layer digest from manifest
         let index = client
-            .fetch_index(repository, ReferenceSelector::Tag("latest".to_string()))
+            .fetch_index(repository, ReferenceSelector::tag("latest"))
             .await?;
 
         let manifest = client

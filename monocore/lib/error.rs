@@ -268,6 +268,10 @@ pub enum MonocoreError {
     /// An error that occurred when parsing an invalid digest in an image reference selector
     #[error("invalid image reference selector digest: {0}")]
     InvalidReferenceSelectorDigest(String),
+
+    /// An error that occurred when a feature is not yet implemented
+    #[error("feature not yet implemented: {0}")]
+    NotImplemented(String),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

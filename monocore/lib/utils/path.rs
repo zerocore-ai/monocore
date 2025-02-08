@@ -1,15 +1,8 @@
 //! Utility functions for working with paths.
 
-use std::path::PathBuf;
-
 use monoutils::SupportedPathType;
 
-use crate::{
-    config::{DEFAULT_MONOCORE_HOME, DEFAULT_OCI_REGISTRY_DOMAIN},
-    MonocoreError, MonocoreResult,
-};
-
-use super::{MONOCORE_HOME_ENV_VAR, OCI_REGISTRY_DOMAIN_ENV_VAR};
+use crate::{MonocoreError, MonocoreResult};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
@@ -88,28 +81,6 @@ pub fn normalize_volume_path(base_path: &str, requested_path: &str) -> MonocoreR
         // Then join with base and normalize again
         let full_path = format!("{}/{}", normalized_base, normalized_requested);
         monoutils::normalize_path(&full_path, SupportedPathType::Absolute).map_err(Into::into)
-    }
-}
-
-/// Returns the path to the monocore home directory.
-/// If the MONOCORE_HOME environment variable is set, returns that path.
-/// Otherwise, returns the default monocore home path.
-pub fn monocore_home_path() -> PathBuf {
-    if let Ok(monocore_home) = std::env::var(MONOCORE_HOME_ENV_VAR) {
-        PathBuf::from(monocore_home)
-    } else {
-        DEFAULT_MONOCORE_HOME.to_owned()
-    }
-}
-
-/// Returns the domain for the OCI registry.
-/// If the OCI_REGISTRY_DOMAIN environment variable is set, returns that value.
-/// Otherwise, returns the default OCI registry domain.
-pub fn oci_registry_domain() -> String {
-    if let Ok(oci_registry_domain) = std::env::var(OCI_REGISTRY_DOMAIN_ENV_VAR) {
-        oci_registry_domain
-    } else {
-        DEFAULT_OCI_REGISTRY_DOMAIN.to_string()
     }
 }
 
