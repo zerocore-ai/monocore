@@ -7,7 +7,7 @@
 
 mod implementations;
 mod pull;
-mod selector;
+mod reference;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -15,4 +15,4 @@ mod selector;
 
 pub use implementations::*;
 pub use pull::*;
-pub use selector::*;
+pub use reference::*;
