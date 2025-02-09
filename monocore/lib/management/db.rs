@@ -227,20 +227,18 @@ pub(crate) async fn save_config(
     let record = sqlx::query(
         r#"
         INSERT INTO configs (
-            manifest_id, media_type, full_json,
-            created, architecture, os, os_variant,
-            config_env_json, config_cmd_json, config_working_dir,
-            config_entrypoint_json, config_volumes_json,
-            config_exposed_ports_json, config_user,
-            rootfs_type, rootfs_diff_ids, history_json
+            manifest_id, media_type, created, architecture, os,
+            os_variant, config_env_json, config_cmd_json,
+            config_working_dir, config_entrypoint_json,
+            config_volumes_json, config_exposed_ports_json, config_user,
+            rootfs_type, rootfs_diff_ids_json, history_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING id
         "#,
     )
     .bind(manifest_id)
     .bind(media_type)
-    .bind(serde_json::to_string(config).unwrap_or_default())
     .bind(config.created().as_ref().map(|t| t.to_string()))
     .bind(config.architecture().to_string())
     .bind(config.os().to_string())
@@ -278,7 +276,7 @@ pub(crate) async fn save_layer(
     media_type: &str,
     digest: &str,
     size_bytes: i64,
-    diff_id: Option<&str>,
+    diff_id: &str,
 ) -> MonocoreResult<i64> {
     let record = sqlx::query(
         r#"
@@ -299,6 +297,48 @@ pub(crate) async fn save_layer(
     .await?;
 
     Ok(record.get::<i64, _>("id"))
+}
+
+/// Checks if an image exists in the database by its reference.
+///
+/// ## Arguments
+///
+/// * `pool` - The database connection pool
+/// * `reference` - The reference string of the image to check
+pub(crate) async fn image_exists(pool: &Pool<Sqlite>, reference: &str) -> MonocoreResult<bool> {
+    let record = sqlx::query(
+        r#"
+        SELECT COUNT(*) as count
+        FROM images
+        WHERE reference = ?
+        "#,
+    )
+    .bind(reference)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(record.get::<i64, _>("count") > 0)
+}
+
+/// Checks if a layer exists in the database by its digest.
+///
+/// ## Arguments
+///
+/// * `pool` - The database connection pool
+/// * `digest` - The digest string of the layer to check
+pub(crate) async fn layer_exists(pool: &Pool<Sqlite>, digest: &str) -> MonocoreResult<bool> {
+    let record = sqlx::query(
+        r#"
+        SELECT COUNT(*) as count
+        FROM layers
+        WHERE digest = ?
+        "#,
+    )
+    .bind(digest)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(record.get::<i64, _>("count") > 0)
 }
 
 //--------------------------------------------------------------------------------------------------

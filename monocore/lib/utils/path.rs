@@ -32,6 +32,9 @@ pub const SANDBOX_DB_FILENAME: &str = "sandbox.db";
 /// The filename for the global OCI database
 pub const OCI_DB_FILENAME: &str = "oci.db";
 
+/// The filename for the monoimage database
+pub const MONOIMAGE_DB_FILENAME: &str = "monoimage.db";
+
 /// The prefix for mcrun log files
 pub const MCRUN_LOG_PREFIX: &str = "mcrun";
 

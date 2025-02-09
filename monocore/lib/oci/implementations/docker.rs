@@ -193,7 +193,7 @@ impl DockerRegistry {
     }
 
     /// Downloads a blob from the registry, supports download resumption if the file already partially exists.
-    async fn download_image_blob(
+    pub async fn download_image_blob(
         &self,
         repository: &str,
         digest: &Digest,
@@ -332,10 +332,19 @@ impl OciRegistryPull for DockerRegistry {
         let layer_futures: Vec<_> = manifest
             .layers()
             .iter()
-            .map(|layer_desc| async {
-                // Download the layer
-                self.download_image_blob(repository, layer_desc.digest(), layer_desc.size())
-                    .await?;
+            .zip(config.rootfs().diff_ids())
+            .map(|(layer_desc, diff_id)| async {
+                // Check if layer already exists in database
+                if management::layer_exists(&self.oci_db, &layer_desc.digest().to_string()).await? {
+                    tracing::info!(
+                        "Layer {} already exists, skipping download",
+                        layer_desc.digest()
+                    );
+                } else {
+                    // Download the layer if it doesn't exist
+                    self.download_image_blob(repository, layer_desc.digest(), layer_desc.size())
+                        .await?;
+                }
 
                 // Save layer metadata to database
                 management::save_layer(
@@ -344,7 +353,7 @@ impl OciRegistryPull for DockerRegistry {
                     &layer_desc.media_type().to_string(),
                     &layer_desc.digest().to_string(),
                     layer_desc.size() as i64,
-                    None, // TODO: Get diff_id from config if available
+                    diff_id,
                 )
                 .await?;
 

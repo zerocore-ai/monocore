@@ -3,6 +3,7 @@ use crate::config::DEFAULT_OCI_REFERENCE_TAG;
 use crate::error::MonocoreError;
 use crate::utils::env::get_oci_registry;
 use getset::Getters;
+use getset::Setters;
 use oci_spec::image::Digest;
 use regex::Regex;
 use std::fmt;
@@ -16,8 +17,8 @@ use std::str::FromStr;
 ///
 /// This struct includes the registry, repository, and a selector that combines a tag and an optional digest.
 /// If no registry or tag is provided in the input string, default values will be used.
-#[derive(Debug, Clone, PartialEq, Eq, Getters)]
-#[getset(get = "pub with_prefix")]
+#[derive(Debug, Clone, PartialEq, Eq, Getters, Setters)]
+#[getset(get = "pub with_prefix", set = "pub with_prefix")]
 pub struct Reference {
     /// The registry where the image is hosted.
     registry: String,
