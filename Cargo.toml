@@ -45,12 +45,13 @@ tracing-subscriber = "0.3"
 clap = { version = "4.5", features = ["color", "derive"] }
 getset = "0.1"
 procspawn = "1.0"
-rand = "0.8"
+rand = "0.9"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 reqwest-middleware = "0.3"                                        # Cannot upgrade to 0.4 due to https://github.com/TrueLayer/reqwest-middleware/issues/204
 reqwest-retry = "0.6"                                             # Cannot upgrade to 0.7 due to https://github.com/TrueLayer/reqwest-middleware/issues/204
 monoutils-store = { version = "0.2", path = "./monoutils-store" }
 monoutils = { version = "0.2", path = "./monoutils" }
+monofs = { version = "0.2", path = "./monofs" }
 multihash = "0.19"
 multihash-codetable = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -65,3 +66,4 @@ pretty-error-debug = "0.3"
 serde_ipld_dagcbor = "0.6"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 regex = "1.10"
+async-recursion = "1.1"

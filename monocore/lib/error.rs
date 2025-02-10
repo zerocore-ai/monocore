@@ -1,4 +1,6 @@
+use monofs::FsError;
 use monoutils::MonoutilsError;
+use monoutils_store::StoreError;
 use nix::errno::Errno;
 use sqlx::migrate::MigrateError;
 use std::{
@@ -253,6 +255,13 @@ pub enum MonocoreError {
     #[error("monoutils error: {0}")]
     MonoutilsError(#[from] MonoutilsError),
 
+    /// An error that occurred when a store error occurred
+    #[error("store error: {0}")]
+    StoreError(#[from] StoreError),
+
+    /// An error that occurred when a file system error occurred
+    #[error("file system error: {0}")]
+    FileSystemError(#[from] FsError),
     /// An error that occurred when a migration error occurred
     #[error("migration error: {0}")]
     MigrationError(#[from] MigrateError),

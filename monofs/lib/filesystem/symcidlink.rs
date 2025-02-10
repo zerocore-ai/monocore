@@ -12,7 +12,9 @@ use monoutils_store::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{filesystem::{CidLink, Dir, EntityCidLink, File, Metadata}, FsError, FsResult};
+use crate::{
+    config::DEFAULT_SYMLINK_DEPTH, filesystem::{CidLink, Dir, EntityCidLink, File, Metadata}, FsError, FsResult
+};
 
 use super::{entity::Entity, kind::EntityType, MetadataSerializable};
 
@@ -380,8 +382,7 @@ where
     where
         S: Send + Sync,
     {
-        let max_depth = *self.inner.metadata.get_symlink_depth();
-        self.follow_recursive(max_depth).await
+        self.follow_recursive(DEFAULT_SYMLINK_DEPTH).await
     }
 
     #[async_recursion]

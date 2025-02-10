@@ -15,9 +15,13 @@ use monoutils_store::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{filesystem::{
-    kind::EntityType, Entity, EntityCidLink, File, Link, Metadata, MetadataSerializable, SymCidLink,
-}, FsError, FsResult};
+use crate::{
+    filesystem::{
+        kind::EntityType, Entity, EntityCidLink, File, Link, Metadata, MetadataSerializable,
+        SymCidLink,
+    },
+    FsError, FsResult,
+};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
@@ -37,7 +41,7 @@ pub const DIR_TYPE_TAG: &str = "monofs.dir";
 /// Entities in `monofs` are designed to be immutable and clone-on-write meaning writes create
 /// forks of the entity.
 #[derive(Clone)]
-pub struct  Dir<S>
+pub struct Dir<S>
 where
     S: IpldStore,
 {
@@ -976,7 +980,7 @@ mod tests {
     use anyhow::Ok;
     use monoutils_store::MemoryStore;
 
-    use crate::{config::DEFAULT_SYMLINK_DEPTH, filesystem::SyncType};
+    use crate::filesystem::SyncType;
 
     use super::*;
 
@@ -1011,10 +1015,6 @@ mod tests {
         assert_eq!(
             dir_metadata.get_entity_type(),
             loaded_dir_metadata.get_entity_type()
-        );
-        assert_eq!(
-            dir_metadata.get_symlink_depth(),
-            loaded_dir_metadata.get_symlink_depth()
         );
         assert_eq!(
             dir_metadata.get_sync_type(),
@@ -1082,7 +1082,6 @@ mod tests {
         let metadata = dir.get_metadata();
 
         assert_eq!(*metadata.get_entity_type(), EntityType::Dir);
-        assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
         assert_eq!(*metadata.get_sync_type(), SyncType::Default);
 
         Ok(())

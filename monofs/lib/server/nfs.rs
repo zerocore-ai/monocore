@@ -16,7 +16,10 @@ use nfsserve::nfs::{
 use nfsserve::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
 use tokio::sync::Mutex;
 
-use crate::filesystem::{Dir, Entity, EntityType, File, Metadata, SymPathLink};
+use crate::filesystem::{
+    Dir, Entity, EntityType, File, Metadata, SymPathLink, UNIX_ATIME_KEY, UNIX_GID_KEY,
+    UNIX_MODE_KEY, UNIX_UID_KEY,
+};
 use crate::store::FlatFsStore;
 use crate::FsError;
 
@@ -35,18 +38,6 @@ pub const DEFAULT_DIR_MODE: u32 = 0o755;
 /// Default symlink mode (permissions) for newly created symbolic links.
 /// Equivalent to 777 in octal (rwxrwxrwx).
 pub const DEFAULT_SYMLINK_MODE: u32 = 0o777;
-
-/// Key for storing Unix file mode in extended attributes.
-pub const UNIX_MODE_KEY: &str = "unix.mode";
-
-/// Key for storing Unix user ID in extended attributes.
-pub const UNIX_UID_KEY: &str = "unix.uid";
-
-/// Key for storing Unix group ID in extended attributes.
-pub const UNIX_GID_KEY: &str = "unix.gid";
-
-/// Key for storing Unix access time in extended attributes.
-pub const UNIX_ATIME_KEY: &str = "unix.atime";
 
 //--------------------------------------------------------------------------------------------------
 // Types

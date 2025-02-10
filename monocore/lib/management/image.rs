@@ -20,7 +20,7 @@ const SANDBOXES_REGISTRY: &str = "sandboxes.io";
 const DOCKER_REGISTRY: &str = "docker.io";
 
 /// The suffix added to extracted layer directories
-const EXTRACTED_LAYER_SUFFIX: &str = ".extracted";
+const EXTRACTED_LAYER_SUFFIX: &str = "extracted";
 
 //--------------------------------------------------------------------------------------------------
 // Functions
@@ -120,7 +120,9 @@ pub async fn pull_image(name: Reference, image: bool, image_group: bool) -> Mono
 /// * Failed to pull the image from Docker registry
 pub async fn pull_docker_registry_image(image: &Reference) -> MonocoreResult<()> {
     // Create a temporary directory for downloading layers
-    let temp_download_dir = tempdir().map_err(|e| MonocoreError::NotImplemented(e.to_string()))?.into_path();
+    let temp_download_dir = tempdir()
+        .map_err(|e| MonocoreError::NotImplemented(e.to_string()))?
+        .into_path();
     // let temp_download_dir = get_monocore_home_path().join("tmp"); // TODO: Remove. Placeholder for debugging.
 
     // Get the global OCI database path
@@ -198,7 +200,7 @@ async fn extract_layer(layer_path: impl AsRef<std::path::Path>) -> MonocoreResul
         })?;
 
     // Create the extraction directory with name <layer-name>.extracted
-    let extract_dir = parent_dir.join(format!("{}{}", file_name, EXTRACTED_LAYER_SUFFIX));
+    let extract_dir = parent_dir.join(format!("{}.{}", file_name, EXTRACTED_LAYER_SUFFIX));
     fs::create_dir_all(&extract_dir)
         .await
         .map_err(|e| MonocoreError::LayerHandling {

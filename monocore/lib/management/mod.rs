@@ -3,6 +3,7 @@
 mod db;
 mod image;
 mod menv;
+mod rootfs;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -11,3 +12,4 @@ mod menv;
 pub use db::*;
 pub use image::*;
 pub use menv::*;
+pub use rootfs::*;

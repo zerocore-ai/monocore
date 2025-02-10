@@ -379,7 +379,7 @@ mod tests {
         let test_cases = vec![
             ("random", {
                 let mut rng = StdRng::seed_from_u64(12345);
-                (0..100_000).map(|_| rng.gen()).collect::<Vec<u8>>()
+                (0..100_000).map(|_| rng.random()).collect::<Vec<u8>>()
             }),
             ("repeating", {
                 (0..100_000).map(|i| (i % 251) as u8).collect::<Vec<u8>>()
