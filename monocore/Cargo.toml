@@ -77,6 +77,9 @@ ipnetwork = { version = "0.21.0", features = ["serde"] }
 sqlx.workspace = true
 monoutils.workspace = true
 regex.workspace = true
+monoutils-store.workspace = true
+monofs.workspace = true
+async-recursion.workspace = true
 
 [dev-dependencies]
 test-log.workspace = true

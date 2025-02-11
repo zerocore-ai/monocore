@@ -193,7 +193,7 @@ impl DockerRegistry {
     }
 
     /// Downloads a blob from the registry, supports download resumption if the file already partially exists.
-    async fn download_image_blob(
+    pub async fn download_image_blob(
         &self,
         repository: &str,
         digest: &Digest,
@@ -271,15 +271,20 @@ impl OciRegistryPull for DockerRegistry {
 
         // Construct reference based on selector type
         let reference = match &selector {
-            ReferenceSelector::Tag(tag) => {
-                format!("{DOCKER_REFERENCE_REGISTRY_DOMAIN}/{repository}:{tag}")
+            ReferenceSelector::Tag { tag, digest } => {
+                let digest_part = digest
+                    .as_ref()
+                    .map(|d| format!("@{}:{}", d.algorithm(), d.digest()))
+                    .unwrap_or_default();
+                format!("{DOCKER_REFERENCE_REGISTRY_DOMAIN}/{repository}:{tag}{digest_part}")
             }
-            ReferenceSelector::Digest { algorithm, hex } => {
-                format!("{DOCKER_REFERENCE_REGISTRY_DOMAIN}/{repository}@{algorithm}:{hex}")
+            ReferenceSelector::Digest(digest) => {
+                let digest_part = format!("@{}:{}", digest.algorithm(), digest.digest());
+                format!("{DOCKER_REFERENCE_REGISTRY_DOMAIN}/{repository}{digest_part}")
             }
         };
 
-        let image_id = management::save_image(&self.oci_db, &reference, total_size).await?;
+        let image_id = management::save_or_update_image(&self.oci_db, &reference, total_size).await?;
 
         // Save index
         let platform = Platform::default();
@@ -327,19 +332,28 @@ impl OciRegistryPull for DockerRegistry {
         let layer_futures: Vec<_> = manifest
             .layers()
             .iter()
-            .map(|layer_desc| async {
-                // Download the layer
-                self.download_image_blob(repository, layer_desc.digest(), layer_desc.size())
-                    .await?;
+            .zip(config.rootfs().diff_ids())
+            .map(|(layer_desc, diff_id)| async {
+                // Check if layer already exists and is complete in database
+                if management::layer_complete(&self.oci_db, &layer_desc.digest().to_string()).await? {
+                    tracing::info!(
+                        "Layer {} already exists and is complete, skipping download",
+                        layer_desc.digest()
+                    );
+                } else {
+                    // Download the layer if it doesn't exist
+                    self.download_image_blob(repository, layer_desc.digest(), layer_desc.size())
+                        .await?;
+                }
 
                 // Save layer metadata to database
-                management::save_layer(
+                management::save_or_update_layer(
                     &self.oci_db,
                     manifest_id,
                     &layer_desc.media_type().to_string(),
                     &layer_desc.digest().to_string(),
                     layer_desc.size() as i64,
-                    None, // TODO: Get diff_id from config if available
+                    diff_id,
                 )
                 .await?;
 
@@ -366,10 +380,16 @@ impl OciRegistryPull for DockerRegistry {
             .token;
 
         // Construct URL based on selector type
-        let reference = match selector {
-            ReferenceSelector::Tag(tag) => tag,
-            ReferenceSelector::Digest { algorithm, hex } => {
-                format!("{algorithm}:{hex}")
+        let reference = match &selector {
+            ReferenceSelector::Tag { tag, digest } => {
+                let digest_part = digest
+                    .as_ref()
+                    .map(|d| format!("@{}:{}", d.algorithm(), d.digest()))
+                    .unwrap_or_default();
+                format!("{tag}{digest_part}")
+            }
+            ReferenceSelector::Digest(digest) => {
+                format!("@{}:{}", digest.algorithm(), digest.digest())
             }
         };
 
@@ -514,7 +534,9 @@ mod tests {
         let (client, temp_download_dir, _temp_db_dir) = helper::setup_test_client().await;
         let repository = "library/alpine";
         let tag = "latest";
-        let result = client.pull_image(repository, tag.parse()?).await;
+        let result = client
+            .pull_image(repository, ReferenceSelector::tag(tag))
+            .await;
         assert!(result.is_ok());
 
         // Verify image record in database
@@ -588,7 +610,9 @@ mod tests {
         let repository = "library/alpine";
         let tag = "latest";
 
-        let result = client.fetch_index(repository, tag.parse()?).await;
+        let result = client
+            .fetch_index(repository, ReferenceSelector::tag(tag))
+            .await;
         assert!(result.is_ok());
 
         let index = result.unwrap();
@@ -622,7 +646,7 @@ mod tests {
 
         // First get the manifest digest from the index
         let index = client
-            .fetch_index(repository, ReferenceSelector::Tag("latest".to_string()))
+            .fetch_index(repository, ReferenceSelector::tag("latest"))
             .await?;
 
         let manifest_desc = index.manifests().first().unwrap();
@@ -666,7 +690,7 @@ mod tests {
 
         // Get the config digest from manifest
         let index = client
-            .fetch_index(repository, ReferenceSelector::Tag("latest".to_string()))
+            .fetch_index(repository, ReferenceSelector::tag("latest"))
             .await?;
 
         let manifest = client
@@ -710,7 +734,7 @@ mod tests {
 
         // Get a layer digest from manifest
         let index = client
-            .fetch_index(repository, ReferenceSelector::Tag("latest".to_string()))
+            .fetch_index(repository, ReferenceSelector::tag("latest"))
             .await?;
 
         let manifest = client

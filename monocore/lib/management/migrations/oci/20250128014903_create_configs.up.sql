@@ -5,7 +5,6 @@ CREATE TABLE IF NOT EXISTS configs (
     id INTEGER PRIMARY KEY,
     manifest_id INTEGER NOT NULL,
     media_type TEXT NOT NULL,
-    full_json TEXT NOT NULL,
 
     -- Root level fields
     created DATETIME,
@@ -24,7 +23,7 @@ CREATE TABLE IF NOT EXISTS configs (
 
     -- Rootfs section
     rootfs_type TEXT,
-    rootfs_diff_ids TEXT,
+    rootfs_diff_ids_json TEXT,
 
     history_json TEXT,
 

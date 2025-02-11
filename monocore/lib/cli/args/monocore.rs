@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::cli::styles;
+use crate::{cli::styles, oci::Reference};
 use clap::Parser;
 use typed_path::Utf8UnixPathBuf;
 
@@ -394,10 +394,6 @@ pub enum MonocoreSubcommand {
         names: Vec<String>,
     },
 
-    /// Create or update project's lock file
-    #[command(name = "lock")]
-    Lock,
-
     /// Clean project data
     #[command(name = "clean")]
     Clean,
@@ -438,7 +434,7 @@ pub enum MonocoreSubcommand {
         image_group: bool,
 
         /// Name of the image or image group
-        name: String,
+        name: Reference,
     },
 
     /// Push an image

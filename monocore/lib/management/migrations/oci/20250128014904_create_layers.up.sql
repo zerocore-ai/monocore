@@ -5,9 +5,10 @@ CREATE TABLE IF NOT EXISTS layers (
     id INTEGER PRIMARY KEY,
     manifest_id INTEGER NOT NULL,
     media_type TEXT NOT NULL,
-    digest TEXT NOT NULL,
+    digest TEXT NOT NULL, -- the hash of the compressed layer
+    diff_id TEXT NOT NULL, -- the hash of the uncompressed layer
+    head_cid TEXT, -- the root cid of the partial fs in monofs
     size_bytes INTEGER NOT NULL,
-    diff_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     modified_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (manifest_id) REFERENCES manifests(id) ON DELETE CASCADE
@@ -16,3 +17,4 @@ CREATE TABLE IF NOT EXISTS layers (
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_layers_manifest_id ON layers(manifest_id);
 CREATE INDEX IF NOT EXISTS idx_layers_digest ON layers(digest);
+CREATE INDEX IF NOT EXISTS idx_layers_diff_id ON layers(diff_id);

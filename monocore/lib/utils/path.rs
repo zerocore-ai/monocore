@@ -1,15 +1,8 @@
 //! Utility functions for working with paths.
 
-use std::path::PathBuf;
-
 use monoutils::SupportedPathType;
 
-use crate::{
-    config::{DEFAULT_MONOCORE_HOME, DEFAULT_OCI_REGISTRY_DOMAIN},
-    MonocoreError, MonocoreResult,
-};
-
-use super::{MONOCORE_HOME_ENV_VAR, OCI_REGISTRY_DOMAIN_ENV_VAR};
+use crate::{MonocoreError, MonocoreResult};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
@@ -22,7 +15,10 @@ pub const MONOCORE_ENV_DIR: &str = ".menv";
 pub const MONOCORE_HOME_DIR: &str = ".monocore";
 
 /// The directory where project root filesystems are stored
-pub const ROOTS_SUBDIR: &str = "roots";
+pub const ROOTS_SUBDIR: &str = "rootfs";
+
+/// The directory where base store blocks are stored
+pub const BLOCKS_SUBDIR: &str = "blocks";
 
 /// The directory where project logs are stored
 pub const LOG_SUBDIR: &str = "log";
@@ -38,6 +34,9 @@ pub const SANDBOX_DB_FILENAME: &str = "sandbox.db";
 
 /// The filename for the global OCI database
 pub const OCI_DB_FILENAME: &str = "oci.db";
+
+/// The filename for the monoimage database
+pub const MONOIMAGE_DB_FILENAME: &str = "monoimage.db";
 
 /// The prefix for mcrun log files
 pub const MCRUN_LOG_PREFIX: &str = "mcrun";
@@ -88,28 +87,6 @@ pub fn normalize_volume_path(base_path: &str, requested_path: &str) -> MonocoreR
         // Then join with base and normalize again
         let full_path = format!("{}/{}", normalized_base, normalized_requested);
         monoutils::normalize_path(&full_path, SupportedPathType::Absolute).map_err(Into::into)
-    }
-}
-
-/// Returns the path to the monocore home directory.
-/// If the MONOCORE_HOME environment variable is set, returns that path.
-/// Otherwise, returns the default monocore home path.
-pub fn monocore_home_path() -> PathBuf {
-    if let Ok(monocore_home) = std::env::var(MONOCORE_HOME_ENV_VAR) {
-        PathBuf::from(monocore_home)
-    } else {
-        DEFAULT_MONOCORE_HOME.to_owned()
-    }
-}
-
-/// Returns the domain for the OCI registry.
-/// If the OCI_REGISTRY_DOMAIN environment variable is set, returns that value.
-/// Otherwise, returns the default OCI registry domain.
-pub fn oci_registry_domain() -> String {
-    if let Ok(oci_registry_domain) = std::env::var(OCI_REGISTRY_DOMAIN_ENV_VAR) {
-        oci_registry_domain
-    } else {
-        DEFAULT_OCI_REGISTRY_DOMAIN.to_string()
     }
 }
 

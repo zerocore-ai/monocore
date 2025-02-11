@@ -12,7 +12,6 @@ use monoutils_store::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::config::DEFAULT_SYMLINK_DEPTH;
 use crate::FsResult;
 
 use super::{kind::EntityType, AttributesCidLink};
@@ -21,20 +20,20 @@ use super::{kind::EntityType, AttributesCidLink};
 // Constants
 //--------------------------------------------------------------------------------------------------
 
-/// The key for the created at field in the metadata.
-pub const CREATED_AT_KEY: &str = "monofs.created_at";
+/// Key for storing Unix file mode in extended attributes.
+pub const UNIX_MODE_KEY: &str = "unix.mode";
 
-/// The key for the entity type field in the metadata.
-pub const ENTITY_TYPE_KEY: &str = "monofs.entity_type";
+/// Key for storing Unix user ID in extended attributes.
+pub const UNIX_UID_KEY: &str = "unix.uid";
 
-/// The key for the modified at field in the metadata.
-pub const MODIFIED_AT_KEY: &str = "monofs.modified_at";
+/// Key for storing Unix group ID in extended attributes.
+pub const UNIX_GID_KEY: &str = "unix.gid";
 
-/// The key for the symbolic link depth field in the metadata.
-pub const SYMLINK_DEPTH_KEY: &str = "monofs.symlink_depth";
+/// Key for storing Unix access time in extended attributes.
+pub const UNIX_ATIME_KEY: &str = "unix.atime";
 
-/// The key for the sync type field in the metadata.
-pub const SYNC_TYPE_KEY: &str = "monofs.sync_type";
+/// Key for storing Unix modification time in extended attributes.
+pub const UNIX_MTIME_KEY: &str = "unix.mtime";
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -58,7 +57,6 @@ pub const SYNC_TYPE_KEY: &str = "monofs.sync_type";
 ///
 /// assert_eq!(*metadata.get_entity_type(), EntityType::File);
 /// assert_eq!(*metadata.get_sync_type(), SyncType::Default);
-/// assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
 /// ```
 #[derive(Clone, Getters)]
 #[getset(get = "pub with_prefix")]
@@ -74,9 +72,6 @@ where
 
     /// The time of the last modification of the entity.
     modified_at: DateTime<Utc>,
-
-    /// The maximum depth of a symbolic link.
-    symlink_depth: u32,
 
     /// The sync type of the entity.
     sync_type: SyncType,
@@ -160,7 +155,6 @@ pub struct MetadataSerializable {
     entity_type: EntityType,
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
-    symlink_depth: u32,
     sync_type: SyncType,
     extended_attrs: Option<Cid>,
 }
@@ -184,7 +178,6 @@ where
             entity_type,
             created_at: now,
             modified_at: now,
-            symlink_depth: DEFAULT_SYMLINK_DEPTH,
             sync_type: SyncType::default(),
             extended_attrs: None,
             store,
@@ -197,7 +190,6 @@ where
             entity_type: serializable.entity_type,
             created_at: serializable.created_at,
             modified_at: serializable.modified_at,
-            symlink_depth: serializable.symlink_depth,
             sync_type: serializable.sync_type,
             extended_attrs: serializable
                 .extended_attrs
@@ -221,7 +213,6 @@ where
             entity_type: self.entity_type,
             created_at: self.created_at,
             modified_at: self.modified_at,
-            symlink_depth: self.symlink_depth,
             sync_type: self.sync_type,
             extended_attrs,
         })
@@ -326,11 +317,6 @@ where
         Ok(())
     }
 
-    /// Sets the maximum depth of a symbolic link.
-    pub fn set_symlink_depth(&mut self, depth: u32) {
-        self.symlink_depth = depth;
-    }
-
     /// Sets the sync type.
     pub fn set_sync_type(&mut self, sync_type: SyncType) {
         self.sync_type = sync_type;
@@ -419,7 +405,6 @@ where
             .field("entity_type", &self.entity_type)
             .field("created_at", &self.created_at)
             .field("modified_at", &self.modified_at)
-            .field("symlink_depth", &self.symlink_depth)
             .field("sync_type", &self.sync_type)
             .field(
                 "extended_attrs",
@@ -467,7 +452,6 @@ mod tests {
 
         assert_eq!(*metadata.get_entity_type(), EntityType::File);
         assert_eq!(*metadata.get_sync_type(), SyncType::Default);
-        assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
     }
 
     #[test]
@@ -477,7 +461,6 @@ mod tests {
 
         assert_eq!(*metadata.get_entity_type(), EntityType::File);
         assert_eq!(*metadata.get_sync_type(), SyncType::Default);
-        assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
     }
 
     #[tokio::test]
@@ -490,7 +473,6 @@ mod tests {
 
         assert_eq!(*loaded.get_entity_type(), EntityType::File);
         assert_eq!(*loaded.get_sync_type(), SyncType::Default);
-        assert_eq!(*loaded.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
 
         Ok(())
     }

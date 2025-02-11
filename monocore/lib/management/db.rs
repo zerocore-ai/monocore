@@ -16,6 +16,9 @@ pub static SANDBOX_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrat
 /// Migrator for the OCI database
 pub static OCI_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrations/oci");
 
+/// Migrator for the monoimage database
+pub static MONOIMAGE_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrations/monoimage");
+
 //--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------
@@ -26,7 +29,10 @@ pub static OCI_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrations
 ///
 /// * `db_path` - Path where the SQLite database file should be created
 /// * `migrator` - SQLx migrator containing database schema migrations to run
-pub async fn init_db(db_path: impl AsRef<Path>, migrator: &Migrator) -> MonocoreResult<()> {
+pub async fn init_db(
+    db_path: impl AsRef<Path>,
+    migrator: &Migrator,
+) -> MonocoreResult<Pool<Sqlite>> {
     let db_path = db_path.as_ref();
 
     // Ensure parent directory exists
@@ -48,7 +54,7 @@ pub async fn init_db(db_path: impl AsRef<Path>, migrator: &Migrator) -> Monocore
     // Run migrations
     migrator.run(&pool).await?;
 
-    Ok(())
+    Ok(pool)
 }
 
 /// Creates and returns a connection pool for SQLite database operations.
@@ -81,16 +87,12 @@ pub async fn get_or_create_db_pool(
     migrator: &Migrator,
 ) -> MonocoreResult<Pool<Sqlite>> {
     // Initialize the database if it doesn't exist
-    init_db(&db_path, migrator).await?;
-
-    // Create and return the connection pool
-    let pool = SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect(&format!("sqlite://{}?mode=rwc", db_path.as_ref().display()))
-        .await?;
-
-    Ok(pool)
+    init_db(&db_path, migrator).await
 }
+
+//--------------------------------------------------------------------------------------------------
+// Functions: Helpers
+//--------------------------------------------------------------------------------------------------
 
 /// Saves an image to the database and returns its ID
 pub(crate) async fn save_image(
@@ -229,20 +231,18 @@ pub(crate) async fn save_config(
     let record = sqlx::query(
         r#"
         INSERT INTO configs (
-            manifest_id, media_type, full_json,
-            created, architecture, os, os_variant,
-            config_env_json, config_cmd_json, config_working_dir,
-            config_entrypoint_json, config_volumes_json,
-            config_exposed_ports_json, config_user,
-            rootfs_type, rootfs_diff_ids, history_json
+            manifest_id, media_type, created, architecture, os,
+            os_variant, config_env_json, config_cmd_json,
+            config_working_dir, config_entrypoint_json,
+            config_volumes_json, config_exposed_ports_json, config_user,
+            rootfs_type, rootfs_diff_ids_json, history_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING id
         "#,
     )
     .bind(manifest_id)
     .bind(media_type)
-    .bind(serde_json::to_string(config).unwrap_or_default())
     .bind(config.created().as_ref().map(|t| t.to_string()))
     .bind(config.architecture().to_string())
     .bind(config.os().to_string())
@@ -280,7 +280,7 @@ pub(crate) async fn save_layer(
     media_type: &str,
     digest: &str,
     size_bytes: i64,
-    diff_id: Option<&str>,
+    diff_id: &str,
 ) -> MonocoreResult<i64> {
     let record = sqlx::query(
         r#"
@@ -301,6 +301,229 @@ pub(crate) async fn save_layer(
     .await?;
 
     Ok(record.get::<i64, _>("id"))
+}
+
+/// Saves or updates an image in the database.
+/// If the image exists, it updates the size_bytes and last_used_at.
+/// If it doesn't exist, creates a new record.
+///
+/// ## Arguments
+///
+/// * `pool` - The database connection pool
+/// * `reference` - The reference string of the image
+/// * `size_bytes` - The size of the image in bytes
+pub(crate) async fn save_or_update_image(
+    pool: &Pool<Sqlite>,
+    reference: &str,
+    size_bytes: i64,
+) -> MonocoreResult<i64> {
+    // Try to update first
+    let update_result = sqlx::query(
+        r#"
+        UPDATE images
+        SET size_bytes = ?, last_used_at = CURRENT_TIMESTAMP, modified_at = CURRENT_TIMESTAMP
+        WHERE reference = ?
+        RETURNING id
+        "#,
+    )
+    .bind(size_bytes)
+    .bind(reference)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(record) = update_result {
+        Ok(record.get::<i64, _>("id"))
+    } else {
+        // If no record was updated, insert a new one
+        save_image(pool, reference, size_bytes).await
+    }
+}
+
+/// Saves or updates a layer in the database.
+/// If the layer exists, it updates the size_bytes and other fields.
+/// If it doesn't exist, creates a new record.
+///
+/// ## Arguments
+///
+/// * `pool` - The database connection pool
+/// * `manifest_id` - The ID of the manifest this layer belongs to
+/// * `media_type` - The media type of the layer
+/// * `digest` - The digest of the layer
+/// * `size_bytes` - The size of the layer in bytes
+/// * `diff_id` - The diff ID of the layer
+pub(crate) async fn save_or_update_layer(
+    pool: &Pool<Sqlite>,
+    manifest_id: i64,
+    media_type: &str,
+    digest: &str,
+    size_bytes: i64,
+    diff_id: &str,
+) -> MonocoreResult<i64> {
+    // Try to update first
+    let update_result = sqlx::query(
+        r#"
+        UPDATE layers
+        SET manifest_id = ?,
+            media_type = ?,
+            size_bytes = ?,
+            diff_id = ?,
+            modified_at = CURRENT_TIMESTAMP
+        WHERE digest = ?
+        RETURNING id
+        "#,
+    )
+    .bind(manifest_id)
+    .bind(media_type)
+    .bind(size_bytes)
+    .bind(diff_id)
+    .bind(digest)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(record) = update_result {
+        Ok(record.get::<i64, _>("id"))
+    } else {
+        // If no record was updated, insert a new one
+        save_layer(pool, manifest_id, media_type, digest, size_bytes, diff_id).await
+    }
+}
+
+/// Updates the head CID of a layer in the database.
+///
+/// ## Arguments
+///
+/// * `pool` - The database connection pool
+/// * `digest` - The digest of the layer to update
+/// * `head_cid` - The root CID of the monofs layer
+pub(crate) async fn update_layer_head_cid(
+    pool: &Pool<Sqlite>,
+    digest: &str,
+    head_cid: &str,
+) -> MonocoreResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE layers
+        SET head_cid = ?, modified_at = CURRENT_TIMESTAMP
+        WHERE digest = ?
+        "#,
+    )
+    .bind(head_cid)
+    .bind(digest)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Updates the head CID of an image in the database.
+///
+/// ## Arguments
+///
+/// * `pool` - The database connection pool
+/// * `reference` - The reference of the image to update
+/// * `head_cid` - The root CID of the merged monofs layers
+pub(crate) async fn update_image_head_cid(
+    pool: &Pool<Sqlite>,
+    reference: &str,
+    head_cid: &str,
+) -> MonocoreResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE images
+        SET head_cid = ?, modified_at = CURRENT_TIMESTAMP
+        WHERE reference = ?
+        "#,
+    )
+    .bind(head_cid)
+    .bind(reference)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Gets all layer CIDs for an image in base-to-top order.
+///
+/// This function returns a vector of tuples containing:
+/// - The layer's digest
+/// - The layer's head CID (if it exists)
+///
+/// The layers are returned in the order they should be applied,
+/// from base layer to top layer.
+///
+/// ## Arguments
+///
+/// * `pool` - The database connection pool
+/// * `reference` - The reference of the image to get layers for
+pub(crate) async fn get_image_layer_cids(
+    pool: &Pool<Sqlite>,
+    reference: &str,
+) -> MonocoreResult<Vec<(String, Option<String>)>> {
+    let records = sqlx::query(
+        r#"
+        SELECT l.digest, l.head_cid
+        FROM layers l
+        JOIN manifests m ON l.manifest_id = m.id
+        JOIN images i ON m.image_id = i.id
+        WHERE i.reference = ?
+        ORDER BY l.id ASC
+        "#,
+    )
+    .bind(reference)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(records
+        .into_iter()
+        .map(|record| {
+            (
+                record.get::<String, _>("digest"),
+                record.get::<Option<String>, _>("head_cid"),
+            )
+        })
+        .collect())
+}
+
+/// Checks if a layer exists and is complete (has head_cid) in the database.
+///
+/// ## Arguments
+///
+/// * `pool` - The database connection pool
+/// * `digest` - The digest string of the layer to check
+pub(crate) async fn layer_complete(pool: &Pool<Sqlite>, digest: &str) -> MonocoreResult<bool> {
+    let record = sqlx::query(
+        r#"
+        SELECT COUNT(*) as count
+        FROM layers
+        WHERE digest = ? AND head_cid IS NOT NULL
+        "#,
+    )
+    .bind(digest)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(record.get::<i64, _>("count") > 0)
+}
+
+/// Checks if an image exists and is complete (has head_cid) in the database.
+///
+/// ## Arguments
+///
+/// * `pool` - The database connection pool
+/// * `reference` - The reference string of the image to check
+pub(crate) async fn image_complete(pool: &Pool<Sqlite>, reference: &str) -> MonocoreResult<bool> {
+    let record = sqlx::query(
+        r#"
+        SELECT COUNT(*) as count
+        FROM images
+        WHERE reference = ? AND head_cid IS NOT NULL
+        "#,
+    )
+    .bind(reference)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(record.get::<i64, _>("count") > 0)
 }
 
 //--------------------------------------------------------------------------------------------------
