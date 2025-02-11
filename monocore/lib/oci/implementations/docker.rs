@@ -284,7 +284,7 @@ impl OciRegistryPull for DockerRegistry {
             }
         };
 
-        let image_id = management::save_image(&self.oci_db, &reference, total_size).await?;
+        let image_id = management::save_or_update_image(&self.oci_db, &reference, total_size).await?;
 
         // Save index
         let platform = Platform::default();
@@ -334,10 +334,10 @@ impl OciRegistryPull for DockerRegistry {
             .iter()
             .zip(config.rootfs().diff_ids())
             .map(|(layer_desc, diff_id)| async {
-                // Check if layer already exists in database
-                if management::layer_exists(&self.oci_db, &layer_desc.digest().to_string()).await? {
+                // Check if layer already exists and is complete in database
+                if management::layer_complete(&self.oci_db, &layer_desc.digest().to_string()).await? {
                     tracing::info!(
-                        "Layer {} already exists, skipping download",
+                        "Layer {} already exists and is complete, skipping download",
                         layer_desc.digest()
                     );
                 } else {
@@ -347,7 +347,7 @@ impl OciRegistryPull for DockerRegistry {
                 }
 
                 // Save layer metadata to database
-                management::save_layer(
+                management::save_or_update_layer(
                     &self.oci_db,
                     manifest_id,
                     &layer_desc.media_type().to_string(),

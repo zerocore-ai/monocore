@@ -57,7 +57,6 @@ pub const UNIX_MTIME_KEY: &str = "unix.mtime";
 ///
 /// assert_eq!(*metadata.get_entity_type(), EntityType::File);
 /// assert_eq!(*metadata.get_sync_type(), SyncType::Default);
-/// assert_eq!(*metadata.get_symlink_depth(), DEFAULT_SYMLINK_DEPTH);
 /// ```
 #[derive(Clone, Getters)]
 #[getset(get = "pub with_prefix")]

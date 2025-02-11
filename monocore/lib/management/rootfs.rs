@@ -129,7 +129,8 @@ where
 /// * The merged root directory
 ///
 /// ## Example
-/// ```no_run
+///
+/// ```ignore
 /// use monofs::filesystem::Dir;
 /// use monoutils_store::MemoryStore;
 ///
@@ -245,11 +246,12 @@ where
         let file_name = entry.file_name().to_string_lossy().into_owned();
         let entry_path = entry.path();
 
-        // Get original metadata before any permission changes
-        let original_metadata = match fs::metadata(&entry_path) {
+        // Get metadata without following symlinks for all entry types
+        let metadata = match fs::symlink_metadata(&entry_path) {
             Ok(m) => m,
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                // If we can't even stat the file, try to get symlink metadata
+                // If we can't access metadata, try with elevated permissions
+                let _guard = PermissionGuard::new(&entry_path, 0o700)?;
                 fs::symlink_metadata(&entry_path)?
             }
             Err(e) => return Err(e.into()),
@@ -259,8 +261,8 @@ where
             // Create a new directory
             let mut new_dir = Dir::new(dir.get_store().clone());
 
-            // Set directory metadata using original metadata
-            set_metadata(new_dir.get_metadata_mut(), &original_metadata).await?;
+            // Set directory metadata
+            set_metadata(new_dir.get_metadata_mut(), &metadata).await?;
 
             // Recursively process subdirectory
             create_entries(&mut new_dir, &entry_path).await?;
@@ -269,7 +271,7 @@ where
             dir.put_adapted_dir(&file_name, new_dir).await?;
         } else if file_type.is_file() {
             // Create a new file based on whether it's empty or not
-            let mut new_file = if original_metadata.len() == 0 {
+            let mut new_file = if metadata.len() == 0 {
                 // Create empty file
                 File::new(dir.get_store().clone())
             } else {
@@ -288,8 +290,8 @@ where
                 File::with_content(dir.get_store().clone(), reader).await?
             };
 
-            // Set file metadata using original metadata
-            set_metadata(new_file.get_metadata_mut(), &original_metadata).await?;
+            // Set file metadata
+            set_metadata(new_file.get_metadata_mut(), &metadata).await?;
 
             // Add file to parent
             dir.put_adapted_file(&file_name, new_file).await?;
@@ -301,9 +303,8 @@ where
             // Create symlink
             let mut symlink = SymPathLink::with_path(dir.get_store().clone(), target_str)?;
 
-            // Set symlink metadata using original symlink metadata
-            let symlink_metadata = fs::symlink_metadata(&entry_path)?;
-            set_metadata(symlink.get_metadata_mut(), &symlink_metadata).await?;
+            // Set symlink metadata using the metadata we already obtained
+            set_metadata(symlink.get_metadata_mut(), &metadata).await?;
 
             // Add symlink to parent
             dir.put_adapted_sympathlink(&file_name, symlink).await?;

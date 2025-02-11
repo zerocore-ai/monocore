@@ -1,6 +1,6 @@
 use monofs::FsError;
 use monoutils::MonoutilsError;
-use monoutils_store::StoreError;
+use monoutils_store::{ipld, StoreError};
 use nix::errno::Errno;
 use sqlx::migrate::MigrateError;
 use std::{
@@ -281,6 +281,10 @@ pub enum MonocoreError {
     /// An error that occurred when a feature is not yet implemented
     #[error("feature not yet implemented: {0}")]
     NotImplemented(String),
+
+    /// An error that occurred when a CID error occurred
+    #[error("CID error: {0}")]
+    CidError(#[from] ipld::cid::Error),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

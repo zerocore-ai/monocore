@@ -15,7 +15,10 @@ pub const MONOCORE_ENV_DIR: &str = ".menv";
 pub const MONOCORE_HOME_DIR: &str = ".monocore";
 
 /// The directory where project root filesystems are stored
-pub const ROOTS_SUBDIR: &str = "roots";
+pub const ROOTS_SUBDIR: &str = "rootfs";
+
+/// The directory where base store blocks are stored
+pub const BLOCKS_SUBDIR: &str = "blocks";
 
 /// The directory where project logs are stored
 pub const LOG_SUBDIR: &str = "log";
