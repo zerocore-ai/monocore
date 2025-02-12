@@ -88,7 +88,7 @@ impl ProcessMonitor for NfsServerMonitor {
         mut stderr: ChildStderr,
     ) -> MonoutilsResult<()> {
         // Setup child's log
-        let log_name = self.generate_log_name(pid, name);
+        let log_name = self.generate_log_name(pid, &name);
         let log_path = self.log_dir.join(&log_name);
 
         let nfs_server_log = RotatingLog::new(&log_path).await?;
@@ -100,10 +100,11 @@ impl ProcessMonitor for NfsServerMonitor {
         // Insert filesystem entry into fs_db
         sqlx::query(
             r#"
-            INSERT INTO filesystems (mount_dir, supervisor_pid, nfsserver_pid)
-            VALUES (?, ?, ?)
+            INSERT INTO filesystems (name, mount_dir, supervisor_pid, nfsserver_pid)
+            VALUES (?, ?, ?, ?)
             "#,
         )
+        .bind(name)
         .bind(self.mount_dir.to_string_lossy().to_string())
         .bind(self.supervisor_pid)
         .bind(pid)
