@@ -14,6 +14,9 @@ use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 use sqlx::Row;
 use std::path::{Path, PathBuf};
+use tokio::net::TcpStream;
+use tokio::time;
+use tokio::time::Instant;
 use tokio::{fs, process::Command};
 
 //--------------------------------------------------------------------------------------------------
@@ -98,7 +101,7 @@ pub async fn init_mfs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
         .arg(port.to_string())
         .arg("--store-dir")
         .arg(&blocks_dir)
-        .arg("--db-path")
+        .arg("--fs-db-path")
         .arg(&fs_db_path)
         .arg("--mount-dir")
         .arg(&mount_dir)
@@ -295,6 +298,10 @@ async fn mount_fs(mount_dir: impl AsRef<Path>, host: &str, port: u32) -> FsResul
     }
     tracing::info!("Mounting NFS share at {}", mount_dir.display());
 
+    // Wait for the port to be ready. If we don't do this, the mount command will retry every
+    // 5+ seconds on macos.
+    wait_for_port(host, port).await;
+
     // Construct the mount command
     // Using standard NFS mount options:
     // - nolocks: disable NFS file locking
@@ -303,6 +310,7 @@ async fn mount_fs(mount_dir: impl AsRef<Path>, host: &str, port: u32) -> FsResul
     // - soft: return errors rather than hang on timeouts
     // - mountport=port: use same port for mount protocol
     let source = format!("{}:/", host);
+    let start = Instant::now();
     let status = Command::new("mount")
         .arg("-t")
         .arg("nfs")
@@ -316,6 +324,8 @@ async fn mount_fs(mount_dir: impl AsRef<Path>, host: &str, port: u32) -> FsResul
         .status()
         .await?;
 
+    tracing::info!("Mount command took {:?} to complete", start.elapsed());
+
     if !status.success() {
         return Err(FsError::MountFailed(format!(
             "Mount command exited with status: {}",
@@ -325,4 +335,35 @@ async fn mount_fs(mount_dir: impl AsRef<Path>, host: &str, port: u32) -> FsResul
 
     tracing::info!("Successfully mounted NFS share at {}", mount_dir.display());
     Ok(())
+}
+
+//--------------------------------------------------------------------------------------------------
+// Functions: Helpers
+//--------------------------------------------------------------------------------------------------
+
+/// Wait for the given host and port to become available.
+///
+/// This function tries to open a TCP connection to the address. If it fails,
+/// it waits 50ms and tries again.
+async fn wait_for_port(host: &str, port: u32) {
+    let addr = format!("{}:{}", host, port);
+    loop {
+        match TcpStream::connect(&addr).await {
+            Ok(_) => {
+                tracing::info!("Port {} on {} is ready!", port, host);
+                break;
+            }
+            Err(e) => {
+                let retry_delay = 50;
+                tracing::info!(
+                    "Port {} on {} is not ready yet (error: {}), retrying in {}ms...",
+                    port,
+                    host,
+                    e,
+                    retry_delay
+                );
+                time::sleep(time::Duration::from_millis(retry_delay)).await;
+            }
+        }
+    }
 }
