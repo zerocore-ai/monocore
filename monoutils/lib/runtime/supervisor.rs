@@ -1,12 +1,12 @@
 use nix::unistd::Pid;
-use std::path::PathBuf;
-use std::process::Stdio;
-use tokio::fs::create_dir_all;
-use tokio::process::Command;
-use tokio::signal::unix::{signal, SignalKind};
+use std::{path::PathBuf, process::Stdio};
+use tokio::{
+    fs::create_dir_all,
+    process::Command,
+    signal::unix::{signal, SignalKind},
+};
 
-use crate::path::SUPERVISOR_LOG_FILENAME;
-use crate::{MonoutilsResult, ProcessMonitor, RotatingLog};
+use crate::{path::SUPERVISOR_LOG_FILENAME, MonoutilsResult, ProcessMonitor, RotatingLog};
 
 //--------------------------------------------------------------------------------------------------
 // Types

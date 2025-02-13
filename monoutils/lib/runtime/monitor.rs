@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-use tokio::process::ChildStderr;
-use tokio::process::ChildStdout;
+use tokio::process::{ChildStderr, ChildStdout};
 
 use crate::MonoutilsResult;
 

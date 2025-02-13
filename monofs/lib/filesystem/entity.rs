@@ -1,9 +1,12 @@
 use std::fmt::{self, Debug};
 
-use monoutils_store::{ipld::cid::Cid, IpldStore, Storable, StoreError, StoreResult};
+use ipldstore::{ipld::cid::Cid, IpldStore, Storable, StoreError, StoreResult};
 use serde::Deserialize;
 
-use crate::{filesystem::{self, Dir, File, Metadata, SymCidLink, SymPathLink}, FsError, FsResult};
+use crate::{
+    filesystem::{self, Dir, File, Metadata, SymCidLink, SymPathLink},
+    FsError, FsResult,
+};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -163,7 +166,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Entity, File};
-    /// use monoutils_store::{MemoryStore, Storable};
+    /// use ipldstore::{MemoryStore, Storable};
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {

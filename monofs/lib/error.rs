@@ -1,8 +1,11 @@
 use std::{
-    convert::Infallible, error::Error, fmt::{self, Display}, io
+    convert::Infallible,
+    error::Error,
+    fmt::{self, Display},
+    io,
 };
 
-use monoutils_store::ipld::cid::Cid;
+use ipldstore::ipld::cid::Cid;
 use thiserror::Error;
 
 use crate::filesystem::Utf8UnixPathSegment;
@@ -51,7 +54,7 @@ pub enum FsError {
     // Did(#[from] monoutils_did_wk::DidError),
     /// IPLD Store error.
     #[error("IPLD Store error: {0}")]
-    IpldStore(#[from] monoutils_store::StoreError),
+    IpldStore(#[from] ipldstore::StoreError),
 
     /// Invalid deserialized OpenFlag value
     #[error("Invalid OpenFlag value: {0}")]
@@ -87,7 +90,7 @@ pub enum FsError {
 
     /// CID error.
     #[error("CID error: {0}")]
-    CidError(#[from] monoutils_store::ipld::cid::Error),
+    CidError(#[from] ipldstore::ipld::cid::Error),
 
     /// Path has root.
     #[error("Path has root: {0}")]

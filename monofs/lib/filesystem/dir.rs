@@ -10,9 +10,7 @@ use std::{
 };
 
 use chrono::Utc;
-use monoutils_store::{
-    ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
-};
+use ipldstore::{ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -118,7 +116,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::Dir;
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// let dir = Dir::new(MemoryStore::default());
     /// assert!(dir.is_empty());
@@ -143,7 +141,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::Dir;
-    /// use monoutils_store::{MemoryStore, Storable};
+    /// use ipldstore::{MemoryStore, Storable};
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -170,7 +168,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, File};
-    /// use monoutils_store::{MemoryStore, Storable};
+    /// use ipldstore::{MemoryStore, Storable};
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -202,7 +200,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, File};
-    /// use monoutils_store::{MemoryStore, Storable};
+    /// use ipldstore::{MemoryStore, Storable};
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -258,7 +256,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, File};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -286,7 +284,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, File};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -315,7 +313,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, File};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -341,7 +339,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, File};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -367,7 +365,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, File};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -403,7 +401,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, File};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -431,7 +429,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::Dir;
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// let dir = Dir::new(MemoryStore::default());
     /// assert!(dir.is_empty());
@@ -447,7 +445,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, File};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -472,7 +470,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, File};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -500,7 +498,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, File};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -540,7 +538,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, File};
-    /// use monoutils_store::{MemoryStore, Storable};
+    /// use ipldstore::{MemoryStore, Storable};
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -978,7 +976,7 @@ impl IpldReferences for DirSerializable {
 #[cfg(test)]
 mod tests {
     use anyhow::Ok;
-    use monoutils_store::MemoryStore;
+    use ipldstore::MemoryStore;
 
     use crate::filesystem::SyncType;
 

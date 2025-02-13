@@ -1,7 +1,9 @@
 //! `monoutils::error` is a module containing error utilities for the monocore project.
 
-use std::error::Error;
-use std::fmt::{self, Display};
+use std::{
+    error::Error,
+    fmt::{self, Display},
+};
 
 use thiserror::Error;
 

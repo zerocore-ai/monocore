@@ -1,13 +1,12 @@
-use crate::config::DEFAULT_OCI_REFERENCE_REPO_NAMESPACE;
-use crate::config::DEFAULT_OCI_REFERENCE_TAG;
-use crate::error::MonocoreError;
-use crate::utils::env::get_oci_registry;
-use getset::Getters;
-use getset::Setters;
+use crate::{
+    config::{DEFAULT_OCI_REFERENCE_REPO_NAMESPACE, DEFAULT_OCI_REFERENCE_TAG},
+    error::MonocoreError,
+    utils::env::get_oci_registry,
+};
+use getset::{Getters, Setters};
 use oci_spec::image::Digest;
 use regex::Regex;
-use std::fmt;
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -269,8 +268,10 @@ fn extract_repository_and_tag(path: &str) -> Result<(String, String), MonocoreEr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{DEFAULT_OCI_REFERENCE_REPO_NAMESPACE, DEFAULT_OCI_REFERENCE_TAG};
-    use crate::utils::env::get_oci_registry;
+    use crate::{
+        config::{DEFAULT_OCI_REFERENCE_REPO_NAMESPACE, DEFAULT_OCI_REFERENCE_TAG},
+        utils::env::get_oci_registry,
+    };
 
     #[test]
     fn test_reference_valid_reference_with_registry_and_tag() {

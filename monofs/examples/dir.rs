@@ -22,8 +22,8 @@
 //! cargo run --example dir
 //! ```
 
+use ipldstore::MemoryStore;
 use monofs::filesystem::{Dir, File};
-use monoutils_store::MemoryStore;
 
 //--------------------------------------------------------------------------------------------------
 // Functions: main

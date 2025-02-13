@@ -7,8 +7,8 @@ use std::{
 use bytes::Bytes;
 use chrono::Utc;
 use futures::{future::BoxFuture, FutureExt};
+use ipldstore::{ipld::cid::Cid, IpldStore, IpldStoreSeekable};
 use monoutils::{EmptySeekableReader, SeekableReader};
-use monoutils_store::{ipld::cid::Cid, IpldStore, IpldStoreSeekable};
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 
 use crate::filesystem::File;
@@ -191,7 +191,7 @@ where
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use monoutils_store::MemoryStore;
+    use ipldstore::MemoryStore;
     use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 
     use crate::filesystem::File;

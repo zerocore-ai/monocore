@@ -22,7 +22,7 @@
 //! ```
 
 use monofs::filesystem::File;
-use monoutils_store::{MemoryStore, Storable};
+use ipldstore::{MemoryStore, Storable};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
 //--------------------------------------------------------------------------------------------------

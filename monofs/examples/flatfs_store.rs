@@ -21,9 +21,8 @@
 
 use anyhow::Result;
 use clap::Parser;
+use ipldstore::{ipld::cid::Cid, IpldReferences, IpldStore};
 use monofs::store::FlatFsStore;
-use monoutils_store::ipld::cid::Cid;
-use monoutils_store::{IpldReferences, IpldStore};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::{collections::BTreeMap, path::PathBuf, sync::LazyLock};

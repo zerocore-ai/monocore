@@ -21,12 +21,12 @@
 
 use anyhow::Result;
 use clap::Parser;
+use ipldstore::{ipld::cid::Cid, IpldStore, Storable};
 use monofs::{
     filesystem::{Dir, Entity, File},
     store::FlatFsStore,
     utils,
 };
-use monoutils_store::{ipld::cid::Cid, IpldStore, Storable};
 use tokio::io::AsyncWriteExt;
 
 //--------------------------------------------------------------------------------------------------

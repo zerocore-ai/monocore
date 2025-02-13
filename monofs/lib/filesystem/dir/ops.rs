@@ -1,4 +1,4 @@
-use monoutils_store::{ipld::cid::Cid, IpldStore};
+use ipldstore::{ipld::cid::Cid, IpldStore};
 use typed_path::Utf8UnixPath;
 
 use crate::{
@@ -27,7 +27,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, Entity};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
@@ -70,7 +70,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, Entity};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
@@ -119,7 +119,7 @@ where
     /// Creating nested directories:
     /// ```
     /// use monofs::filesystem::{Dir, Entity};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
@@ -135,7 +135,7 @@ where
     /// Creating a file in a nested path:
     /// ```
     /// use monofs::filesystem::{Dir, Entity};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
@@ -150,7 +150,7 @@ where
     /// Finding existing entities:
     /// ```
     /// use monofs::filesystem::{Dir, Entity};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
@@ -324,7 +324,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::Dir;
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
@@ -354,7 +354,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, Entity};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
@@ -429,7 +429,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, Entity};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
@@ -476,7 +476,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{Dir, Entity};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
@@ -579,7 +579,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use monoutils_store::{ipld::cid::Cid, MemoryStore, Storable};
+    use ipldstore::{ipld::cid::Cid, MemoryStore, Storable};
     use tokio::io::AsyncReadExt;
 
     use crate::filesystem::{symcidlink::SymCidLink, sympathlink::SymPathLink, Dir, Entity, File};

@@ -1,11 +1,8 @@
-mod fixed;
-mod fastcdc;
-mod gearcdc;
+//! `did-wk` is a library for working with DID-Web-Key and DID-Key decentralized identifiers (DIDs) methods.
+
+#![warn(missing_docs)]
+#![allow(clippy::module_inception)]
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
-
-pub use fixed::*;
-pub use fastcdc::*;
-pub use gearcdc::*;

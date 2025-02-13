@@ -30,10 +30,7 @@ pub struct SandboxesRegistry {
 
 impl SandboxesRegistry {
     /// Creates a new Sandboxes Registry client with the specified store directory and database.
-    pub fn new(
-        store_dir: PathBuf,
-        monoimage_db: Pool<Sqlite>,
-    ) -> Self {
+    pub fn new(store_dir: PathBuf, monoimage_db: Pool<Sqlite>) -> Self {
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
         let client_builder = ClientBuilder::new(Client::new());
         let client = client_builder

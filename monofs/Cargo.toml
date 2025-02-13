@@ -20,7 +20,7 @@ name = "mfsrun"
 path = "bin/mfsrun.rs"
 
 [dependencies]
-monoutils-store.workspace = true
+ipldstore.workspace = true
 serde.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 getset.workspace = true

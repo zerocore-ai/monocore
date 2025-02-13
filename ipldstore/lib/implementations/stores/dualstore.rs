@@ -25,7 +25,7 @@ use crate::{Codec, IpldReferences, IpldStore, RawStore, StoreError, StoreResult}
 /// ## Examples
 ///
 /// ```
-/// use monoutils_store::{MemoryStore, DualStore, DualStoreConfig, Choice};
+/// use ipldstore::{MemoryStore, DualStore, DualStoreConfig, Choice};
 ///
 /// // Create two stores
 /// let store_a = MemoryStore::default();
@@ -64,7 +64,7 @@ where
 /// ## Examples
 ///
 /// ```
-/// use monoutils_store::{DualStoreConfig, Choice};
+/// use ipldstore::{StoreConfig, DualStoreConfig, Choice};
 ///
 /// // Configure to read from store A and write to store B
 /// let config = DualStoreConfig {
@@ -102,7 +102,7 @@ pub enum Choice {
 /// ## Examples
 ///
 /// ```
-/// use monoutils_store::{DualStoreConfig, Choice};
+/// use ipldstore::{StoreConfig, DualStoreConfig, Choice};
 ///
 /// // Default configuration - use store A for both reads and writes
 /// let default_config = DualStoreConfig::default();

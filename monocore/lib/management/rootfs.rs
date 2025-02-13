@@ -1,11 +1,11 @@
 use async_recursion::async_recursion;
 use chrono::{TimeZone, Utc};
+use ipldstore::ipld::ipld::Ipld;
+use ipldstore::{ipld::cid::Cid, IpldStore};
 use monofs::filesystem::{
     Dir, Entity, File, Metadata, SymPathLink, UNIX_ATIME_KEY, UNIX_GID_KEY, UNIX_MODE_KEY,
     UNIX_MTIME_KEY, UNIX_UID_KEY,
 };
-use monoutils_store::ipld::ipld::Ipld;
-use monoutils_store::{ipld::cid::Cid, IpldStore};
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
@@ -132,7 +132,7 @@ where
 ///
 /// ```ignore
 /// use monofs::filesystem::Dir;
-/// use monoutils_store::MemoryStore;
+/// use ipldstore::MemoryStore;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let store = MemoryStore::default();
@@ -363,7 +363,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use monoutils_store::MemoryStore;
+    use ipldstore::MemoryStore;
 
     use helper::*;
 
@@ -526,7 +526,7 @@ mod tests {
 
 #[cfg(test)]
 mod helper {
-    use monoutils_store::IpldStoreSeekable;
+    use ipldstore::IpldStoreSeekable;
     use std::{ops::Deref, os::unix::fs::PermissionsExt};
     use tokio::io::AsyncReadExt;
 

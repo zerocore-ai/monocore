@@ -2,7 +2,7 @@ use std::{collections::HashSet, pin::Pin};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use monoutils_store::{
+use ipldstore::{
     ipld::{cid::Cid, ipld::Ipld},
     Codec, DualStore, DualStoreConfig, IpldReferences, IpldStore, MemoryStore, RawStore,
     StoreError, StoreResult,
@@ -235,7 +235,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use monoutils_store::MemoryStore;
+    use ipldstore::MemoryStore;
 
     use super::helper::TestNode;
 

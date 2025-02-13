@@ -7,13 +7,13 @@ use std::{
 
 use async_recursion::async_recursion;
 use chrono::Utc;
-use monoutils_store::{
-    ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
-};
+use ipldstore::{ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::DEFAULT_SYMLINK_DEPTH, filesystem::{CidLink, Dir, EntityCidLink, File, Metadata}, FsError, FsResult
+    config::DEFAULT_SYMLINK_DEPTH,
+    filesystem::{CidLink, Dir, EntityCidLink, File, Metadata},
+    FsError, FsResult,
 };
 
 use super::{entity::Entity, kind::EntityType, MetadataSerializable};
@@ -132,8 +132,8 @@ where
     ///
     /// ```
     /// use monofs::filesystem::SymCidLink;
-    /// use monoutils_store::{MemoryStore, Storable};
-    /// use monoutils_store::ipld::cid::Cid;
+    /// use ipldstore::{MemoryStore, Storable};
+    /// use ipldstore::ipld::cid::Cid;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -165,8 +165,8 @@ where
     ///
     /// ```
     /// use monofs::filesystem::SymCidLink;
-    /// use monoutils_store::{MemoryStore, Storable};
-    /// use monoutils_store::ipld::cid::Cid;
+    /// use ipldstore::{MemoryStore, Storable};
+    /// use ipldstore::ipld::cid::Cid;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -226,8 +226,8 @@ where
     ///
     /// ```
     /// use monofs::filesystem::SymCidLink;
-    /// use monoutils_store::{MemoryStore, Storable};
-    /// use monoutils_store::ipld::cid::Cid;
+    /// use ipldstore::{MemoryStore, Storable};
+    /// use ipldstore::ipld::cid::Cid;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -346,8 +346,8 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{SymCidLink, Dir, File, Entity, CidFollowResult};
-    /// use monoutils_store::{MemoryStore, Storable};
-    /// use monoutils_store::ipld::cid::Cid;
+    /// use ipldstore::{MemoryStore, Storable};
+    /// use ipldstore::ipld::cid::Cid;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -429,8 +429,8 @@ where
     ///     filesystem::{SymCidLink, Dir, File, Entity},
     ///     FsError,
     /// };
-    /// use monoutils_store::{MemoryStore, Storable};
-    /// use monoutils_store::ipld::cid::Cid;
+    /// use ipldstore::{MemoryStore, Storable};
+    /// use ipldstore::ipld::cid::Cid;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
@@ -576,7 +576,7 @@ mod tests {
         config::DEFAULT_SYMLINK_DEPTH,
         filesystem::{Dir, Entity, File},
     };
-    use monoutils_store::MemoryStore;
+    use ipldstore::MemoryStore;
 
     mod fixtures {
         use super::*;
