@@ -439,8 +439,7 @@ where
 mod tests {
     use crate::DEFAULT_MAX_CHUNK_SIZE;
 
-    use super::helper::TestNode;
-    use super::*;
+    use super::{helper::TestNode, *};
     use multihash_codetable::{Code, MultihashDigest};
     use tokio::io::AsyncReadExt;
 

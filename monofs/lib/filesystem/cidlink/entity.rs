@@ -1,8 +1,11 @@
-use monoutils_store::IpldStore;
+use ipldstore::IpldStore;
 
-use crate::{filesystem::{
-    dir::Dir, entity::Entity, file::File, symcidlink::SymCidLink, CidLink, SymPathLink,
-}, FsResult};
+use crate::{
+    filesystem::{
+        dir::Dir, entity::Entity, file::File, symcidlink::SymCidLink, CidLink, SymPathLink,
+    },
+    FsResult,
+};
 
 //--------------------------------------------------------------------------------------------------
 // Types

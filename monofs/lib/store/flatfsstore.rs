@@ -1,22 +1,22 @@
-use std::sync::Arc;
-use std::{collections::HashSet, path::PathBuf, pin::Pin};
+use std::{collections::HashSet, path::PathBuf, pin::Pin, sync::Arc};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
 use getset::Getters;
-use monoutils::SeekableReader;
-use monoutils_store::ipld::codec::Links;
-use monoutils_store::{ipld::cid::Cid, FastCDCChunker, FixedSizeChunker};
-use monoutils_store::{
-    Chunker, Codec, FlatLayout, IpldReferences, IpldStore, IpldStoreSeekable, Layout,
-    LayoutSeekable, RawStore, StoreError, StoreResult, DEFAULT_MAX_NODE_BLOCK_SIZE,
+use ipldstore::{
+    ipld::{cid::Cid, codec::Links},
+    Chunker, Codec, FastCDCChunker, FixedSizeChunker, FlatLayout, IpldReferences, IpldStore,
+    IpldStoreSeekable, Layout, LayoutSeekable, RawStore, StoreError, StoreResult,
+    DEFAULT_MAX_NODE_BLOCK_SIZE,
 };
+use monoutils::SeekableReader;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_ipld_dagcbor::codec::DagCborCodec;
-use tokio::fs::{self, File};
-use tokio::io::AsyncRead;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
+use tokio::{
+    fs::{self, File},
+    io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom},
+};
 use typed_builder::TypedBuilder;
 
 //--------------------------------------------------------------------------------------------------
@@ -340,7 +340,7 @@ where
         }
 
         // Create CID and store the block
-        let cid = monoutils_store::generate_cid(Codec::DagCbor, &bytes);
+        let cid = ipldstore::generate_cid(Codec::DagCbor, &bytes);
         let block_path = self.get_block_path(&cid);
 
         if !block_path.exists() {
@@ -615,7 +615,7 @@ where
             }
         }
 
-        let cid = monoutils_store::generate_cid(Codec::Raw, bytes.as_ref());
+        let cid = ipldstore::generate_cid(Codec::Raw, bytes.as_ref());
         let block_path = self.get_block_path(&cid);
 
         if !block_path.exists() {
@@ -667,13 +667,17 @@ where
 
 #[cfg(test)]
 mod tests {
-    use monoutils_store::codetable::{Code, MultihashDigest};
-    use monoutils_store::{DEFAULT_MAX_CHUNK_SIZE, DEFAULT_MAX_NODE_BLOCK_SIZE};
+    use ipldstore::{
+        codetable::{Code, MultihashDigest},
+        DEFAULT_MAX_CHUNK_SIZE, DEFAULT_MAX_NODE_BLOCK_SIZE,
+    };
     use tempfile::TempDir;
     use tokio::fs;
 
-    use super::fixtures::{self, TestNode};
-    use super::*;
+    use super::{
+        fixtures::{self, TestNode},
+        *,
+    };
 
     #[tokio::test]
     async fn test_flatfsstore_raw_block() -> anyhow::Result<()> {

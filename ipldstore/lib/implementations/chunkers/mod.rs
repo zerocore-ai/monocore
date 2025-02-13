@@ -1,8 +1,11 @@
-//! `monoutils-cryptdag` is a key generation library for data structures that can be represented as trees or DAGs.
-
-#![warn(missing_docs)]
-#![allow(clippy::module_inception)]
+mod fastcdc;
+mod fixed;
+mod gearcdc;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
+
+pub use fastcdc::*;
+pub use fixed::*;
+pub use gearcdc::*;

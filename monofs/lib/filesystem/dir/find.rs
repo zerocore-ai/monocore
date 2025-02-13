@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use monoutils_store::IpldStore;
+use ipldstore::IpldStore;
 use typed_path::{Utf8UnixComponent, Utf8UnixPath};
 
 use crate::{filesystem::entity::Entity, FsError, FsResult};
@@ -213,14 +213,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use monoutils_store::MemoryStore;
+    use ipldstore::MemoryStore;
 
     use crate::filesystem::File;
 
     use super::*;
 
     mod fixtures {
-        use monoutils_store::Storable;
+        use ipldstore::Storable;
 
         use super::*;
 

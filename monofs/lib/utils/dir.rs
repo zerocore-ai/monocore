@@ -4,7 +4,7 @@
 //! including functions for displaying directory structures in a tree-like format.
 
 use async_recursion::async_recursion;
-use monoutils_store::IpldStore;
+use ipldstore::IpldStore;
 
 use crate::{filesystem::Dir, FsResult};
 
@@ -44,7 +44,7 @@ const LEAF: &str = "└──";
 ///
 /// ```
 /// use monofs::{filesystem::Dir, utils};
-/// use monoutils_store::MemoryStore;
+/// use ipldstore::MemoryStore;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
@@ -163,7 +163,7 @@ fn build_prefix(parts: &[bool]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use monoutils_store::MemoryStore;
+    use ipldstore::MemoryStore;
     use tokio::io::AsyncWriteExt;
 
     use crate::filesystem::File;

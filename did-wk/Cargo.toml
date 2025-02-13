@@ -1,7 +1,7 @@
 [package]
-name = "monoutils-did"
+name = "did-wk"
 version = "0.1.0"
-description = "`monoutils-did` is a library for working with DID-Web-Key and DID-Key decentralized identifiers (DIDs) methods."
+description = "`did-wk` is a library for working with DID-Web-Key and DID-Key decentralized identifiers (DIDs) methods."
 license.workspace = true
 repository.workspace = true
 authors.workspace = true

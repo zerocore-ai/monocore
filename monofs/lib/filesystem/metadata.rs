@@ -1,11 +1,13 @@
-use std::collections::BTreeMap;
-use std::fmt::{self, Debug};
-use std::iter;
-use std::sync::Arc;
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Debug},
+    iter,
+    sync::Arc,
+};
 
 use chrono::{DateTime, Utc};
 use getset::Getters;
-use monoutils_store::{
+use ipldstore::{
     ipld::{cid::Cid, ipld::Ipld},
     IpldReferences, IpldStore, Storable, StoreError, StoreResult,
 };
@@ -50,7 +52,7 @@ pub const UNIX_MTIME_KEY: &str = "unix.mtime";
 /// ```
 /// use monofs::filesystem::{EntityType, Metadata, SyncType};
 /// use monofs::config::DEFAULT_SYMLINK_DEPTH;
-/// use monoutils_store::MemoryStore;
+/// use ipldstore::MemoryStore;
 ///
 /// let store = MemoryStore::default();
 /// let metadata = Metadata::new(EntityType::File, store);
@@ -114,8 +116,8 @@ pub enum SyncType {
 ///
 /// ```
 /// use monofs::filesystem::{EntityType, Metadata};
-/// use monoutils_store::MemoryStore;
-/// use monoutils_store::ipld::ipld::Ipld;
+/// use ipldstore::MemoryStore;
+/// use ipldstore::ipld::ipld::Ipld;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -224,8 +226,8 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{EntityType, Metadata};
-    /// use monoutils_store::MemoryStore;
-    /// use monoutils_store::ipld::ipld::Ipld;
+    /// use ipldstore::MemoryStore;
+    /// use ipldstore::ipld::ipld::Ipld;
     /// use std::sync::Arc;
     ///
     /// # #[tokio::main]
@@ -267,8 +269,8 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{EntityType, Metadata};
-    /// use monoutils_store::MemoryStore;
-    /// use monoutils_store::ipld::ipld::Ipld;
+    /// use ipldstore::MemoryStore;
+    /// use ipldstore::ipld::ipld::Ipld;
     /// use std::sync::Arc;
     ///
     /// # #[tokio::main]
@@ -441,7 +443,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use monoutils_store::MemoryStore;
+    use ipldstore::MemoryStore;
 
     use super::*;
 

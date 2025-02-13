@@ -842,6 +842,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "did-wk"
+version = "0.1.0"
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1540,6 +1544,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "ipldstore"
+version = "0.2.1"
+dependencies = [
+ "aliasable",
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "bytes",
+ "futures",
+ "getset",
+ "hex",
+ "ipld-core",
+ "monoutils",
+ "multihash",
+ "multihash-codetable",
+ "pretty-error-debug",
+ "rand 0.9.0",
+ "serde",
+ "serde_ipld_dagcbor",
+ "thiserror 2.0.6",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "typed-builder",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1758,11 +1789,11 @@ dependencies = [
  "futures",
  "getset",
  "hex",
+ "ipldstore",
  "ipnetwork",
  "libc",
  "monofs",
  "monoutils",
- "monoutils-store",
  "nix",
  "oci-spec",
  "pin-project",
@@ -1818,8 +1849,8 @@ dependencies = [
  "getset",
  "hex",
  "intaglio",
+ "ipldstore",
  "monoutils",
- "monoutils-store",
  "nfsserve",
  "nix",
  "os_pipe",
@@ -1862,41 +1893,6 @@ dependencies = [
 
 [[package]]
 name = "monoutils-cryptdag"
-version = "0.1.0"
-
-[[package]]
-name = "monoutils-did"
-version = "0.1.0"
-
-[[package]]
-name = "monoutils-store"
-version = "0.2.1"
-dependencies = [
- "aliasable",
- "anyhow",
- "async-stream",
- "async-trait",
- "bytes",
- "futures",
- "getset",
- "hex",
- "ipld-core",
- "monoutils",
- "multihash",
- "multihash-codetable",
- "pretty-error-debug",
- "rand 0.9.0",
- "serde",
- "serde_ipld_dagcbor",
- "thiserror 2.0.6",
- "tokio",
- "tokio-util",
- "tracing",
- "typed-builder",
-]
-
-[[package]]
-name = "monoutils-ucan"
 version = "0.1.0"
 
 [[package]]

@@ -2,7 +2,7 @@ use std::{collections::HashSet, path::PathBuf, pin::Pin};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use monoutils_store::{
+use ipldstore::{
     ipld::cid::Cid, Codec, DualStore, DualStoreConfig, IpldReferences, IpldStore, RawStore,
     StoreResult,
 };
@@ -29,7 +29,7 @@ use super::FlatFsStore;
 /// 2. If not found, falls back to checking the base layer
 /// 3. Returns the data from whichever layer it was found in first
 ///
-    /// ## Write Behavior
+/// ## Write Behavior
 /// - All writes are directed exclusively to the write layer
 /// - The base layer remains completely immutable
 /// - Reference counting is only enabled in the write layer

@@ -372,8 +372,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_gearcdc_chunk_distribution() -> anyhow::Result<()> {
-        use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
+        use rand::{rngs::StdRng, Rng, SeedableRng};
 
         // Test both random and repeating data to verify our high-bit feedback mechanism
         let test_cases = vec![

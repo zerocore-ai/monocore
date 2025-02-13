@@ -8,7 +8,7 @@ use std::{
 
 use async_once_cell::OnceCell;
 
-use monoutils_store::{ipld::cid::Cid, IpldStore, Storable};
+use ipldstore::{ipld::cid::Cid, IpldStore, Storable};
 
 use crate::{FsError, FsResult};
 

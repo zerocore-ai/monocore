@@ -7,8 +7,8 @@ pub mod config;
 pub mod error;
 pub mod log;
 pub mod path;
-pub mod seekable;
 pub mod runtime;
+pub mod seekable;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -18,5 +18,5 @@ pub use config::*;
 pub use error::*;
 pub use log::*;
 pub use path::*;
-pub use seekable::*;
 pub use runtime::*;
+pub use seekable::*;

@@ -7,13 +7,14 @@ use std::{
 };
 
 use chrono::Utc;
-use monoutils_store::{
-    ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
-};
+use ipldstore::{ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult};
 use serde::{Deserialize, Serialize};
 use typed_path::Utf8UnixPathBuf;
 
-use crate::{filesystem::{Metadata, MetadataSerializable}, FsResult};
+use crate::{
+    filesystem::{Metadata, MetadataSerializable},
+    FsResult,
+};
 
 use super::kind::EntityType;
 
@@ -144,7 +145,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::SymPathLink;
-    /// use monoutils_store::{MemoryStore, Storable};
+    /// use ipldstore::{MemoryStore, Storable};
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -266,7 +267,7 @@ impl IpldReferences for SymPathLinkSerializable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use monoutils_store::MemoryStore;
+    use ipldstore::MemoryStore;
 
     #[tokio::test]
     async fn test_sympathlink_creation() -> FsResult<()> {

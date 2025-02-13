@@ -80,7 +80,6 @@ impl Chunker for FixedSizeChunker {
         Ok(Box::pin(s))
     }
 
-
     async fn chunk_max_size(&self) -> StoreResult<Option<u64>> {
         Ok(Some(self.chunk_size))
     }

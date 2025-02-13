@@ -581,8 +581,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fastcdc_chunk_distribution() -> anyhow::Result<()> {
-        use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
+        use rand::{rngs::StdRng, Rng, SeedableRng};
 
         // Test both random and repeating data to verify our normalization works
         let test_cases = vec![

@@ -1,27 +1,34 @@
-use std::collections::HashMap;
-use std::str;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    str,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use getset::Getters;
 use intaglio::{Symbol, SymbolTable};
-use monoutils_store::ipld::ipld::Ipld;
-use monoutils_store::{IpldStore, IpldStoreSeekable, MemoryStore, Storable};
-use nfsserve::nfs::{
-    fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, nfstime3, sattr3, set_atime, set_gid3,
-    set_mode3, set_mtime, set_size3, set_uid3, specdata3,
+use ipldstore::{ipld::ipld::Ipld, IpldStore, IpldStoreSeekable, MemoryStore, Storable};
+use nfsserve::{
+    nfs::{
+        fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, nfstime3, sattr3, set_atime,
+        set_gid3, set_mode3, set_mtime, set_size3, set_uid3, specdata3,
+    },
+    vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities},
 };
-use nfsserve::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
 use tokio::sync::Mutex;
 
-use crate::filesystem::{
-    Dir, Entity, EntityType, File, Metadata, SymPathLink, UNIX_ATIME_KEY, UNIX_GID_KEY,
-    UNIX_MODE_KEY, UNIX_UID_KEY,
+use crate::{
+    filesystem::{
+        Dir, Entity, EntityType, File, Metadata, SymPathLink, UNIX_ATIME_KEY, UNIX_GID_KEY,
+        UNIX_MODE_KEY, UNIX_UID_KEY,
+    },
+    store::FlatFsStore,
+    FsError,
 };
-use crate::store::FlatFsStore;
-use crate::FsError;
 
 //--------------------------------------------------------------------------------------------------
 // Constants
@@ -80,7 +87,7 @@ pub type DiskMonofsNFS = MonofsNFS<FlatFsStore>;
 ///
 /// ```no_run
 /// use monofs::server::{MemoryMonofsNFS, MonofsNFS};
-/// use monoutils_store::MemoryStore;
+/// use ipldstore::MemoryStore;
 ///
 /// // Create an in-memory server for testing
 /// let memory_server = MemoryMonofsNFS::new(MemoryStore::default());
@@ -113,7 +120,7 @@ where
     /// ## Example
     /// ```rust
     /// use monofs::server::MemoryMonofsNFS;
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// let server = MemoryMonofsNFS::new(MemoryStore::default());
     /// ```

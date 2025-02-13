@@ -53,7 +53,7 @@ TODO: Demo of running multiple servers on different paths syncing up with each o
 
 ```rust
 use monofs::filesystem::File;
-use monoutils_store::MemoryStore;
+use ipldstore::MemoryStore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::main]
@@ -90,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
 
 ```rust
 use monofs::filesystem::{Dir, FsResult};
-use monoutils_store::MemoryStore;
+use ipldstore::MemoryStore;
 
 #[tokio::main]
 async fn main() -> FsResult<()> {

@@ -1,4 +1,4 @@
-//! `monoutils-store` is a library for working with IPLD content-addressed stores (CAS).
+//! `ipldstore` is a library for working with IPLD content-addressed stores (CAS).
 
 #![warn(missing_docs)]
 #![allow(clippy::module_inception)]

@@ -1,4 +1,4 @@
-//! `monoutils-did` is a library for working with DID-Web-Key and DID-Key decentralized identifiers (DIDs) methods.
+//! `cryptdag` is a key generation library for data structures that can be represented as trees or DAGs.
 
 #![warn(missing_docs)]
 #![allow(clippy::module_inception)]

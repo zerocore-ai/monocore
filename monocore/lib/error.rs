@@ -1,6 +1,6 @@
 use monofs::FsError;
 use monoutils::MonoutilsError;
-use monoutils_store::{ipld, StoreError};
+use ipldstore::{ipld, StoreError};
 use nix::errno::Errno;
 use sqlx::migrate::MigrateError;
 use std::{

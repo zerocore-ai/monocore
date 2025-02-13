@@ -1,6 +1,9 @@
-use monoutils_store::IpldStore;
+use ipldstore::IpldStore;
 
-use crate::{filesystem::{CidLink, ExtendedAttributes}, FsResult};
+use crate::{
+    filesystem::{CidLink, ExtendedAttributes},
+    FsResult,
+};
 
 //--------------------------------------------------------------------------------------------------
 // Types

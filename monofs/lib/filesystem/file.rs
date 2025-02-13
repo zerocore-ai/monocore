@@ -6,9 +6,7 @@ use std::{
 };
 
 use chrono::Utc;
-use monoutils_store::{
-    ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult,
-};
+use ipldstore::{ipld::cid::Cid, IpldReferences, IpldStore, Storable, StoreError, StoreResult};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncRead;
 
@@ -99,7 +97,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::File;
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -128,7 +126,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::File;
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -162,8 +160,8 @@ where
     ///
     /// ```
     /// use monofs::filesystem::File;
-    /// use monoutils_store::{MemoryStore, Storable};
-    /// use monoutils_store::ipld::cid::Cid;
+    /// use ipldstore::{MemoryStore, Storable};
+    /// use ipldstore::ipld::cid::Cid;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -194,8 +192,8 @@ where
     ///
     /// ```
     /// use monofs::filesystem::File;
-    /// use monoutils_store::{MemoryStore, Storable};
-    /// use monoutils_store::ipld::cid::Cid;
+    /// use ipldstore::{MemoryStore, Storable};
+    /// use ipldstore::ipld::cid::Cid;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -224,7 +222,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::File;
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -245,7 +243,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::{File, EntityType};
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// let store = MemoryStore::default();
     /// let file = File::new(store);
@@ -268,7 +266,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::File;
-    /// use monoutils_store::{MemoryStore, IpldStore};
+    /// use ipldstore::{MemoryStore, IpldStore};
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -292,7 +290,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::File;
-    /// use monoutils_store::{MemoryStore, Storable};
+    /// use ipldstore::{MemoryStore, Storable};
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -323,7 +321,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::File;
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -348,7 +346,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::File;
-    /// use monoutils_store::MemoryStore;
+    /// use ipldstore::MemoryStore;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -370,7 +368,7 @@ where
     ///
     /// ```
     /// use monofs::filesystem::File;
-    /// use monoutils_store::{MemoryStore, ipld::cid::Cid};
+    /// use ipldstore::{MemoryStore, ipld::cid::Cid};
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -483,7 +481,7 @@ impl IpldReferences for FileSerializable {
 
 #[cfg(test)]
 mod tests {
-    use monoutils_store::{MemoryStore, Storable};
+    use ipldstore::{MemoryStore, Storable};
     use tokio::io::AsyncReadExt;
 
     use super::*;
