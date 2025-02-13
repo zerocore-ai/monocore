@@ -136,8 +136,24 @@ where
         }
     }
 
+    /// Formats bytes into human readable string with appropriate unit
+    fn format_bytes(bytes: usize) -> String {
+        const UNITS: [&str; 6] = ["B", "KB", "MB", "GB", "TB", "PB"];
+        if bytes == 0 {
+            return "0 B".to_string();
+        }
+        let bytes = bytes as f64;
+        let base = bytes.log(1024.0).floor() as usize;
+        let value = bytes / 1024f64.powi(base as i32);
+        if base > 0 {
+            format!("{:.2} {}", value, UNITS[base])
+        } else {
+            format!("{} {}", value as usize, UNITS[0])
+        }
+    }
+
     /// Prints all the blocks in the store.
-    pub async fn print_blocks(&self)
+    pub async fn print_blocks(&self, show_blocks: bool)
     where
         C: Clone + Send,
         L: Clone + Send,
@@ -145,7 +161,21 @@ where
         let store = self.clone();
         let blocks = store.blocks.read().await;
         for (cid, (refcount, bytes)) in blocks.iter() {
-            println!("[{:03}] {}: {}", refcount, cid, hex::encode(bytes));
+            if show_blocks {
+                println!(
+                    "[{:03}]\t- {}\t- {}",
+                    refcount,
+                    Self::format_bytes(bytes.len()),
+                    cid
+                );
+            } else {
+                println!(
+                    "[{:03}]\t- {}\t- {}",
+                    refcount,
+                    Self::format_bytes(bytes.len()),
+                    cid
+                );
+            }
         }
     }
 
@@ -555,7 +585,7 @@ mod tests {
         assert!(store.has(&node_cid).await);
 
         println!("store before gc");
-        store.print_blocks().await;
+        store.print_blocks(true).await;
 
         // Read back the node to verify refs are properly serialized
         let retrieved_node: TestNode = store.get_node(&node_cid).await?;
@@ -567,13 +597,13 @@ mod tests {
         assert!(store.has(&data_cid).await);
 
         println!("\nstore after failed gc");
-        store.print_blocks().await;
+        store.print_blocks(true).await;
 
         // Garbage collect node_cid - should succeed and trigger data_cid collection
         let removed = store.garbage_collect(&node_cid).await?;
 
         println!("\nstore after successful gc");
-        store.print_blocks().await;
+        store.print_blocks(true).await;
 
         assert!(removed.contains(&node_cid));
         assert!(removed.contains(&data_cid));
@@ -656,7 +686,7 @@ mod tests {
         let root_cid = store.put_node(&root).await?;
 
         println!("\nInitial store state:");
-        store.print_blocks().await;
+        store.print_blocks(true).await;
 
         // Try to collect leaf1 - should fail as it's referenced by middle1
         let removed = store.garbage_collect(&leaf1_cid).await?;
@@ -668,7 +698,7 @@ mod tests {
         assert!(store.has(&data1_cid).await);
 
         println!("\nAfter attempting to collect leaf1:");
-        store.print_blocks().await;
+        store.print_blocks(true).await;
 
         // Try to collect middle1 - should fail as it's referenced by root
         let removed = store.garbage_collect(&middle1_cid).await?;
@@ -681,7 +711,7 @@ mod tests {
         assert!(store.has(&leaf2_cid).await);
 
         println!("\nAfter attempting to collect middle1:");
-        store.print_blocks().await;
+        store.print_blocks(true).await;
 
         // Try to collect data2 - should fail as it's referenced by leaf2
         let removed = store.garbage_collect(&data2_cid).await?;
@@ -692,7 +722,7 @@ mod tests {
         assert!(store.has(&data2_cid).await);
 
         println!("\nAfter attempting to collect data2:");
-        store.print_blocks().await;
+        store.print_blocks(true).await;
 
         // Finally collect root node - this should collect everything since root has refcount 0
         let removed = store.garbage_collect(&root_cid).await?;
@@ -743,7 +773,7 @@ mod tests {
         assert!(store.is_empty().await?);
 
         println!("\nAfter collecting root:");
-        store.print_blocks().await;
+        store.print_blocks(true).await;
 
         Ok(())
     }
