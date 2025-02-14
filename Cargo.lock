@@ -3984,6 +3984,7 @@ name = "virtualfs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-recursion",
  "async-trait",
  "cfg-if",
  "chrono",

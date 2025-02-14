@@ -21,3 +21,4 @@ futures.workspace = true
 chrono.workspace = true
 getset.workspace = true
 cfg-if.workspace = true
+async-recursion.workspace = true
