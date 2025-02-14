@@ -1,16 +1,19 @@
 use async_recursion::async_recursion;
 use chrono::{TimeZone, Utc};
-use ipldstore::ipld::ipld::Ipld;
-use ipldstore::{ipld::cid::Cid, IpldStore};
+use ipldstore::{
+    ipld::{cid::Cid, ipld::Ipld},
+    IpldStore,
+};
 use monofs::filesystem::{
     Dir, Entity, File, Metadata, SymPathLink, UNIX_ATIME_KEY, UNIX_GID_KEY, UNIX_MODE_KEY,
     UNIX_MTIME_KEY, UNIX_UID_KEY,
 };
-use std::fs;
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
-use std::path::Path;
-use tokio::fs::File as TokioFile;
-use tokio::io::BufReader;
+use std::{
+    fs,
+    os::unix::fs::{MetadataExt, PermissionsExt},
+    path::Path,
+};
+use tokio::{fs::File as TokioFile, io::BufReader};
 
 use crate::MonocoreResult;
 

@@ -294,6 +294,14 @@ impl Metadata {
     /// - size: 0 bytes
     /// - created_at: current UTC time
     /// - modified_at: current UTC time
+    ///
+    /// ## Examples
+    /// ```rust
+    /// use virtualfs::{Metadata, ModeType};
+    ///
+    /// let metadata = Metadata::new(ModeType::File);
+    /// assert_eq!(metadata.get_size(), 0);
+    /// ```
     pub fn new(
         #[cfg(unix)] entity_type: ModeType,
         #[cfg(not(unix))] entity_type: EntityType,
@@ -339,9 +347,9 @@ impl Metadata {
     ///
     /// ## Examples
     /// ```rust
-    /// use virtualfs::{Metadata, User, Group, Other};
+    /// use virtualfs::{Metadata, ModeType, User, Group, Other};
     ///
-    /// let mut metadata = Metadata::new();
+    /// let mut metadata = Metadata::new(ModeType::File);
     /// metadata.set_permissions(User::RW | Group::R | Other::R);
     /// ```
     #[cfg(unix)]
@@ -365,11 +373,11 @@ impl Metadata {
     ///
     /// ## Examples
     /// ```rust
-    /// use virtualfs::Metadata;
+    /// use virtualfs::{Metadata, ModeType};
     ///
-    /// let mut metadata = Metadata::new();
-    /// metadata.set_entity_type(EntityType::Directory);
-    /// assert_eq!(metadata.get_entity_type(), &EntityType::Directory);
+    /// let mut metadata = Metadata::new(ModeType::File);
+    /// metadata.set_entity_type(ModeType::Directory);
+    /// assert_eq!(metadata.get_entity_type(), &ModeType::Directory);
     /// ```
     #[cfg(not(unix))]
     pub fn set_entity_type(&mut self, entity_type: EntityType) {
@@ -380,9 +388,9 @@ impl Metadata {
     ///
     /// ## Examples
     /// ```rust
-    /// use virtualfs::Metadata;
+    /// use virtualfs::{Metadata, ModeType};
     ///
-    /// let mut metadata = Metadata::new();
+    /// let mut metadata = Metadata::new(ModeType::File);
     /// metadata.set_size(100);
     /// assert_eq!(metadata.get_size(), 100);
     /// ```

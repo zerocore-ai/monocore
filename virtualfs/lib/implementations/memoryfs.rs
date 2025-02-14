@@ -335,15 +335,22 @@ impl Dir {
     ///
     /// ## Examples
     ///
-    /// ```rust,no_run
-    /// use std::path::Path;
-    /// ## use virtualfs::{Dir, VfsResult};
-    ///
-    /// ## fn example(dir: Dir) -> VfsResult<()> {
-    /// // Find an entity at path "foo/bar"
-    /// let entity = dir.find("foo/bar")?;
-    /// ## Ok(())
-    /// ## }
+    /// ```rust
+    /// # use std::path::Path;
+    /// # use virtualfs::{Dir, Entity, File, PathSegment, VfsResult};
+    /// #
+    /// # fn main() -> VfsResult<()> {
+    /// # let mut dir = Dir::new();
+    /// # dir.put(
+    /// #     PathSegment::try_from("foo").unwrap(),
+    /// #     Entity::Dir(Dir::new())
+    /// # )?;
+    /// #
+    /// // Find an entity at path "foo"
+    /// let entity = dir.find("foo")?.unwrap();
+    /// assert!(matches!(entity, Entity::Dir(_)));
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn find(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<Option<&Entity>> {
         let path = path.as_ref();
@@ -409,14 +416,20 @@ impl Dir {
     ///
     /// ## Examples
     ///
-    /// ```rust,no_run
-    /// use std::path::Path;
-    /// # use virtualfs::{Dir, VfsResult};
-    ///
-    /// # fn example(dir: &mut Dir) -> VfsResult<()> {
-    /// // Find and modify an entity at path "foo/bar"
-    /// if let Some(entity) = dir.find_mut("foo/bar")? {
-    ///     // Modify the entity
+    /// ```rust
+    /// # use std::path::Path;
+    /// # use virtualfs::{Dir, Entity, File, PathSegment, VfsResult};
+    /// #
+    /// # fn main() -> VfsResult<()> {
+    /// # let mut dir = Dir::new();
+    /// # dir.put(
+    /// #     PathSegment::try_from("foo").unwrap(),
+    /// #     Entity::Dir(Dir::new())
+    /// # )?;
+    /// #
+    /// // Find and modify an entity at path "foo"
+    /// if let Some(entity) = dir.find_mut("foo")? {
+    ///     assert!(matches!(entity, Entity::Dir(_)));
     /// }
     /// # Ok(())
     /// # }

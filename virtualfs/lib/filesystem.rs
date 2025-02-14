@@ -18,28 +18,6 @@ use tokio::io::AsyncRead;
 /// files and directories in an abstract file system. This abstraction allows for different
 /// implementations such as in-memory filesystems, overlay filesystems, or traditional disk-based
 /// filesystems while maintaining a consistent interface.
-///
-/// ## Examples
-///
-/// ```rust,no_run
-/// use async_trait::async_trait;
-/// use std::path::Path;
-///
-/// #[async_trait]
-/// impl VirtualFileSystem for MyCustomFs {
-///     async fn exists(&self, path: impl AsRef<Path>) -> VfsResult<bool> {
-///         // Implementation here
-///     }
-///     // ... other method implementations ...
-/// }
-/// ```
-///
-/// ## Design Notes
-///
-/// - All operations are asynchronous and return `VfsResult<T>` to handle potential errors
-/// - Paths are accepted as any type that can be converted to a `Path`
-/// - File operations support offset-based reading and writing for random access
-/// - Directory operations return iterators over path entries
 #[async_trait]
 pub trait VirtualFileSystem {
     /// Checks if a file or directory exists at the specified path.
