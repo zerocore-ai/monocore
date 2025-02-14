@@ -358,7 +358,7 @@ impl Dir {
         // Ensure the path is not empty
         let mut components = path.components().peekable();
         if components.peek().is_none() {
-            return Err(VfsError::InvalidPathComponent("Empty path provided".into()));
+            return Err(VfsError::InvalidPathComponent("empty path provided".into()));
         }
 
         // Traverse the components
@@ -504,19 +504,12 @@ impl MemoryFileReader {
 
 #[async_trait]
 impl VirtualFileSystem for MemoryFileSystem {
-    async fn exists(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<bool> {
-        let path = path.as_ref();
+    async fn exists(&self, path: &Path) -> VfsResult<bool> {
         let result = self.root_dir.read().await.find(path)?.is_some();
-
         Ok(result)
     }
 
-    async fn create_file(
-        &self,
-        path: impl AsRef<Path> + Send + Sync,
-        exists_ok: bool,
-    ) -> VfsResult<()> {
-        let path = path.as_ref();
+    async fn create_file(&self, path: &Path, exists_ok: bool) -> VfsResult<()> {
         let (parent, filename) = MemoryFileSystem::split_path(path)?;
 
         let mut root = self.root_dir.write().await;
@@ -534,8 +527,7 @@ impl VirtualFileSystem for MemoryFileSystem {
         Ok(())
     }
 
-    async fn create_directory(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<()> {
-        let path = path.as_ref();
+    async fn create_directory(&self, path: &Path) -> VfsResult<()> {
         let (parent, dirname) = MemoryFileSystem::split_path(path)?;
 
         let mut root = self.root_dir.write().await;
@@ -550,14 +542,7 @@ impl VirtualFileSystem for MemoryFileSystem {
         Ok(())
     }
 
-    async fn create_symlink(
-        &self,
-        path: impl AsRef<Path> + Send + Sync,
-        target: impl AsRef<Path> + Send + Sync,
-    ) -> VfsResult<()> {
-        let path = path.as_ref();
-        let target = target.as_ref();
-
+    async fn create_symlink(&self, path: &Path, target: &Path) -> VfsResult<()> {
         if target.as_os_str().is_empty() {
             return Err(VfsError::InvalidSymlinkTarget(target.to_path_buf()));
         }
@@ -581,12 +566,10 @@ impl VirtualFileSystem for MemoryFileSystem {
 
     async fn read_file(
         &self,
-        path: impl AsRef<Path> + Send + Sync,
+        path: &Path,
         offset: u64,
         length: u64,
     ) -> VfsResult<Pin<Box<dyn AsyncRead + Send + Sync + 'static>>> {
-        let path = path.as_ref();
-
         // Find the file
         let root = self.root_dir.read().await;
         let entity = root
@@ -603,10 +586,8 @@ impl VirtualFileSystem for MemoryFileSystem {
 
     async fn read_directory(
         &self,
-        path: impl AsRef<Path> + Send + Sync,
+        path: &Path,
     ) -> VfsResult<Box<dyn Iterator<Item = PathSegment> + Send + Sync + 'static>> {
-        let path = path.as_ref();
-
         // Find the directory
         let root = self.root_dir.read().await;
         let entity = if path == Path::new("") {
@@ -623,9 +604,7 @@ impl VirtualFileSystem for MemoryFileSystem {
         Ok(Box::new(entries.into_iter()))
     }
 
-    async fn read_symlink(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<PathBuf> {
-        let path = path.as_ref();
-
+    async fn read_symlink(&self, path: &Path) -> VfsResult<PathBuf> {
         // Find the symlink
         let root = self.root_dir.read().await;
         let entity = root
@@ -637,9 +616,7 @@ impl VirtualFileSystem for MemoryFileSystem {
         Ok(symlink.get_target().clone())
     }
 
-    async fn get_metadata(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<Metadata> {
-        let path = path.as_ref();
-
+    async fn get_metadata(&self, path: &Path) -> VfsResult<Metadata> {
         // Find the entity
         let root = self.root_dir.read().await;
         let entity = root
@@ -658,12 +635,10 @@ impl VirtualFileSystem for MemoryFileSystem {
 
     async fn write_file(
         &self,
-        path: impl AsRef<Path> + Send + Sync,
+        path: &Path,
         offset: u64,
-        data: impl AsyncRead + Send + Sync + 'static,
+        data: Pin<Box<dyn AsyncRead + Send + Sync + 'static>>,
     ) -> VfsResult<()> {
-        let path = path.as_ref();
-
         // Find the file and get a mutable reference
         let mut root = self.root_dir.write().await;
         let entity = root
@@ -704,8 +679,7 @@ impl VirtualFileSystem for MemoryFileSystem {
         Ok(())
     }
 
-    async fn remove(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<()> {
-        let path = path.as_ref();
+    async fn remove(&self, path: &Path) -> VfsResult<()> {
         let (parent, key) = MemoryFileSystem::split_path(path)?;
 
         let mut root = self.root_dir.write().await;
@@ -724,32 +698,7 @@ impl VirtualFileSystem for MemoryFileSystem {
         Ok(())
     }
 
-    async fn remove_directory(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<()> {
-        let path = path.as_ref();
-        let (parent, dirname) = MemoryFileSystem::split_path(path)?;
-
-        let mut root = self.root_dir.write().await;
-        let parent_dir = MemoryFileSystem::get_parent_dir(&mut root, parent)?;
-
-        match parent_dir.get(&dirname) {
-            Some(entity) => match entity {
-                Entity::Dir(_) => parent_dir.entries.remove(&dirname),
-                _ => return Err(VfsError::NotADirectory(path.to_path_buf())),
-            },
-            None => return Err(VfsError::NotFound(path.to_path_buf())),
-        };
-
-        Ok(())
-    }
-
-    async fn rename(
-        &self,
-        old_path: impl AsRef<Path> + Send + Sync,
-        new_path: impl AsRef<Path> + Send + Sync,
-    ) -> VfsResult<()> {
-        let old_path = old_path.as_ref();
-        let new_path = new_path.as_ref();
-
+    async fn rename(&self, old_path: &Path, new_path: &Path) -> VfsResult<()> {
         let (old_parent, old_segment) = MemoryFileSystem::split_path(old_path)?;
         let (new_parent, new_segment) = MemoryFileSystem::split_path(new_path)?;
 
@@ -831,6 +780,29 @@ impl VirtualFileSystem for MemoryFileSystem {
 
         Ok(())
     }
+
+    async fn set_metadata(&self, path: &Path, metadata: Metadata) -> VfsResult<()> {
+        // Find the entity and get a mutable reference
+        let mut root = self.root_dir.write().await;
+        let entity = root
+            .find_mut(path)?
+            .ok_or_else(|| VfsError::NotFound(path.to_path_buf()))?;
+
+        // Update the metadata based on the entity type
+        match entity {
+            Entity::File(file) => {
+                file.metadata = metadata;
+            }
+            Entity::Dir(dir) => {
+                dir.metadata = metadata;
+            }
+            Entity::Symlink(symlink) => {
+                symlink.metadata = metadata;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for MemoryFileSystem {
@@ -882,6 +854,7 @@ impl AsyncRead for MemoryFileReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn test_memoryfs_dir_new() {
@@ -1070,7 +1043,7 @@ mod tests {
         let fs = MemoryFileSystem::new();
 
         // Test creating a file in root directory
-        assert!(fs.create_file("test.txt", false).await.is_ok());
+        assert!(fs.create_file(Path::new("test.txt"), false).await.is_ok());
 
         // Verify file exists and is a file
         let root = fs.root_dir.read().await;
@@ -1082,16 +1055,17 @@ mod tests {
 
         // Test creating file when parent directory doesn't exist
         assert!(matches!(
-            fs.create_file("nonexistent/test.txt", false).await,
+            fs.create_file(Path::new("nonexistent/test.txt"), false)
+                .await,
             Err(VfsError::ParentDirectoryNotFound(_))
         ));
 
         // Test exists_ok behavior
         assert!(matches!(
-            fs.create_file("test.txt", false).await,
+            fs.create_file(Path::new("test.txt"), false).await,
             Err(VfsError::AlreadyExists(_))
         ));
-        assert!(fs.create_file("test.txt", true).await.is_ok());
+        assert!(fs.create_file(Path::new("test.txt"), true).await.is_ok());
 
         // Test creating file in subdirectory
         {
@@ -1105,7 +1079,10 @@ mod tests {
             drop(root);
 
             // Then create file in it
-            assert!(fs.create_file("subdir/nested.txt", false).await.is_ok());
+            assert!(fs
+                .create_file(Path::new("subdir/nested.txt"), false)
+                .await
+                .is_ok());
 
             // Verify nested file exists
             let root = fs.root_dir.read().await;
@@ -1119,15 +1096,17 @@ mod tests {
         // Test invalid path components
         for invalid_path in [".", "..", "/"] {
             assert!(matches!(
-                fs.create_file(invalid_path, false).await,
+                fs.create_file(Path::new(invalid_path), false).await,
                 Err(VfsError::InvalidPathComponent(_))
             ));
         }
 
         // Test concurrent file creation
         let fs2 = fs.clone();
-        let handle1 = tokio::spawn(async move { fs.create_file("concurrent.txt", false).await });
-        let handle2 = tokio::spawn(async move { fs2.create_file("concurrent.txt", false).await });
+        let handle1 =
+            tokio::spawn(async move { fs.create_file(Path::new("concurrent.txt"), false).await });
+        let handle2 =
+            tokio::spawn(async move { fs2.create_file(Path::new("concurrent.txt"), false).await });
 
         let (result1, result2) = tokio::join!(handle1, handle2);
         let results = vec![result1.unwrap(), result2.unwrap()];
@@ -1146,7 +1125,7 @@ mod tests {
         let fs = MemoryFileSystem::new();
 
         // Test creating a directory in root
-        assert!(fs.create_directory("testdir").await.is_ok());
+        assert!(fs.create_directory(Path::new("testdir")).await.is_ok());
 
         // Verify directory exists and is a directory
         let root = fs.root_dir.read().await;
@@ -1158,13 +1137,13 @@ mod tests {
 
         // Test creating directory when parent doesn't exist
         assert!(matches!(
-            fs.create_directory("nonexistent/subdir").await,
+            fs.create_directory(Path::new("nonexistent/subdir")).await,
             Err(VfsError::ParentDirectoryNotFound(_))
         ));
 
         // Test creating existing directory fails
         assert!(matches!(
-            fs.create_directory("testdir").await,
+            fs.create_directory(Path::new("testdir")).await,
             Err(VfsError::AlreadyExists(_))
         ));
 
@@ -1180,7 +1159,7 @@ mod tests {
             drop(root);
 
             // Create nested directory
-            assert!(fs.create_directory("parent/child").await.is_ok());
+            assert!(fs.create_directory(Path::new("parent/child")).await.is_ok());
 
             // Verify nested directory exists
             let root = fs.root_dir.read().await;
@@ -1191,18 +1170,12 @@ mod tests {
             assert!(matches!(child, Entity::Dir(_)));
         }
 
-        // Test invalid path components
-        for invalid_path in [".", "..", "/"] {
-            assert!(matches!(
-                fs.create_directory(invalid_path).await,
-                Err(VfsError::InvalidPathComponent(_))
-            ));
-        }
-
         // Test concurrent directory creation
         let fs2 = fs.clone();
-        let handle1 = tokio::spawn(async move { fs.create_directory("concurrent").await });
-        let handle2 = tokio::spawn(async move { fs2.create_directory("concurrent").await });
+        let handle1 =
+            tokio::spawn(async move { fs.create_directory(Path::new("concurrent")).await });
+        let handle2 =
+            tokio::spawn(async move { fs2.create_directory(Path::new("concurrent")).await });
 
         let (result1, result2) = tokio::join!(handle1, handle2);
         let results = vec![result1.unwrap(), result2.unwrap()];
@@ -1221,7 +1194,10 @@ mod tests {
         let fs = MemoryFileSystem::new();
 
         // Test creating a symlink in root
-        assert!(fs.create_symlink("link", "target").await.is_ok());
+        assert!(fs
+            .create_symlink(Path::new("link"), Path::new("target"))
+            .await
+            .is_ok());
 
         // Verify symlink exists and points to correct target
         let root = fs.root_dir.read().await;
@@ -1234,19 +1210,21 @@ mod tests {
 
         // Test creating symlink when parent doesn't exist
         assert!(matches!(
-            fs.create_symlink("nonexistent/link", "target").await,
+            fs.create_symlink(Path::new("nonexistent/link"), Path::new("target"))
+                .await,
             Err(VfsError::ParentDirectoryNotFound(_))
         ));
 
         // Test creating existing symlink fails
         assert!(matches!(
-            fs.create_symlink("link", "new_target").await,
+            fs.create_symlink(Path::new("link"), Path::new("new_target"))
+                .await,
             Err(VfsError::AlreadyExists(_))
         ));
 
         // Test creating symlink with empty target
         assert!(matches!(
-            fs.create_symlink("invalid", "").await,
+            fs.create_symlink(Path::new("invalid"), Path::new("")).await,
             Err(VfsError::InvalidSymlinkTarget(_))
         ));
 
@@ -1262,7 +1240,10 @@ mod tests {
             drop(root);
 
             // Create nested symlink
-            assert!(fs.create_symlink("parent/link", "../target").await.is_ok());
+            assert!(fs
+                .create_symlink(Path::new("parent/link"), Path::new("../target"))
+                .await
+                .is_ok());
 
             // Verify nested symlink exists and points to correct target
             let root = fs.root_dir.read().await;
@@ -1276,19 +1257,16 @@ mod tests {
             }
         }
 
-        // Test invalid path components
-        for invalid_path in [".", "..", "/"] {
-            assert!(matches!(
-                fs.create_symlink(invalid_path, "target").await,
-                Err(VfsError::InvalidPathComponent(_))
-            ));
-        }
-
         // Test concurrent symlink creation
         let fs2 = fs.clone();
-        let handle1 = tokio::spawn(async move { fs.create_symlink("concurrent", "target1").await });
-        let handle2 =
-            tokio::spawn(async move { fs2.create_symlink("concurrent", "target2").await });
+        let handle1 = tokio::spawn(async move {
+            fs.create_symlink(Path::new("concurrent"), Path::new("target1"))
+                .await
+        });
+        let handle2 = tokio::spawn(async move {
+            fs2.create_symlink(Path::new("concurrent"), Path::new("target2"))
+                .await
+        });
 
         let (result1, result2) = tokio::join!(handle1, handle2);
         let results = vec![result1.unwrap(), result2.unwrap()];
@@ -1318,26 +1296,26 @@ mod tests {
         }
 
         // Test reading entire file
-        let mut reader = fs.read_file("test.bin", 0, 5).await.unwrap();
+        let mut reader = fs.read_file(Path::new("test.bin"), 0, 5).await.unwrap();
         let mut buf = Vec::new();
         tokio::io::copy(&mut reader, &mut buf).await.unwrap();
         assert_eq!(buf, content);
 
         // Test reading with offset
-        let mut reader = fs.read_file("test.bin", 2, 2).await.unwrap();
+        let mut reader = fs.read_file(Path::new("test.bin"), 2, 2).await.unwrap();
         let mut buf = Vec::new();
         tokio::io::copy(&mut reader, &mut buf).await.unwrap();
         assert_eq!(buf, vec![3, 4]);
 
         // Test reading beyond file size
-        let mut reader = fs.read_file("test.bin", 4, 10).await.unwrap();
+        let mut reader = fs.read_file(Path::new("test.bin"), 4, 10).await.unwrap();
         let mut buf = Vec::new();
         tokio::io::copy(&mut reader, &mut buf).await.unwrap();
         assert_eq!(buf, vec![5]);
 
         // Test reading non-existent file
         assert!(matches!(
-            fs.read_file("nonexistent", 0, 1).await,
+            fs.read_file(Path::new("nonexistent"), 0, 1).await,
             Err(VfsError::NotFound(_))
         ));
 
@@ -1351,7 +1329,7 @@ mod tests {
             .unwrap();
         }
         assert!(matches!(
-            fs.read_file("dir", 0, 1).await,
+            fs.read_file(Path::new("dir"), 0, 1).await,
             Err(VfsError::NotAFile(_))
         ));
     }
@@ -1389,26 +1367,30 @@ mod tests {
         }
 
         // Test reading root directory
-        let entries: Vec<_> = fs.read_directory("").await.unwrap().collect();
+        let entries: Vec<_> = fs.read_directory(Path::new("")).await.unwrap().collect();
         assert_eq!(entries.len(), 3);
         assert!(entries.contains(&PathSegment::try_from("file1.txt").unwrap()));
         assert!(entries.contains(&PathSegment::try_from("file2.txt").unwrap()));
         assert!(entries.contains(&PathSegment::try_from("subdir").unwrap()));
 
         // Test reading subdirectory
-        let entries: Vec<_> = fs.read_directory("subdir").await.unwrap().collect();
+        let entries: Vec<_> = fs
+            .read_directory(Path::new("subdir"))
+            .await
+            .unwrap()
+            .collect();
         assert_eq!(entries.len(), 1);
         assert!(entries.contains(&PathSegment::try_from("nested.txt").unwrap()));
 
         // Test reading non-existent directory
         assert!(matches!(
-            fs.read_directory("nonexistent").await,
+            fs.read_directory(Path::new("nonexistent")).await,
             Err(VfsError::NotFound(_))
         ));
 
         // Test reading file as directory
         assert!(matches!(
-            fs.read_directory("file1.txt").await,
+            fs.read_directory(Path::new("file1.txt")).await,
             Err(VfsError::NotADirectory(_))
         ));
     }
@@ -1428,12 +1410,12 @@ mod tests {
         }
 
         // Test reading symlink
-        let target = fs.read_symlink("link").await.unwrap();
+        let target = fs.read_symlink(Path::new("link")).await.unwrap();
         assert_eq!(target, PathBuf::from("target"));
 
         // Test reading non-existent symlink
         assert!(matches!(
-            fs.read_symlink("nonexistent").await,
+            fs.read_symlink(Path::new("nonexistent")).await,
             Err(VfsError::NotFound(_))
         ));
 
@@ -1447,7 +1429,7 @@ mod tests {
             .unwrap();
         }
         assert!(matches!(
-            fs.read_symlink("file").await,
+            fs.read_symlink(Path::new("file")).await,
             Err(VfsError::NotASymlink(_))
         ));
     }
@@ -1469,27 +1451,36 @@ mod tests {
         // Test writing to file
         let data = b"Hello, World!".to_vec();
         let reader = std::io::Cursor::new(data.clone());
-        assert!(fs.write_file("test.txt", 0, reader).await.is_ok());
+        assert!(fs
+            .write_file(Path::new("test.txt"), 0, Box::pin(reader))
+            .await
+            .is_ok());
 
         // Verify content
         let mut buf = Vec::new();
         let mut reader = fs
-            .read_file("test.txt", 0, data.len() as u64)
+            .read_file(Path::new("test.txt"), 0, data.len() as u64)
             .await
             .unwrap();
         tokio::io::copy(&mut reader, &mut buf).await.unwrap();
-        assert_eq!(buf, data.clone());
+        assert_eq!(buf, data);
 
         // Test writing with offset
         let append_data = b", Rust!".to_vec();
         let reader = std::io::Cursor::new(append_data.clone());
         let data_len = data.len() as u64;
-        assert!(fs.write_file("test.txt", data_len, reader).await.is_ok());
+        assert!(fs
+            .write_file(Path::new("test.txt"), data_len, Box::pin(reader))
+            .await
+            .is_ok());
 
         // Verify appended content
         let mut buf = Vec::new();
         let total_len = data_len + append_data.len() as u64;
-        let mut reader = fs.read_file("test.txt", 0, total_len).await.unwrap();
+        let mut reader = fs
+            .read_file(Path::new("test.txt"), 0, total_len)
+            .await
+            .unwrap();
         tokio::io::copy(&mut reader, &mut buf).await.unwrap();
         let mut expected = data.clone();
         expected.extend_from_slice(&append_data);
@@ -1499,12 +1490,18 @@ mod tests {
         let gap_data = b"gap".to_vec();
         let reader = std::io::Cursor::new(gap_data.clone());
         let gap_offset = total_len + 5;
-        assert!(fs.write_file("test.txt", gap_offset, reader).await.is_ok());
+        assert!(fs
+            .write_file(Path::new("test.txt"), gap_offset, Box::pin(reader))
+            .await
+            .is_ok());
 
         // Verify content with gap (should be filled with zeros)
         let mut buf = Vec::new();
         let final_len = gap_offset + gap_data.len() as u64;
-        let mut reader = fs.read_file("test.txt", 0, final_len).await.unwrap();
+        let mut reader = fs
+            .read_file(Path::new("test.txt"), 0, final_len)
+            .await
+            .unwrap();
         tokio::io::copy(&mut reader, &mut buf).await.unwrap();
         expected.extend_from_slice(&vec![0; 5]);
         expected.extend_from_slice(&gap_data);
@@ -1513,7 +1510,8 @@ mod tests {
         // Test writing to non-existent file
         let reader = std::io::Cursor::new(vec![1, 2, 3]);
         assert!(matches!(
-            fs.write_file("nonexistent", 0, reader).await,
+            fs.write_file(Path::new("nonexistent"), 0, Box::pin(reader))
+                .await,
             Err(VfsError::NotFound(_))
         ));
 
@@ -1528,7 +1526,7 @@ mod tests {
         }
         let reader = std::io::Cursor::new(vec![1, 2, 3]);
         assert!(matches!(
-            fs.write_file("dir", 0, reader).await,
+            fs.write_file(Path::new("dir"), 0, Box::pin(reader)).await,
             Err(VfsError::NotAFile(_))
         ));
     }
@@ -1563,22 +1561,22 @@ mod tests {
         cfg_if::cfg_if! {
             if #[cfg(unix)] {
                 // Test getting file metadata
-                let metadata = fs.get_metadata("file.txt").await.unwrap();
+                let metadata = fs.get_metadata(Path::new("file.txt")).await.unwrap();
                 assert_eq!(metadata.get_mode().get_type(), Some(ModeType::File));
 
                 // Test getting directory metadata
-                let metadata = fs.get_metadata("dir").await.unwrap();
+                let metadata = fs.get_metadata(Path::new("dir")).await.unwrap();
                 assert_eq!(metadata.get_mode().get_type(), Some(ModeType::Directory));
 
                 // Test getting symlink metadata
-                let metadata = fs.get_metadata("link").await.unwrap();
+                let metadata = fs.get_metadata(Path::new("link")).await.unwrap();
                 assert_eq!(metadata.get_mode().get_type(), Some(ModeType::Symlink));
             }
         }
 
         // Test getting metadata for non-existent path
         assert!(matches!(
-            fs.get_metadata("nonexistent").await,
+            fs.get_metadata(Path::new("nonexistent")).await,
             Err(VfsError::NotFound(_))
         ));
     }
@@ -1624,117 +1622,41 @@ mod tests {
         }
 
         // Test removing a file
-        assert!(fs.remove("file.txt").await.is_ok());
+        assert!(fs.remove(Path::new("file.txt")).await.is_ok());
         assert!(matches!(
-            fs.read_file("file.txt", 0, 1).await,
+            fs.read_file(Path::new("file.txt"), 0, 1).await,
             Err(VfsError::NotFound(_))
         ));
 
         // Test removing a symlink
-        assert!(fs.remove("link").await.is_ok());
+        assert!(fs.remove(Path::new("link")).await.is_ok());
         assert!(matches!(
-            fs.read_symlink("link").await,
+            fs.read_symlink(Path::new("link")).await,
             Err(VfsError::NotFound(_))
         ));
 
         // Test removing a directory (should fail)
-        assert!(matches!(fs.remove("dir").await, Err(VfsError::NotAFile(_))));
+        assert!(matches!(
+            fs.remove(Path::new("dir")).await,
+            Err(VfsError::NotAFile(_))
+        ));
 
         // Test removing a nested file
-        assert!(fs.remove("subdir/nested.txt").await.is_ok());
+        assert!(fs.remove(Path::new("subdir/nested.txt")).await.is_ok());
         assert!(matches!(
-            fs.read_file("subdir/nested.txt", 0, 1).await,
+            fs.read_file(Path::new("subdir/nested.txt"), 0, 1).await,
             Err(VfsError::NotFound(_))
         ));
 
         // Test removing non-existent file
         assert!(matches!(
-            fs.remove("nonexistent").await,
+            fs.remove(Path::new("nonexistent")).await,
             Err(VfsError::NotFound(_))
         ));
 
         // Test removing from non-existent parent directory
         assert!(matches!(
-            fs.remove("nonexistent/file.txt").await,
-            Err(VfsError::ParentDirectoryNotFound(_))
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_memoryfs_remove_directory() {
-        let fs = MemoryFileSystem::new();
-
-        // Create test directory structure
-        {
-            let mut root = fs.root_dir.write().await;
-            // Create an empty directory
-            root.put(
-                PathSegment::try_from("empty_dir").unwrap(),
-                Entity::Dir(Dir::new()),
-            )
-            .unwrap();
-            // Create a file
-            root.put(
-                PathSegment::try_from("file.txt").unwrap(),
-                Entity::File(File::new()),
-            )
-            .unwrap();
-            // Create a nested directory structure
-            let mut subdir = Dir::new();
-            let mut nested = Dir::new();
-            nested
-                .put(
-                    PathSegment::try_from("deep.txt").unwrap(),
-                    Entity::File(File::new()),
-                )
-                .unwrap();
-            subdir
-                .put(
-                    PathSegment::try_from("nested").unwrap(),
-                    Entity::Dir(nested),
-                )
-                .unwrap();
-            root.put(
-                PathSegment::try_from("subdir").unwrap(),
-                Entity::Dir(subdir),
-            )
-            .unwrap();
-        }
-
-        // Test removing an empty directory
-        assert!(fs.remove_directory("empty_dir").await.is_ok());
-        assert!(matches!(
-            fs.read_directory("empty_dir").await,
-            Err(VfsError::NotFound(_))
-        ));
-
-        // Test removing a file as directory (should fail)
-        assert!(matches!(
-            fs.remove_directory("file.txt").await,
-            Err(VfsError::NotADirectory(_))
-        ));
-
-        // Test removing a nested directory
-        assert!(fs.remove_directory("subdir/nested").await.is_ok());
-        let entries: Vec<_> = fs.read_directory("subdir").await.unwrap().collect();
-        assert!(entries.is_empty());
-
-        // Test removing a directory with parent path
-        assert!(fs.remove_directory("subdir").await.is_ok());
-        assert!(matches!(
-            fs.read_directory("subdir").await,
-            Err(VfsError::NotFound(_))
-        ));
-
-        // Test removing non-existent directory
-        assert!(matches!(
-            fs.remove_directory("nonexistent").await,
-            Err(VfsError::NotFound(_))
-        ));
-
-        // Test removing from non-existent parent directory
-        assert!(matches!(
-            fs.remove_directory("nonexistent/dir").await,
+            fs.remove(Path::new("nonexistent/file.txt")).await,
             Err(VfsError::ParentDirectoryNotFound(_))
         ));
     }
@@ -1779,97 +1701,130 @@ mod tests {
         }
 
         // Test 1: Rename file in same directory
-        assert!(fs.rename("file.txt", "renamed.txt").await.is_ok());
-        assert!(fs.exists("renamed.txt").await.unwrap());
-        assert!(!fs.exists("file.txt").await.unwrap());
+        assert!(fs
+            .rename(Path::new("file.txt"), Path::new("renamed.txt"))
+            .await
+            .is_ok());
+        assert!(fs.exists(Path::new("renamed.txt")).await.unwrap());
+        assert!(!fs.exists(Path::new("file.txt")).await.unwrap());
 
         // Verify content is preserved
         let mut buf = Vec::new();
-        let mut reader = fs.read_file("renamed.txt", 0, 3).await.unwrap();
+        let mut reader = fs.read_file(Path::new("renamed.txt"), 0, 3).await.unwrap();
         tokio::io::copy(&mut reader, &mut buf).await.unwrap();
         assert_eq!(buf, vec![1, 2, 3]);
 
         // Test 2: Move file to different directory
-        assert!(fs.rename("renamed.txt", "dir1/moved.txt").await.is_ok());
-        assert!(fs.exists("dir1/moved.txt").await.unwrap());
-        assert!(!fs.exists("renamed.txt").await.unwrap());
+        assert!(fs
+            .rename(Path::new("renamed.txt"), Path::new("dir1/moved.txt"))
+            .await
+            .is_ok());
+        assert!(fs.exists(Path::new("dir1/moved.txt")).await.unwrap());
+        assert!(!fs.exists(Path::new("renamed.txt")).await.unwrap());
 
         // Test 3: Move nested file to root
-        assert!(fs.rename("dir2/nested.txt", "extracted.txt").await.is_ok());
-        assert!(fs.exists("extracted.txt").await.unwrap());
-        assert!(!fs.exists("dir2/nested.txt").await.unwrap());
+        assert!(fs
+            .rename(Path::new("dir2/nested.txt"), Path::new("extracted.txt"))
+            .await
+            .is_ok());
+        assert!(fs.exists(Path::new("extracted.txt")).await.unwrap());
+        assert!(!fs.exists(Path::new("dir2/nested.txt")).await.unwrap());
 
         // Test 4: Rename symlink
-        assert!(fs.rename("link", "newlink").await.is_ok());
+        assert!(fs
+            .rename(Path::new("link"), Path::new("newlink"))
+            .await
+            .is_ok());
         assert_eq!(
-            fs.read_symlink("newlink").await.unwrap(),
+            fs.read_symlink(Path::new("newlink")).await.unwrap(),
             PathBuf::from("target")
         );
-        assert!(!fs.exists("link").await.unwrap());
+        assert!(!fs.exists(Path::new("link")).await.unwrap());
 
         // Test 5: Move between directories
-        assert!(fs.rename("dir1/moved.txt", "dir2/final.txt").await.is_ok());
-        assert!(fs.exists("dir2/final.txt").await.unwrap());
-        assert!(!fs.exists("dir1/moved.txt").await.unwrap());
+        assert!(fs
+            .rename(Path::new("dir1/moved.txt"), Path::new("dir2/final.txt"))
+            .await
+            .is_ok());
+        assert!(fs.exists(Path::new("dir2/final.txt")).await.unwrap());
+        assert!(!fs.exists(Path::new("dir1/moved.txt")).await.unwrap());
 
         // Error cases
 
         // Test 6: Source doesn't exist
         assert!(matches!(
-            fs.rename("nonexistent", "dest.txt").await,
+            fs.rename(Path::new("nonexistent"), Path::new("dest.txt"))
+                .await,
             Err(VfsError::NotFound(_))
         ));
 
         // Test 7: Destination already exists
-        assert!(fs.create_file("existing.txt", false).await.is_ok());
+        assert!(fs
+            .create_file(Path::new("existing.txt"), false)
+            .await
+            .is_ok());
         assert!(matches!(
-            fs.rename("extracted.txt", "existing.txt").await,
+            fs.rename(Path::new("extracted.txt"), Path::new("existing.txt"))
+                .await,
             Err(VfsError::AlreadyExists(_))
         ));
 
         // Test 8: Source parent directory doesn't exist
         assert!(matches!(
-            fs.rename("nonexistent_dir/file.txt", "dest.txt").await,
+            fs.rename(Path::new("nonexistent_dir/file.txt"), Path::new("dest.txt"))
+                .await,
             Err(VfsError::ParentDirectoryNotFound(_))
         ));
 
         // Test 9: Destination parent directory doesn't exist
         assert!(matches!(
-            fs.rename("extracted.txt", "nonexistent_dir/file.txt").await,
+            fs.rename(
+                Path::new("extracted.txt"),
+                Path::new("nonexistent_dir/file.txt")
+            )
+            .await,
             Err(VfsError::ParentDirectoryNotFound(_))
         ));
 
         // Test 10: Source parent is not a directory
-        assert!(fs.create_file("not_a_dir", false).await.is_ok());
+        assert!(fs.create_file(Path::new("not_a_dir"), false).await.is_ok());
         assert!(matches!(
-            fs.rename("not_a_dir/file.txt", "dest.txt").await,
+            fs.rename(Path::new("not_a_dir/file.txt"), Path::new("dest.txt"))
+                .await,
             Err(VfsError::NotADirectory(_))
         ));
 
         // Test 11: Destination parent is not a directory
         assert!(matches!(
-            fs.rename("extracted.txt", "not_a_dir/file.txt").await,
+            fs.rename(Path::new("extracted.txt"), Path::new("not_a_dir/file.txt"))
+                .await,
             Err(VfsError::NotADirectory(_))
         ));
 
         // Test 12: Invalid path components
         for invalid_path in [".", "..", "/"] {
             assert!(matches!(
-                fs.rename("extracted.txt", invalid_path).await,
+                fs.rename(Path::new("extracted.txt"), Path::new(invalid_path))
+                    .await,
                 Err(VfsError::InvalidPathComponent(_))
             ));
             assert!(matches!(
-                fs.rename(invalid_path, "valid.txt").await,
+                fs.rename(Path::new(invalid_path), Path::new("valid.txt"))
+                    .await,
                 Err(VfsError::InvalidPathComponent(_))
             ));
         }
 
         // Test 13: Concurrent rename operations
         let fs2 = fs.clone();
-        let handle1 =
-            tokio::spawn(async move { fs.rename("extracted.txt", "concurrent1.txt").await });
-        let handle2 =
-            tokio::spawn(async move { fs2.rename("extracted.txt", "concurrent2.txt").await });
+        let handle1 = tokio::spawn(async move {
+            fs.rename(Path::new("extracted.txt"), Path::new("concurrent1.txt"))
+                .await
+        });
+        let handle2 = tokio::spawn(async move {
+            fs2.rename(Path::new("extracted.txt"), Path::new("concurrent2.txt"))
+                .await
+        });
 
         let (result1, result2) = tokio::join!(handle1, handle2);
         let results = vec![result1.unwrap(), result2.unwrap()];

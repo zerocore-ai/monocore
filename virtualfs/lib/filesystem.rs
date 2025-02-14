@@ -31,7 +31,7 @@ pub trait VirtualFileSystem {
     /// * `Ok(true)` if the path exists
     /// * `Ok(false)` if the path does not exist
     /// * `Err` if the check operation fails
-    async fn exists(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<bool>;
+    async fn exists(&self, path: &Path) -> VfsResult<bool>;
 
     /// Creates a new empty file at the specified path.
     ///
@@ -45,12 +45,7 @@ pub trait VirtualFileSystem {
     /// Returns an error if:
     /// - The parent directory doesn't exist
     /// - The file already exists and `exists_ok` is false
-    /// - Insufficient permissions
-    async fn create_file(
-        &self,
-        path: impl AsRef<Path> + Send + Sync,
-        exists_ok: bool,
-    ) -> VfsResult<()>;
+    async fn create_file(&self, path: &Path, exists_ok: bool) -> VfsResult<()>;
 
     /// Creates a new directory at the specified path.
     ///
@@ -63,8 +58,7 @@ pub trait VirtualFileSystem {
     /// Returns an error if:
     /// - The parent directory doesn't exist
     /// - A file or directory already exists at the path
-    /// - Insufficient permissions
-    async fn create_directory(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<()>;
+    async fn create_directory(&self, path: &Path) -> VfsResult<()>;
 
     /// Creates a symbolic link at the specified path pointing to the target.
     ///
@@ -79,12 +73,7 @@ pub trait VirtualFileSystem {
     /// - The parent directory doesn't exist
     /// - A file or directory already exists at the path
     /// - The target is invalid
-    /// - Insufficient permissions
-    async fn create_symlink(
-        &self,
-        path: impl AsRef<Path> + Send + Sync,
-        target: impl AsRef<Path> + Send + Sync,
-    ) -> VfsResult<()>;
+    async fn create_symlink(&self, path: &Path, target: &Path) -> VfsResult<()>;
 
     /// Reads data from a file starting at the specified offset.
     ///
@@ -103,10 +92,9 @@ pub trait VirtualFileSystem {
     /// Returns an error if:
     /// - The file doesn't exist
     /// - The offset is beyond the end of the file
-    /// - Insufficient permissions
     async fn read_file(
         &self,
-        path: impl AsRef<Path> + Send + Sync,
+        path: &Path,
         offset: u64,
         length: u64,
     ) -> VfsResult<Pin<Box<dyn AsyncRead + Send + Sync + 'static>>>;
@@ -126,10 +114,9 @@ pub trait VirtualFileSystem {
     /// Returns an error if:
     /// - The path doesn't exist
     /// - The path is not a directory
-    /// - Insufficient permissions
     async fn read_directory(
         &self,
-        path: impl AsRef<Path> + Send + Sync,
+        path: &Path,
     ) -> VfsResult<Box<dyn Iterator<Item = PathSegment> + Send + Sync + 'static>>;
 
     /// Reads the target of a symbolic link.
@@ -141,7 +128,7 @@ pub trait VirtualFileSystem {
     /// ## Returns
     ///
     /// Returns the target path of the symlink.
-    async fn read_symlink(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<PathBuf>;
+    async fn read_symlink(&self, path: &Path) -> VfsResult<PathBuf>;
 
     /// Gets the metadata of a file or directory.
     ///
@@ -152,7 +139,21 @@ pub trait VirtualFileSystem {
     /// ## Returns
     ///
     /// Returns the metadata of the file or directory.
-    async fn get_metadata(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<Metadata>;
+    async fn get_metadata(&self, path: &Path) -> VfsResult<Metadata>;
+
+    /// Sets the metadata of a file or directory.
+    ///
+    /// ## Arguments
+    ///
+    /// * `path` - The path of the file or directory to set metadata for
+    /// * `metadata` - The new metadata for the file or directory
+    ///
+    /// ## Errors
+    ///
+    /// Returns an error if:
+    /// - The path doesn't exist
+    /// - The path is not a file or directory
+    async fn set_metadata(&self, path: &Path, metadata: Metadata) -> VfsResult<()>;
 
     /// Writes data to a file starting at the specified offset.
     ///
@@ -167,13 +168,11 @@ pub trait VirtualFileSystem {
     /// Returns an error if:
     /// - The file doesn't exist
     /// - The offset is invalid
-    /// - Insufficient permissions
-    /// - The filesystem is read-only
     async fn write_file(
         &self,
-        path: impl AsRef<Path> + Send + Sync,
+        path: &Path,
         offset: u64,
-        data: impl AsyncRead + Send + Sync + 'static,
+        data: Pin<Box<dyn AsyncRead + Send + Sync + 'static>>,
     ) -> VfsResult<()>;
 
     /// Removes a file from the filesystem.
@@ -187,24 +186,7 @@ pub trait VirtualFileSystem {
     /// Returns an error if:
     /// - The path doesn't exist
     /// - The path is a directory (use `remove_directory` instead)
-    /// - Insufficient permissions
-    /// - The filesystem is read-only
-    async fn remove(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<()>;
-
-    /// Removes a directory and all its contents from the filesystem.
-    ///
-    /// ## Arguments
-    ///
-    /// * `path` - The path of the directory to remove
-    ///
-    /// ## Errors
-    ///
-    /// Returns an error if:
-    /// - The path doesn't exist
-    /// - The path is not a directory
-    /// - Insufficient permissions
-    /// - The filesystem is read-only
-    async fn remove_directory(&self, path: impl AsRef<Path> + Send + Sync) -> VfsResult<()>;
+    async fn remove(&self, path: &Path) -> VfsResult<()>;
 
     /// Renames (moves) a file or directory to a new location.
     ///
@@ -219,11 +201,5 @@ pub trait VirtualFileSystem {
     /// - The source path doesn't exist
     /// - The destination path already exists
     /// - The parent directory of the destination doesn't exist
-    /// - Insufficient permissions
-    /// - The filesystem is read-only
-    async fn rename(
-        &self,
-        old_path: impl AsRef<Path> + Send + Sync,
-        new_path: impl AsRef<Path> + Send + Sync,
-    ) -> VfsResult<()>;
+    async fn rename(&self, old_path: &Path, new_path: &Path) -> VfsResult<()>;
 }

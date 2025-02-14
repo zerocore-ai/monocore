@@ -75,6 +75,10 @@ pub enum VfsError {
     #[error("io error: {0}")]
     Io(#[from] io::Error),
 
+    /// Overlay filesystem requires at least one layer
+    #[error("overlay filesystem requires at least one layer")]
+    OverlayFileSystemRequiresAtLeastOneLayer,
+
     /// Custom error.
     #[error(transparent)]
     Custom(#[from] AnyError),
