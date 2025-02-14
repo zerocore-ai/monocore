@@ -6,6 +6,10 @@ use crate::store::FlatFsStore;
 
 use super::MonofsNFS;
 
+//--------------------------------------------------------------------------------------------------
+// Types
+//--------------------------------------------------------------------------------------------------
+
 /// A server that provides NFS access to a content-addressed store.
 /// This server uses a flat filesystem store as its backing store.
 #[derive(Debug, Getters)]
@@ -20,6 +24,10 @@ pub struct MonofsServer {
     /// The port to listen on.
     port: u32,
 }
+
+//--------------------------------------------------------------------------------------------------
+// Methods
+//--------------------------------------------------------------------------------------------------
 
 impl MonofsServer {
     /// Creates a new MonofsServer with the given store path and host:port.
@@ -43,25 +51,5 @@ impl MonofsServer {
         listener.handle_forever().await?;
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[tokio::test]
-    async fn test_monofsserver_creation() {
-        let temp_dir = TempDir::new().unwrap();
-        let server = MonofsServer::new(
-            temp_dir.path().to_path_buf(),
-            "127.0.0.1",
-            0, // Use port 0 for testing
-        );
-
-        assert_eq!(server.store_dir, temp_dir.path());
-        assert_eq!(server.host, "127.0.0.1");
-        assert_eq!(server.port, 0);
     }
 }

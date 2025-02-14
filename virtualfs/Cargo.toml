@@ -1,0 +1,23 @@
+[package]
+name = "virtualfs"
+version = "0.1.0"
+description = "`virtualfs` is a library for virtual file systems."
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[lib]
+name = "virtualfs"
+path = "lib/lib.rs"
+
+[dependencies]
+async-trait.workspace = true
+pretty-error-debug.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+futures.workspace = true
+chrono.workspace = true
+getset.workspace = true
+cfg-if.workspace = true
