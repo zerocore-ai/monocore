@@ -46,7 +46,7 @@ pub enum FsError {
     PathNotFound(String),
 
     /// Custom error.
-    #[error("Custom error: {0}")]
+    #[error(transparent)]
     Custom(#[from] AnyError),
 
     // /// DID related error.

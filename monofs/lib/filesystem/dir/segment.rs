@@ -125,6 +125,11 @@ impl TryFrom<&str> for Utf8UnixPathSegment {
             return Err(FsError::InvalidPathComponent(value.to_string()));
         }
 
+        // Reject input string if it contains the '/' separator
+        if value.contains('/') {
+            return Err(FsError::InvalidPathComponent(value.to_string()));
+        }
+
         let component = Utf8UnixComponent::try_from(value)
             .map_err(|_| FsError::InvalidPathComponent(value.to_string()))?;
 

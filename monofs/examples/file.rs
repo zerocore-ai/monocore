@@ -21,8 +21,8 @@
 //! cargo run --example file
 //! ```
 
-use monofs::filesystem::File;
 use ipldstore::{MemoryStore, Storable};
+use monofs::filesystem::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
 //--------------------------------------------------------------------------------------------------
@@ -48,7 +48,6 @@ async fn main() -> anyhow::Result<()> {
     output_stream.flush().await?;
     drop(output_stream);
     println!("Wrote content to file");
-
 
     // Read content from the file
     let input_stream = file.get_input_stream().await?;
