@@ -388,114 +388,18 @@ pub(crate) async fn save_or_update_layer(
     }
 }
 
-/// Updates the head CID of a layer in the database.
-///
-/// ## Arguments
-///
-/// * `pool` - The database connection pool
-/// * `digest` - The digest of the layer to update
-/// * `head_cid` - The root CID of the monofs layer
-pub(crate) async fn update_layer_head_cid(
-    pool: &Pool<Sqlite>,
-    digest: &str,
-    head_cid: &str,
-) -> MonocoreResult<()> {
-    sqlx::query(
-        r#"
-        UPDATE layers
-        SET head_cid = ?, modified_at = CURRENT_TIMESTAMP
-        WHERE digest = ?
-        "#,
-    )
-    .bind(head_cid)
-    .bind(digest)
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
-/// Updates the head CID of an image in the database.
-///
-/// ## Arguments
-///
-/// * `pool` - The database connection pool
-/// * `reference` - The reference of the image to update
-/// * `head_cid` - The root CID of the merged monofs layers
-pub(crate) async fn update_image_head_cid(
-    pool: &Pool<Sqlite>,
-    reference: &str,
-    head_cid: &str,
-) -> MonocoreResult<()> {
-    sqlx::query(
-        r#"
-        UPDATE images
-        SET head_cid = ?, modified_at = CURRENT_TIMESTAMP
-        WHERE reference = ?
-        "#,
-    )
-    .bind(head_cid)
-    .bind(reference)
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
-/// Gets all layer CIDs for an image in base-to-top order.
-///
-/// This function returns a vector of tuples containing:
-/// - The layer's digest
-/// - The layer's head CID (if it exists)
-///
-/// The layers are returned in the order they should be applied,
-/// from base layer to top layer.
-///
-/// ## Arguments
-///
-/// * `pool` - The database connection pool
-/// * `reference` - The reference of the image to get layers for
-pub(crate) async fn get_image_layer_cids(
-    pool: &Pool<Sqlite>,
-    reference: &str,
-) -> MonocoreResult<Vec<(String, Option<String>)>> {
-    let records = sqlx::query(
-        r#"
-        SELECT l.digest, l.head_cid
-        FROM layers l
-        JOIN manifests m ON l.manifest_id = m.id
-        JOIN images i ON m.image_id = i.id
-        WHERE i.reference = ?
-        ORDER BY l.id ASC
-        "#,
-    )
-    .bind(reference)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(records
-        .into_iter()
-        .map(|record| {
-            (
-                record.get::<String, _>("digest"),
-                record.get::<Option<String>, _>("head_cid"),
-            )
-        })
-        .collect())
-}
-
-/// Checks if a layer exists and is complete (has head_cid) in the database.
+/// Checks if a layer exists in the database.
 ///
 /// ## Arguments
 ///
 /// * `pool` - The database connection pool
 /// * `digest` - The digest string of the layer to check
-pub(crate) async fn layer_complete(pool: &Pool<Sqlite>, digest: &str) -> MonocoreResult<bool> {
+pub(crate) async fn layer_exists(pool: &Pool<Sqlite>, digest: &str) -> MonocoreResult<bool> {
     let record = sqlx::query(
         r#"
         SELECT COUNT(*) as count
         FROM layers
-        WHERE digest = ? AND head_cid IS NOT NULL
+        WHERE digest = ?
         "#,
     )
     .bind(digest)
@@ -505,18 +409,18 @@ pub(crate) async fn layer_complete(pool: &Pool<Sqlite>, digest: &str) -> Monocor
     Ok(record.get::<i64, _>("count") > 0)
 }
 
-/// Checks if an image exists and is complete (has head_cid) in the database.
+/// Checks if an image exists in the database.
 ///
 /// ## Arguments
 ///
 /// * `pool` - The database connection pool
 /// * `reference` - The reference string of the image to check
-pub(crate) async fn image_complete(pool: &Pool<Sqlite>, reference: &str) -> MonocoreResult<bool> {
+pub(crate) async fn image_exists(pool: &Pool<Sqlite>, reference: &str) -> MonocoreResult<bool> {
     let record = sqlx::query(
         r#"
         SELECT COUNT(*) as count
         FROM images
-        WHERE reference = ? AND head_cid IS NOT NULL
+        WHERE reference = ?
         "#,
     )
     .bind(reference)

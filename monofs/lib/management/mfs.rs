@@ -43,7 +43,7 @@ pub async fn init_mfs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
 
     // Ensure the mount directory is absolute
     let mount_dir = fs::canonicalize(&mount_dir).await?;
-    tracing::info!("Mount point available at {}", mount_dir.display());
+    tracing::info!("mount point available at {}", mount_dir.display());
 
     // Create the .mfs directory adjacent to the mount point
     let mfs_data_dir = PathBuf::from(format!("{}.{}", mount_dir.display(), MFS_DIR_SUFFIX));
@@ -52,39 +52,39 @@ pub async fn init_mfs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
 
     // Find an available port
     let port = super::find_available_port(DEFAULT_HOST, DEFAULT_NFS_PORT).await?;
-    tracing::info!("Found available port: {}", port);
+    tracing::info!("found available port: {}", port);
 
     // Create required directories
     let log_dir = mfs_data_dir.join(LOG_SUBDIR);
     fs::create_dir_all(&log_dir).await?;
-    tracing::info!("Log directory available at {}", log_dir.display());
+    tracing::info!("log directory available at {}", log_dir.display());
 
     // Create the fs database file
     let fs_db_path = mfs_data_dir.join(FS_DB_FILENAME);
     if !fs_db_path.exists() {
         fs::File::create(&fs_db_path).await?;
-        tracing::info!("Created fs database at {}", fs_db_path.display());
+        tracing::info!("created fs database at {}", fs_db_path.display());
     }
 
     // Initialize the filesystem database schema
     db::init_db(&fs_db_path, &FS_DB_MIGRATOR).await?;
-    tracing::info!("Initialized fs database schema");
+    tracing::info!("initialized fs database schema");
 
     // Create the blocks directory
     let blocks_dir = mfs_data_dir.join(BLOCKS_SUBDIR);
     fs::create_dir_all(&blocks_dir).await?;
-    tracing::info!("Blocks directory available at {}", blocks_dir.display());
+    tracing::info!("blocks directory available at {}", blocks_dir.display());
 
     // Start the supervisor process
     let child_name = mount_dir
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
-        .expect("Failed to get file name for mount point");
+        .expect("failed to get file name for mount point");
 
     let mfsrun_path =
         monoutils::path::resolve_binary_path(MFSRUN_BIN_PATH_ENV_VAR, DEFAULT_MFSRUN_BIN_PATH)?;
 
-    tracing::info!("Mounting the filesystem...");
+    tracing::info!("mounting the filesystem...");
     let status = Command::new(mfsrun_path)
         .arg("supervisor")
         .arg("--log-dir")
@@ -104,19 +104,19 @@ pub async fn init_mfs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
         .spawn()?;
 
     tracing::info!(
-        "Started supervisor process with PID: {}",
+        "started supervisor process with PID: {}",
         status.id().unwrap_or(0)
     );
 
     // Mount the filesystem
     mount_fs(&mount_dir, DEFAULT_HOST, port).await?;
-    tracing::info!("Mounted filesystem at {}", mount_dir.display());
+    tracing::info!("mounted filesystem at {}", mount_dir.display());
 
     // Create symbolic link to mfs_data_dir in mount directory
     let link_path = mount_dir.join(MFS_LINK_FILENAME);
     if !link_path.exists() {
         fs::symlink(&mfs_data_dir, &link_path).await?;
-        tracing::info!("Created symbolic link at {}", link_path.display());
+        tracing::info!("created symbolic link at {}", link_path.display());
     }
 
     Ok(port)
@@ -147,7 +147,7 @@ pub async fn detach_mfs(mount_dir: Option<PathBuf>, force: bool) -> FsResult<()>
 
     // Find the MFS root directory
     let mfs_root = find::find_mfs_root(&start_path).await?;
-    tracing::info!("Found MFS root at {}", mfs_root.display());
+    tracing::info!("found MFS root at {}", mfs_root.display());
 
     // Get the filesystem database path
     let db_path = get_fs_db_path(&mfs_root).await?;
@@ -158,7 +158,7 @@ pub async fn detach_mfs(mount_dir: Option<PathBuf>, force: bool) -> FsResult<()>
     // Get and terminate the supervisor process
     match get_supervisor_pid(&db_path, &mfs_root).await {
         Ok(Some(supervisor_pid)) => {
-            tracing::info!("Found supervisor process with PID: {}", supervisor_pid);
+            tracing::info!("found supervisor process with PID: {}", supervisor_pid);
 
             // Check if process is still running
             let pid = Pid::from_raw(supervisor_pid);
@@ -167,20 +167,20 @@ pub async fn detach_mfs(mount_dir: Option<PathBuf>, force: bool) -> FsResult<()>
                     // Process exists, send SIGTERM
                     if let Err(e) = signal::kill(pid, Signal::SIGTERM) {
                         tracing::warn!(
-                            "Failed to send SIGTERM to supervisor process {}: {}",
+                            "failed to send SIGTERM to supervisor process {}: {}",
                             supervisor_pid,
                             e
                         );
                     } else {
-                        tracing::info!("Sent SIGTERM to supervisor process {}", supervisor_pid);
+                        tracing::info!("sent SIGTERM to supervisor process {}", supervisor_pid);
                     }
                 }
                 Err(nix::errno::Errno::ESRCH) => {
-                    tracing::info!("Supervisor process {} no longer exists", supervisor_pid);
+                    tracing::info!("supervisor process {} no longer exists", supervisor_pid);
                 }
                 Err(e) => {
                     tracing::warn!(
-                        "Failed to check if supervisor process {} exists: {}",
+                        "failed to check if supervisor process {} exists: {}",
                         supervisor_pid,
                         e
                     );
@@ -189,8 +189,8 @@ pub async fn detach_mfs(mount_dir: Option<PathBuf>, force: bool) -> FsResult<()>
         }
         Ok(None) => {
             tracing::warn!(
-                "No supervisor PID found in database for mount point {}. \
-                The supervisor may have already exited.",
+                "no supervisor PID found in database for mount point {}. \
+                the supervisor may have already exited.",
                 mfs_root.display()
             );
         }
@@ -252,7 +252,7 @@ async fn unmount_fs(mount_dir: impl AsRef<Path>, force: bool) -> FsResult<()> {
         )));
     }
 
-    tracing::info!("Unmounting filesystem at {}", mount_dir.display());
+    tracing::info!("unmounting filesystem at {}", mount_dir.display());
 
     // Construct the unmount command
     let mut cmd = Command::new("umount");
@@ -265,13 +265,13 @@ async fn unmount_fs(mount_dir: impl AsRef<Path>, force: bool) -> FsResult<()> {
 
     if !status.success() {
         return Err(FsError::UnmountFailed(format!(
-            "Unmount command exited with status: {}",
+            "unmount command exited with status: {}",
             status
         )));
     }
 
     tracing::info!(
-        "Successfully unmounted filesystem at {}",
+        "successfully unmounted filesystem at {}",
         mount_dir.display()
     );
     Ok(())
@@ -283,7 +283,7 @@ async fn mount_fs(mount_dir: impl AsRef<Path>, host: &str, port: u32) -> FsResul
 
     // Create mount point if it doesn't exist
     fs::create_dir_all(&mount_dir).await?;
-    tracing::info!("Mount point available at {}", mount_dir.display());
+    tracing::info!("mount point available at {}", mount_dir.display());
 
     // Check if mount point is empty
     let mut entries = fs::read_dir(&mount_dir).await?;
@@ -292,7 +292,7 @@ async fn mount_fs(mount_dir: impl AsRef<Path>, host: &str, port: u32) -> FsResul
             mount_dir.to_string_lossy().to_string(),
         ));
     }
-    tracing::info!("Mounting NFS share at {}", mount_dir.display());
+    tracing::info!("mounting NFS share at {}", mount_dir.display());
 
     // Wait for the port to be ready. If we don't do this, the mount command will retry every
     // 5+ seconds on macos.
@@ -320,16 +320,16 @@ async fn mount_fs(mount_dir: impl AsRef<Path>, host: &str, port: u32) -> FsResul
         .status()
         .await?;
 
-    tracing::info!("Mount command took {:?} to complete", start.elapsed());
+    tracing::info!("mount command took {:?} to complete", start.elapsed());
 
     if !status.success() {
         return Err(FsError::MountFailed(format!(
-            "Mount command exited with status: {}",
+            "mount command exited with status: {}",
             status
         )));
     }
 
-    tracing::info!("Successfully mounted NFS share at {}", mount_dir.display());
+    tracing::info!("successfully mounted NFS share at {}", mount_dir.display());
     Ok(())
 }
 
@@ -346,13 +346,13 @@ async fn wait_for_port(host: &str, port: u32) {
     loop {
         match TcpStream::connect(&addr).await {
             Ok(_) => {
-                tracing::info!("Port {} on {} is ready!", port, host);
+                tracing::info!("port {} on {} is ready!", port, host);
                 break;
             }
             Err(e) => {
                 let retry_delay = 50;
                 tracing::info!(
-                    "Port {} on {} is not ready yet (error: {}), retrying in {}ms...",
+                    "port {} on {} is not ready yet (error: {}), retrying in {}ms...",
                     port,
                     host,
                     e,
