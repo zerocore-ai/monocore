@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS layers (
     media_type TEXT NOT NULL,
     digest TEXT NOT NULL, -- the hash of the compressed layer
     diff_id TEXT NOT NULL, -- the hash of the uncompressed layer
-    head_cid TEXT, -- the root cid of the partial fs in monofs
     size_bytes INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     modified_at DATETIME DEFAULT CURRENT_TIMESTAMP,

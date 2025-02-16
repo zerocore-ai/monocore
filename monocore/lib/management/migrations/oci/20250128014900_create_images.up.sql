@@ -5,7 +5,6 @@ CREATE TABLE IF NOT EXISTS images (
     id INTEGER PRIMARY KEY,
     reference TEXT NOT NULL UNIQUE,
     size_bytes INTEGER NOT NULL,
-    head_cid TEXT, -- the root cid of the merged layers in monofs
     last_used_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     modified_at DATETIME DEFAULT CURRENT_TIMESTAMP

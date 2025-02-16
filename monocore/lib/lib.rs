@@ -70,7 +70,6 @@ mod error;
 pub mod cli;
 pub mod config;
 pub mod management;
-pub mod monoimage;
 pub mod oci;
 pub mod runtime;
 pub mod utils;

@@ -10,24 +10,31 @@ use monocore::{
 
 #[tokio::main]
 async fn main() -> MonocoreResult<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_file(false)
+        .with_line_number(false)
+        .with_thread_ids(false)
+        .with_thread_names(false)
+        .with_level(true)
+        .init();
 
     // Parse command line arguments
     let args = MonocoreArgs::parse();
     match args.subcommand {
         Some(MonocoreSubcommand::Init { path }) => {
-            tracing::info!("Initializing monocore project: path={path:?}");
+            tracing::info!("initializing monocore project: path={path:?}");
             management::init_menv(path).await?;
-            tracing::info!("Successfully initialized monocore project");
+            tracing::info!("successfully initialized monocore project");
         }
         Some(MonocoreSubcommand::Pull {
             image,
             image_group,
             name,
         }) => {
-            tracing::info!("Pulling image: name={name}, image={image}, image_group={image_group}");
+            tracing::info!("pulling image: name={name}, image={image}, image_group={image_group}");
             management::pull_image(name, image, image_group).await?;
-            tracing::info!("Successfully pulled image");
+            tracing::info!("successfully pulled image");
         }
         Some(_) => (), // TODO: implement other subcommands
         None => {
