@@ -4004,6 +4004,7 @@ dependencies = [
  "intaglio",
  "nfsserve",
  "pretty-error-debug",
+ "tempfile",
  "thiserror 2.0.6",
  "tokio",
  "tracing",

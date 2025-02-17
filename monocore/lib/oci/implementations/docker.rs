@@ -336,9 +336,7 @@ impl OciRegistryPull for DockerRegistry {
             .zip(config.rootfs().diff_ids())
             .map(|(layer_desc, diff_id)| async {
                 // Check if layer already exists in database
-                if management::layer_exists(&self.oci_db, &layer_desc.digest().to_string())
-                    .await?
-                {
+                if management::layer_exists(&self.oci_db, &layer_desc.digest().to_string()).await? {
                     tracing::info!(
                         "layer {} already exists, skipping download",
                         layer_desc.digest()
