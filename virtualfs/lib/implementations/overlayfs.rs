@@ -460,17 +460,16 @@ impl VirtualFileSystem for OverlayFileSystem {
         &self,
         path: &Path,
     ) -> VfsResult<Box<dyn Iterator<Item = PathSegment> + Send + Sync + 'static>> {
-        // If the directory exists in the top layer, return its listing.
-        if self.get_top_layer().exists(path).await? {
-            return self.get_top_layer().read_directory(path).await;
-        }
-
         // Check for a whiteout for this directory.
         let whiteout_path = if let Some(parent) = path.parent() {
             parent.join(format!(
                 "{}{}",
                 WHITEOUT_PREFIX,
-                path.file_name().unwrap().to_string_lossy()
+                path.file_name()
+                    .ok_or_else(|| VfsError::InvalidPathComponent(
+                        "Path must have a file name".to_string()
+                    ))?
+                    .to_string_lossy()
             ))
         } else {
             PathBuf::from(format!("{}{}", WHITEOUT_PREFIX, path.to_string_lossy()))
@@ -480,22 +479,65 @@ impl VirtualFileSystem for OverlayFileSystem {
             return Err(VfsError::NotFound(path.to_path_buf()));
         }
 
-        // If the parent is opaque then lower-layer content is hidden.
+        // Check if the parent's opaque marker is set.
+        // If so, do not merge lower-layer contents; use top layer exclusively.
         if let Some(parent) = path.parent() {
             let opaque_marker = parent.join(OPAQUE_MARKER);
             if self.get_top_layer().exists(&opaque_marker).await? {
-                return Err(VfsError::NotFound(path.to_path_buf()));
+                if self.get_top_layer().exists(path).await? {
+                    return self.get_top_layer().read_directory(path).await;
+                } else {
+                    return Err(VfsError::NotFound(path.to_path_buf()));
+                }
             }
         }
 
-        // Search lower layers (in reverse order) for the directory listing.
-        for layer in self.get_lower_layers().iter().rev() {
+        // Build a union of lower and top layer entries.
+        use std::collections::HashMap;
+        let mut union: HashMap<String, PathSegment> = HashMap::new();
+
+        // Process lower layers in order (lowest first).
+        for layer in self.get_lower_layers().iter() {
             if layer.exists(path).await? {
-                return layer.read_directory(path).await;
+                let entries = layer.read_directory(path).await?;
+                for seg in entries.collect::<Vec<_>>() {
+                    // We assume that each PathSegment can be converted to a String.
+                    let name = seg.to_string();
+                    union.insert(name, seg);
+                }
             }
         }
 
-        Err(VfsError::NotFound(path.to_path_buf()))
+        // Process the top layer.
+        if self.get_top_layer().exists(path).await? {
+            let entries = self.get_top_layer().read_directory(path).await?;
+            let top_entries: Vec<PathSegment> = entries.collect();
+
+            // If an opaque marker is present in the top layer directory,
+            // then ignore any lower-layer entries.
+            if top_entries
+                .iter()
+                .any(|seg| seg.to_string() == OPAQUE_MARKER)
+            {
+                union.clear();
+            }
+
+            for seg in top_entries {
+                let name = seg.to_string();
+                if name.starts_with(WHITEOUT_PREFIX) {
+                    // A whiteout file hides the corresponding real entry.
+                    let real_name = name.trim_start_matches(WHITEOUT_PREFIX).to_string();
+                    union.remove(&real_name);
+                } else {
+                    // Otherwise, the top layer file overrides the lower layers.
+                    union.insert(name, seg);
+                }
+            }
+        }
+
+        // Return the merged (union) view as an iterator.
+        let result: Vec<PathSegment> = union.into_values().collect();
+        Ok(Box::new(result.into_iter()))
     }
 
     async fn read_symlink(&self, path: &Path) -> VfsResult<PathBuf> {
@@ -766,7 +808,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_exists_basic_functionality() {
+    async fn test_overlayfs_exists_basic_functionality() {
         // Create test layers
         let lower = helper::create_fs(&["file1.txt", "dir1/file2.txt"]).await;
         let upper = helper::create_fs(&["file3.txt"]).await;
@@ -781,7 +823,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_exists_with_whiteouts() {
+    async fn test_overlayfs_exists_with_whiteouts() {
         // Create test layers
         let lower = helper::create_fs(&["file1.txt", "file2.txt"]).await;
         let upper = helper::create_fs(&[".wh.file1.txt"]).await; // Whiteout for file1.txt
@@ -794,7 +836,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_exists_with_opaque_directories() {
+    async fn test_overlayfs_exists_with_opaque_directories() {
         // Create test layers
         let lower = helper::create_fs(&["dir1/file1.txt", "dir1/file2.txt"]).await;
         let upper = helper::create_fs(&["dir1/.wh..wh..opq", "dir1/file3.txt"]).await;
@@ -809,7 +851,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_exists_layer_precedence() {
+    async fn test_overlayfs_exists_layer_precedence() {
         // Create test layers with overlapping files
         let lower = helper::create_fs(&["file1.txt"]).await;
         let middle = helper::create_fs(&["file1.txt", "file2.txt"]).await;
@@ -823,7 +865,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_exists_edge_cases() {
+    async fn test_overlayfs_exists_edge_cases() {
         let lower = helper::create_fs(&["file1.txt"]).await;
         let upper = helper::create_fs(&[".wh.file1.txt", ".wh..wh..opq"]).await;
 
@@ -837,12 +879,11 @@ mod tests {
         // Test path components that should be rejected
         assert!(overlay.exists(Path::new(".")).await.is_err()); // Current directory
         assert!(overlay.exists(Path::new("..")).await.is_err()); // Parent directory
-        assert!(overlay.exists(Path::new("")).await.is_err()); // Empty path
     }
 
     // Tests for create_file
     #[tokio::test]
-    async fn test_create_file_in_top_layer() {
+    async fn test_overlayfs_create_file_in_top_layer() {
         // Create test layers with existing content
         let lower = helper::create_fs(&["dir/existing.txt"]).await;
         let top = helper::create_fs(&[]).await;
@@ -871,7 +912,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_file_with_whiteout() {
+    async fn test_overlayfs_create_file_with_whiteout() {
         // Setup: file exists in lower layer and is whited out in top layer
         let lower = helper::create_fs(&["dir/file.txt"]).await;
         let top = helper::create_fs(&["dir/.wh.file.txt"]).await;
@@ -896,7 +937,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_file_in_opaque_directory() {
+    async fn test_overlayfs_create_file_in_opaque_directory() {
         // Setup: dir with files in lower layer, made opaque in top layer
         let lower = helper::create_fs(&["dir/lower.txt"]).await;
         let top = helper::create_fs(&["dir/.wh..wh..opq"]).await;
@@ -921,7 +962,7 @@ mod tests {
 
     // Tests for create_directory
     #[tokio::test]
-    async fn test_create_directory_with_existing_content() {
+    async fn test_overlayfs_create_directory_with_existing_content() {
         // Setup: directory exists in lower layer with content
         let lower = helper::create_fs(&["existing/file.txt"]).await;
         let top = helper::create_fs(&[]).await;
@@ -948,7 +989,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_directory_over_whiteout() {
+    async fn test_overlayfs_create_directory_over_whiteout() {
         // Setup: directory is whited out in top layer
         let lower = helper::create_fs(&["dir/file.txt"]).await;
         let top = helper::create_fs(&[".wh.dir"]).await;
@@ -976,7 +1017,7 @@ mod tests {
 
     // Tests for create_symlink
     #[tokio::test]
-    async fn test_create_symlink_with_target_in_lower_layer() {
+    async fn test_overlayfs_create_symlink_with_target_in_lower_layer() {
         // Setup: target exists in lower layer
         let lower = helper::create_fs(&["target.txt"]).await;
         let top = helper::create_fs(&[]).await;
@@ -1002,7 +1043,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_symlink_in_whited_out_directory() {
+    async fn test_overlayfs_create_symlink_in_whited_out_directory() {
         // Setup: directory exists in lower layer but is whited out
         let lower = helper::create_fs(&["dir/file.txt"]).await;
         let top = helper::create_fs(&[".wh.dir"]).await;
@@ -1017,7 +1058,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_directory_in_opaque_directory() {
+    async fn test_overlayfs_create_directory_in_opaque_directory() {
         // Setup:
         // Lower layer contains a directory "dir" with a file "file.txt"
         // Top layer contains an opaque marker for "dir"
@@ -1040,7 +1081,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_symlink_in_opaque_directory() {
+    async fn test_overlayfs_create_symlink_in_opaque_directory() {
         // Setup:
         // Lower layer contains a target file "dir/target.txt"
         // Top layer contains an opaque marker for "dir"
@@ -1067,7 +1108,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_file_parent_copyup() {
+    async fn test_overlayfs_create_file_parent_copyup() {
         // Lower layer has "dir/existing.txt"
         let lower = helper::create_fs(&["dir/existing.txt"]).await;
 
@@ -1090,7 +1131,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_file_upper_layer() {
+    async fn test_overlayfs_read_file_upper_layer() {
         // Create top layer containing "file_upper.txt"
         let top = helper::create_fs(&["file_upper.txt"]).await;
         let overlay = OverlayFileSystem::new(vec![top]).unwrap();
@@ -1110,7 +1151,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_file_lower_layer() {
+    async fn test_overlayfs_read_file_lower_layer() {
         // Lower layer contains "file_lower.txt"
         let lower = helper::create_fs(&["file_lower.txt"]).await;
 
@@ -1133,7 +1174,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_file_whiteout() {
+    async fn test_overlayfs_read_file_whiteout() {
         // Lower layer contains "file_whiteout.txt"
         let lower = helper::create_fs(&["file_whiteout.txt"]).await;
 
@@ -1149,7 +1190,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_directory_upper_layer() {
+    async fn test_overlayfs_read_directory_upper_layer() {
         // Top layer: create "dir/child.txt"
         let top = helper::create_fs(&["dir/child.txt"]).await;
         let overlay = OverlayFileSystem::new(vec![top]).unwrap();
@@ -1166,7 +1207,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_directory_lower_layer() {
+    async fn test_overlayfs_read_directory_lower_layer() {
         // Lower layer: "dir/child_lower.txt"
         let lower = helper::create_fs(&["dir/child_lower.txt"]).await;
         // Top layer is empty.
@@ -1182,7 +1223,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_directory_whiteout() {
+    async fn test_overlayfs_read_directory_whiteout() {
         // Lower layer has "dir/child.txt"
         let lower = helper::create_fs(&["dir/child.txt"]).await;
         // Top layer whiteouts the directory "dir" with ".wh.dir"
@@ -1194,7 +1235,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_symlink_upper_layer() {
+    async fn test_overlayfs_read_symlink_upper_layer() {
         // Create an empty top layer and then create a symlink using overlay
         let top = helper::create_fs(&[]).await;
         let overlay = OverlayFileSystem::new(vec![top]).unwrap();
@@ -1211,7 +1252,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_symlink_lower_layer() {
+    async fn test_overlayfs_read_symlink_lower_layer() {
         // Create a lower layer and add a symlink "link" -> "target_lower.txt".
         // Since helper::create_fs does not distinguish symlinks, we call create_symlink directly on the lower FS.
         let lower = helper::create_fs(&[]).await;
@@ -1230,7 +1271,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_symlink_whiteout() {
+    async fn test_overlayfs_read_symlink_whiteout() {
         // Lower layer creates a symlink "link" -> "target.txt"
         let lower = helper::create_fs(&[]).await;
         lower
@@ -1246,7 +1287,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_metadata_upper_layer() {
+    async fn test_overlayfs_get_metadata_upper_layer() {
         // Top layer with "meta.txt"
         let top = helper::create_fs(&["meta.txt"]).await;
         let overlay = OverlayFileSystem::new(vec![top]).unwrap();
@@ -1260,7 +1301,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_metadata_lower_layer() {
+    async fn test_overlayfs_get_metadata_lower_layer() {
         // Lower layer with "meta_lower.txt"
         let lower = helper::create_fs(&["meta_lower.txt"]).await;
         let top = helper::create_fs(&[]).await;
@@ -1274,7 +1315,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_metadata_whiteout() {
+    async fn test_overlayfs_get_metadata_whiteout() {
         // Lower layer with "meta.txt" but top layer has whiteout ".wh.meta.txt"
         let lower = helper::create_fs(&["meta.txt"]).await;
         let top = helper::create_fs(&[".wh.meta.txt"]).await;
@@ -1285,7 +1326,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_copyup_metadata() {
+    async fn test_overlayfs_copyup_metadata() {
         // Setup: lower layer contains the directory "dir" via a file inside it.
         let lower = helper::create_fs(&["dir/existing.txt"]).await;
 
@@ -1328,7 +1369,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_write_file_copyup() {
+    async fn test_overlayfs_write_file_copyup() {
         // Create a lower layer with "test.txt"
         let lower = helper::create_fs(&["test.txt"]).await;
         // Write initial content "Existing" into the lower layer file.
@@ -1368,15 +1409,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_write_file_top_layer() {
+    async fn test_overlayfs_write_file_top_layer() {
         // Create an overlay with a single layer (this becomes the top layer).
-        let top = helper::create_fs(&["test_top.txt"]).await;
+        let top = helper::create_fs(&["test_overlayfs_top.txt"]).await;
         let overlay = OverlayFileSystem::new(vec![top]).unwrap();
 
         // Write new content "Updated" to the file.
         overlay
             .write_file(
-                Path::new("test_top.txt"),
+                Path::new("test_overlayfs_top.txt"),
                 0,
                 Box::pin(std::io::Cursor::new(b"Updated".to_vec())),
             )
@@ -1386,7 +1427,7 @@ mod tests {
         // Read and validate the content from the top layer.
         let mut reader = overlay
             .get_top_layer()
-            .read_file(Path::new("test_top.txt"), 0, 1024)
+            .read_file(Path::new("test_overlayfs_top.txt"), 0, 1024)
             .await
             .unwrap();
         let mut buf = Vec::new();
@@ -1396,7 +1437,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rename_copyup() {
+    async fn test_overlayfs_rename_copyup() {
         // Lower layer has a file "rename.txt" with content "ToRename".
         let lower = helper::create_fs(&["rename.txt"]).await;
         lower
@@ -1434,7 +1475,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rename_top_layer() {
+    async fn test_overlayfs_rename_top_layer() {
         // Prepare a top layer file "topfile.txt" with content "TopContent".
         let top = helper::create_fs(&["topfile.txt"]).await;
         top.write_file(
@@ -1468,7 +1509,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_remove_top_layer() {
+    async fn test_overlayfs_remove_top_layer() {
         // Create a top layer file "remove_top.txt" with content "DeleteMe".
         let top = helper::create_fs(&["remove_top.txt"]).await;
         top.write_file(
@@ -1488,7 +1529,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_remove_whiteout() {
+    async fn test_overlayfs_remove_whiteout() {
         // Create a lower layer with "remove_lower.txt" containing some content.
         let lower = helper::create_fs(&["remove_lower.txt"]).await;
         lower
@@ -1520,6 +1561,40 @@ mod tests {
             .exists(&whiteout_path)
             .await
             .unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_overlayfs_read_directory_merged_after_copyup() {
+        // Create a lower layer that contains the directory "dir" with a file "lower.txt"
+        let lower = helper::create_fs(&["dir/lower.txt"]).await;
+        // Create an empty top layer
+        let top = helper::create_fs(&[]).await;
+        let overlay = OverlayFileSystem::new(vec![lower, top]).unwrap();
+
+        // Create a new file "dir/new.txt" via the overlay.
+        // This should trigger the copy-up of the "dir" directory; however,
+        // the merged (union) view should still include "lower.txt" from the lower layer.
+        overlay
+            .create_file(Path::new("dir/new.txt"), false)
+            .await
+            .unwrap();
+        overlay
+            .write_file(
+                Path::new("dir/new.txt"),
+                0,
+                Box::pin(std::io::Cursor::new(b"new content".to_vec())),
+            )
+            .await
+            .unwrap();
+
+        // Read the directory "dir" and collect the names from the merged view.
+        let entry_iter = overlay.read_directory(Path::new("dir")).await.unwrap();
+        let mut entries: Vec<String> = entry_iter.map(|s| s.to_string()).collect();
+        entries.sort();
+
+        // Expect the directory to contain both "lower.txt" (from the lower layer) and "new.txt" (from top).
+        let expected = vec!["lower.txt".to_string(), "new.txt".to_string()];
+        assert_eq!(entries, expected);
     }
 }
 

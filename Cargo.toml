@@ -68,3 +68,6 @@ sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 regex = "1.10"
 async-recursion = "1.1"
 cfg-if = "1.0"
+nfsserve = "0.10"
+intaglio = "1.10"
+users = "0.11"

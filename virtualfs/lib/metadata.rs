@@ -1,6 +1,8 @@
 use cfg_if::cfg_if;
 use chrono::{DateTime, Utc};
 use getset::{CopyGetters, Getters};
+#[cfg(unix)]
+use users::{get_current_gid, get_current_uid};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
@@ -59,6 +61,9 @@ cfg_if! {
 /// - File size
 /// - Creation timestamp
 /// - Last modification timestamp
+/// - Last access timestamp
+/// - User ID (Unix only)
+/// - Group ID (Unix only)
 #[derive(Debug, Clone, CopyGetters, Getters, PartialEq, Eq)]
 pub struct Metadata {
     /// The mode of the file, combining file type and permissions
@@ -81,6 +86,20 @@ pub struct Metadata {
     /// When the file was last modified
     #[getset(get = "pub with_prefix")]
     modified_at: DateTime<Utc>,
+
+    /// When the file was last accessed
+    #[getset(get = "pub with_prefix")]
+    accessed_at: DateTime<Utc>,
+
+    /// User ID of the file owner (Unix only)
+    #[cfg(unix)]
+    #[getset(get_copy = "pub with_prefix")]
+    uid: u32,
+
+    /// Group ID of the file group (Unix only)
+    #[cfg(unix)]
+    #[getset(get_copy = "pub with_prefix")]
+    gid: u32,
 }
 
 cfg_if! {
@@ -294,6 +313,9 @@ impl Metadata {
     /// - size: 0 bytes
     /// - created_at: current UTC time
     /// - modified_at: current UTC time
+    /// - accessed_at: current UTC time
+    /// - uid: current user's UID (Unix only)
+    /// - gid: current user's GID (Unix only)
     ///
     /// ## Examples
     /// ```rust
@@ -306,14 +328,20 @@ impl Metadata {
         #[cfg(unix)] entity_type: ModeType,
         #[cfg(not(unix))] entity_type: EntityType,
     ) -> Self {
+        let now = Utc::now();
         Self {
             #[cfg(unix)]
             mode: Mode::new(entity_type),
             #[cfg(not(unix))]
             entity_type,
             size: 0,
-            created_at: Utc::now(),
-            modified_at: Utc::now(),
+            created_at: now,
+            modified_at: now,
+            accessed_at: now,
+            #[cfg(unix)]
+            uid: get_current_uid(),
+            #[cfg(unix)]
+            gid: get_current_gid(),
         }
     }
 
@@ -397,15 +425,56 @@ impl Metadata {
     pub fn set_size(&mut self, size: u64) {
         self.size = size;
     }
+
+    /// Sets the last access time of the file.
+    pub fn set_accessed_at(&mut self, time: DateTime<Utc>) {
+        self.accessed_at = time;
+    }
+
+    /// Sets the user ID of the file owner (Unix only).
+    #[cfg(unix)]
+    pub fn set_uid(&mut self, uid: u32) {
+        self.uid = uid;
+    }
+
+    /// Sets the group ID of the file group (Unix only).
+    #[cfg(unix)]
+    pub fn set_gid(&mut self, gid: u32) {
+        self.gid = gid;
+    }
+
+    #[cfg(test)]
+    #[cfg(unix)]
+    fn with_root_ownership(entity_type: ModeType) -> Self {
+        let now = Utc::now();
+        Self {
+            mode: Mode::new(entity_type),
+            size: 0,
+            created_at: now,
+            modified_at: now,
+            accessed_at: now,
+            uid: 0,
+            gid: 0,
+        }
+    }
 }
 
 cfg_if! {
     if #[cfg(unix)] {
         impl Mode {
-            /// Creates a new Mode with no permissions
+            /// Creates a new Mode with appropriate default permissions based on the file type.
+            ///
+            /// Default permissions are:
+            /// - Regular files: 644 (rw-r--r--)
+            /// - Directories: 755 (rwxr-xr-x)
+            /// - Symlinks: 777 (rwxrwxrwx)
             pub fn new(entity_type: ModeType) -> Self {
-                let perms: u32 = ModePerms::default().into();
-                Self((entity_type as u32) | perms)
+                let default_perms = match entity_type {
+                    ModeType::File => User::RW | Group::R | Other::R,
+                    ModeType::Directory => User::RWX | Group::RX | Other::RX,
+                    ModeType::Symlink => User::RWX | Group::RWX | Other::RWX,
+                };
+                Self((entity_type as u32) | u32::from(default_perms))
             }
 
             /// Gets the file type portion of the mode
@@ -621,22 +690,6 @@ cfg_if! {
                     user: rhs,
                     group: self.group,
                     other: self.other,
-                }
-            }
-        }
-
-        impl Default for ModePerms {
-            /// Creates a new ModePerms with default Unix permissions (0644).
-            ///
-            /// This sets the permissions to:
-            /// - User: read + write (rw-)
-            /// - Group: read-only (r--)
-            /// - Other: read-only (r--)
-            fn default() -> Self {
-                Self {
-                    user: User::RW,
-                    group: Group::R,
-                    other: Other::R,
                 }
             }
         }
@@ -958,5 +1011,62 @@ mod tests {
         mode.set_type(ModeType::Symlink);
         mode.set_permissions(User::RWX | Group::RWX | Other::RWX);
         assert_eq!(mode.to_string(), "lrwxrwxrwx");
+    }
+
+    #[test]
+    fn test_access_time() {
+        let mut metadata = Metadata::new(ModeType::File);
+        let original_atime = metadata.get_accessed_at().clone();
+
+        // Sleep briefly to ensure time difference
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        let new_time = Utc::now();
+        metadata.set_accessed_at(new_time);
+
+        assert_ne!(metadata.get_accessed_at(), &original_atime);
+        assert_eq!(metadata.get_accessed_at(), &new_time);
+    }
+
+    #[test]
+    fn test_unix_ids() {
+        let metadata = Metadata::new(ModeType::File);
+
+        // Test default values match current user
+        assert_eq!(metadata.get_uid(), get_current_uid());
+        assert_eq!(metadata.get_gid(), get_current_gid());
+
+        // Test setting custom values
+        let mut metadata = Metadata::with_root_ownership(ModeType::File);
+        assert_eq!(metadata.get_uid(), 0);
+        assert_eq!(metadata.get_gid(), 0);
+
+        metadata.set_uid(1000);
+        metadata.set_gid(1000);
+
+        assert_eq!(metadata.get_uid(), 1000);
+        assert_eq!(metadata.get_gid(), 1000);
+
+        // Test updating values
+        metadata.set_uid(2000);
+        metadata.set_gid(2000);
+
+        assert_eq!(metadata.get_uid(), 2000);
+        assert_eq!(metadata.get_gid(), 2000);
+    }
+
+    #[test]
+    fn test_metadata_clone() {
+        let mut original = Metadata::with_root_ownership(ModeType::File);
+        original.set_uid(1000);
+        original.set_gid(1000);
+        original.set_size(100);
+
+        let cloned = original.clone();
+
+        assert_eq!(cloned.get_uid(), original.get_uid());
+        assert_eq!(cloned.get_gid(), original.get_gid());
+        assert_eq!(cloned.get_size(), original.get_size());
+        assert_eq!(cloned.get_accessed_at(), original.get_accessed_at());
     }
 }
