@@ -27,14 +27,15 @@ const OPAQUE_MARKER: &str = ".wh..wh..opq";
 //--------------------------------------------------------------------------------------------------
 
 /// A filesystem implementation that combines multiple filesystems into a single logical filesystem,
-/// following the OCI (Open Container Initiative) specification for overlay filesystems.
+/// following overlay/union filesystem principles with OCI-compatible whiteouts.
 ///
-/// ## OCI Compatibility
+/// ## Implementation Details
 ///
-/// This implementation adheres to the OCI specification for handling overlay filesystems:
+/// This implementation follows standard overlay filesystem concepts, similar to Linux's OverlayFS,
+/// while using OCI image specification's layer filesystem changeset format for whiteouts:
 ///
-/// - Supports OCI whiteout files (`.wh.` prefixed files) to mark deleted files
-/// - Handles opaque directory markers (`.wh..wh..opq`) to mask lower layer directories
+/// - Uses OCI-style whiteout files (`.wh.` prefixed files) to mark deleted files in upper layers
+/// - Uses OCI-style opaque directory markers (`.wh..wh..opq`) to mask lower layer directories
 ///
 /// ## Layer Structure
 ///
@@ -245,6 +246,107 @@ impl OverlayFileSystem {
         }
         Ok(())
     }
+
+    #[async_recursion]
+    async fn ensure_parent_in_top_recursive(
+        &self,
+        lower_layer: &(dyn VirtualFileSystem + Send + Sync),
+        src: &Path,
+    ) -> VfsResult<()> {
+        let top = self.get_top_layer();
+        // If the source does not already exist in the top layer, create it accordingly.
+        if !top.exists(src).await? {
+            let meta = lower_layer.get_metadata(src).await?;
+            #[cfg(unix)]
+            {
+                let is_dir = meta.get_mode().get_type() == Some(ModeType::Directory);
+                let is_symlink = meta.get_mode().get_type() == Some(ModeType::Symlink);
+                if is_dir {
+                    top.create_directory(src).await?;
+                    top.set_metadata(src, meta.clone()).await?;
+                } else if is_symlink {
+                    let target = lower_layer.read_symlink(src).await?;
+                    top.create_symlink(src, &target).await?;
+                    top.set_metadata(src, meta.clone()).await?;
+                    return Ok(());
+                } else {
+                    top.create_file(src, false).await?;
+                    let mut reader = lower_layer.read_file(src, 0, u64::MAX).await?;
+                    let mut buffer = Vec::new();
+                    reader.read_to_end(&mut buffer).await?;
+                    top.write_file(src, 0, Box::pin(std::io::Cursor::new(buffer)))
+                        .await?;
+                    top.set_metadata(src, meta.clone()).await?;
+                    return Ok(());
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                let is_dir = matches!(meta.get_entity_type(), EntityType::Directory);
+                if is_dir {
+                    top.create_directory(src).await?;
+                    top.set_metadata(src, meta.clone()).await?;
+                } else {
+                    top.create_file(src, false).await?;
+                    let mut reader = lower_layer.read_file(src, 0, u64::MAX).await?;
+                    let mut buffer = Vec::new();
+                    reader.read_to_end(&mut buffer).await?;
+                    top.write_file(src, 0, Box::pin(std::io::Cursor::new(buffer)))
+                        .await?;
+                    top.set_metadata(src, meta.clone()).await?;
+                    return Ok(());
+                }
+            }
+        }
+        // If the src is a directory, then iterate its children and copy-up recursively.
+        let children: Vec<_> = lower_layer.read_directory(src).await?.collect();
+        for child in children {
+            let child_name = child.to_string();
+            let child_path = src.join(&child_name);
+            if !top.exists(&child_path).await? {
+                let child_meta = lower_layer.get_metadata(&child_path).await?;
+                #[cfg(unix)]
+                {
+                    let is_dir = child_meta.get_mode().get_type() == Some(ModeType::Directory);
+                    let is_symlink = child_meta.get_mode().get_type() == Some(ModeType::Symlink);
+                    if is_dir {
+                        // Recursively copy up the subdirectory.
+                        self.ensure_parent_in_top_recursive(lower_layer, &child_path)
+                            .await?;
+                    } else if is_symlink {
+                        let target = lower_layer.read_symlink(&child_path).await?;
+                        top.create_symlink(&child_path, &target).await?;
+                        top.set_metadata(&child_path, child_meta.clone()).await?;
+                    } else {
+                        top.create_file(&child_path, false).await?;
+                        let mut reader = lower_layer.read_file(&child_path, 0, u64::MAX).await?;
+                        let mut buffer = Vec::new();
+                        reader.read_to_end(&mut buffer).await?;
+                        top.write_file(&child_path, 0, Box::pin(std::io::Cursor::new(buffer)))
+                            .await?;
+                        top.set_metadata(&child_path, child_meta.clone()).await?;
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    let is_dir = matches!(child_meta.get_entity_type(), EntityType::Directory);
+                    if is_dir {
+                        self.ensure_parent_in_top_recursive(lower_layer, &child_path)
+                            .await?;
+                    } else {
+                        top.create_file(&child_path, false).await?;
+                        let mut reader = lower_layer.read_file(&child_path, 0, u64::MAX).await?;
+                        let mut buffer = Vec::new();
+                        reader.read_to_end(&mut buffer).await?;
+                        top.write_file(&child_path, 0, Box::pin(std::io::Cursor::new(buffer)))
+                            .await?;
+                        top.set_metadata(&child_path, child_meta.clone()).await?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -299,7 +401,6 @@ impl VirtualFileSystem for OverlayFileSystem {
                 return Ok(true);
             }
         }
-
         Ok(false)
     }
 
@@ -460,7 +561,7 @@ impl VirtualFileSystem for OverlayFileSystem {
         &self,
         path: &Path,
     ) -> VfsResult<Box<dyn Iterator<Item = PathSegment> + Send + Sync + 'static>> {
-        // Check for a whiteout for this directory.
+        // Check for a whiteout for this directory
         let whiteout_path = if let Some(parent) = path.parent() {
             parent.join(format!(
                 "{}{}",
@@ -479,64 +580,70 @@ impl VirtualFileSystem for OverlayFileSystem {
             return Err(VfsError::NotFound(path.to_path_buf()));
         }
 
-        // Check if the parent's opaque marker is set.
-        // If so, do not merge lower-layer contents; use top layer exclusively.
+        // Check if the parent directory is opaque
         if let Some(parent) = path.parent() {
             let opaque_marker = parent.join(OPAQUE_MARKER);
             if self.get_top_layer().exists(&opaque_marker).await? {
                 if self.get_top_layer().exists(path).await? {
-                    return self.get_top_layer().read_directory(path).await;
+                    let entries = self.get_top_layer().read_directory(path).await?;
+                    // Filter out whiteout files and opaque markers from the result
+                    return Ok(Box::new(entries.filter(|seg| {
+                        let name = seg.to_string();
+                        !name.starts_with(WHITEOUT_PREFIX)
+                    })));
                 } else {
                     return Err(VfsError::NotFound(path.to_path_buf()));
                 }
             }
         }
 
-        // Build a union of lower and top layer entries.
         use std::collections::HashMap;
         let mut union: HashMap<String, PathSegment> = HashMap::new();
 
-        // Process lower layers in order (lowest first).
-        for layer in self.get_lower_layers().iter() {
-            if layer.exists(path).await? {
-                let entries = layer.read_directory(path).await?;
-                for seg in entries.collect::<Vec<_>>() {
-                    // We assume that each PathSegment can be converted to a String.
-                    let name = seg.to_string();
-                    union.insert(name, seg);
+        // First check if the directory itself is opaque in the top layer
+        let is_opaque = if self.get_top_layer().exists(path).await? {
+            let opaque_marker = path.join(OPAQUE_MARKER);
+            self.get_top_layer().exists(&opaque_marker).await?
+        } else {
+            false
+        };
+
+        // If not opaque, process lower layers first (from bottom to top)
+        if !is_opaque {
+            for layer in self.get_lower_layers().iter() {
+                if layer.exists(path).await? {
+                    let entries = layer.read_directory(path).await?;
+                    for seg in entries {
+                        let name = seg.to_string();
+                        union.insert(name, seg);
+                    }
                 }
             }
         }
 
-        // Process the top layer.
+        // Process the top layer
         if self.get_top_layer().exists(path).await? {
             let entries = self.get_top_layer().read_directory(path).await?;
-            let top_entries: Vec<PathSegment> = entries.collect();
-
-            // If an opaque marker is present in the top layer directory,
-            // then ignore any lower-layer entries.
-            if top_entries
-                .iter()
-                .any(|seg| seg.to_string() == OPAQUE_MARKER)
-            {
-                union.clear();
-            }
-
-            for seg in top_entries {
+            for seg in entries {
                 let name = seg.to_string();
                 if name.starts_with(WHITEOUT_PREFIX) {
-                    // A whiteout file hides the corresponding real entry.
+                    if name == OPAQUE_MARKER {
+                        continue; // Skip the opaque marker itself
+                    }
+                    // Remove the whited-out entry and skip the whiteout file itself
                     let real_name = name.trim_start_matches(WHITEOUT_PREFIX).to_string();
                     union.remove(&real_name);
                 } else {
-                    // Otherwise, the top layer file overrides the lower layers.
                     union.insert(name, seg);
                 }
             }
         }
 
-        // Return the merged (union) view as an iterator.
-        let result: Vec<PathSegment> = union.into_values().collect();
+        // Return the merged view as an iterator, excluding any remaining whiteout files
+        let result: Vec<PathSegment> = union
+            .into_values()
+            .filter(|seg| !seg.to_string().starts_with(WHITEOUT_PREFIX))
+            .collect();
         Ok(Box::new(result.into_iter()))
     }
 
@@ -725,51 +832,30 @@ impl VirtualFileSystem for OverlayFileSystem {
     }
 
     async fn rename(&self, old_path: &Path, new_path: &Path) -> VfsResult<()> {
-        // Ensure the destination does not already exist.
+        // Ensure new_path does not already exist.
         if self.exists(new_path).await? {
             return Err(VfsError::AlreadyExists(new_path.to_path_buf()));
         }
 
-        // Ensure the new path's parent exists in the top layer.
+        // Ensure the parent directory of new_path exists in the top layer.
         self.ensure_parent_in_top(new_path).await?;
 
         let top = self.get_top_layer();
+        // If the entity already exists in the top layer, delegate the rename directly.
         if top.exists(old_path).await? {
-            // If the entity is already in the top layer, delegate rename directly.
             return top.rename(old_path, new_path).await;
         }
 
-        // Otherwise, the entity exists only in a lower layer.
+        // The entity exists only in a lower layer—ensure its parent exists in the top layer.
         self.ensure_parent_in_top(old_path).await?;
+
+        // Find the first lower layer that contains the entity.
         let mut lower_found = false;
+        let mut found_layer: Option<&(dyn VirtualFileSystem + Send + Sync)> = None;
         for layer in self.get_lower_layers().iter().rev() {
             if layer.exists(old_path).await? {
                 lower_found = true;
-                let metadata = layer.get_metadata(old_path).await?;
-                #[cfg(unix)]
-                let is_dir = metadata.get_mode().get_type() == Some(ModeType::Directory);
-                #[cfg(not(unix))]
-                let is_dir = matches!(metadata.get_entity_type(), EntityType::Directory);
-
-                #[cfg(unix)]
-                let is_symlink = metadata.get_mode().get_type() == Some(ModeType::Symlink);
-                #[cfg(not(unix))]
-                let is_symlink = false; // For simplicity on non-Unix platforms
-
-                if is_dir {
-                    top.create_directory(old_path).await?;
-                } else if is_symlink {
-                    let target = layer.read_symlink(old_path).await?;
-                    top.create_symlink(old_path, &target).await?;
-                } else {
-                    top.create_file(old_path, false).await?;
-                    let mut reader = layer.read_file(old_path, 0, u64::MAX).await?;
-                    let mut buffer = Vec::new();
-
-                    reader.read_to_end(&mut buffer).await?;
-                    top.write_file(old_path, 0, Box::pin(std::io::Cursor::new(buffer)))
-                        .await?;
-                }
+                found_layer = Some(layer.as_ref());
                 break;
             }
         }
@@ -778,10 +864,61 @@ impl VirtualFileSystem for OverlayFileSystem {
             return Err(VfsError::NotFound(old_path.to_path_buf()));
         }
 
-        // Now that the entity is in the top layer, perform the rename.
+        let lower_layer = found_layer.unwrap();
+        let metadata = lower_layer.get_metadata(old_path).await?;
+
+        #[cfg(unix)]
+        {
+            let is_dir = metadata.get_mode().get_type() == Some(ModeType::Directory);
+            let is_symlink = metadata.get_mode().get_type() == Some(ModeType::Symlink);
+
+            if is_dir {
+                // Directory—recursively copy up the entire subtree.
+                self.ensure_parent_in_top_recursive(lower_layer, old_path)
+                    .await?;
+            } else if is_symlink {
+                let target = lower_layer.read_symlink(old_path).await?;
+                top.create_symlink(old_path, &target).await?;
+                top.set_metadata(old_path, metadata.clone()).await?;
+            } else {
+                // Regular file.
+                top.create_file(old_path, false).await?;
+                let mut reader = lower_layer.read_file(old_path, 0, u64::MAX).await?;
+                let mut buffer = Vec::new();
+                reader.read_to_end(&mut buffer).await?;
+                top.write_file(old_path, 0, Box::pin(std::io::Cursor::new(buffer)))
+                    .await?;
+                top.set_metadata(old_path, metadata.clone()).await?;
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            let is_dir = matches!(metadata.get_entity_type(), EntityType::Directory);
+            // For simplicity on non-Unix platforms, we don't handle symlinks
+            let is_symlink = false;
+
+            if is_dir {
+                // Directory—recursively copy up the entire subtree.
+                self.ensure_parent_in_top_recursive(lower_layer, old_path)
+                    .await?;
+            } else {
+                // Regular file.
+                top.create_file(old_path, false).await?;
+                let mut reader = lower_layer.read_file(old_path, 0, u64::MAX).await?;
+                let mut buffer = Vec::new();
+                reader.read_to_end(&mut buffer).await?;
+                top.write_file(old_path, 0, Box::pin(std::io::Cursor::new(buffer)))
+                    .await?;
+                top.set_metadata(old_path, metadata.clone()).await?;
+            }
+        }
+
+        // At this point, the entity is fully present in the top layer.
+        // Perform the rename operation.
         top.rename(old_path, new_path).await?;
 
-        // Create a whiteout for old_path to mask the lower layer.
+        // Create a whiteout to hide the original path from lower layers.
         let whiteout_path = if let Some(parent) = old_path.parent() {
             parent.join(format!(
                 "{}{}",
@@ -792,7 +929,6 @@ impl VirtualFileSystem for OverlayFileSystem {
             PathBuf::from(format!("{}{}", WHITEOUT_PREFIX, old_path.to_string_lossy()))
         };
 
-        // Mask the lower layer.
         top.create_file(&whiteout_path, false).await
     }
 }
@@ -1226,6 +1362,7 @@ mod tests {
     async fn test_overlayfs_read_directory_whiteout() {
         // Lower layer has "dir/child.txt"
         let lower = helper::create_fs(&["dir/child.txt"]).await;
+
         // Top layer whiteouts the directory "dir" with ".wh.dir"
         let top = helper::create_fs(&[".wh.dir"]).await;
         let overlay = OverlayFileSystem::new(vec![lower, top]).unwrap();
@@ -1595,6 +1732,145 @@ mod tests {
         // Expect the directory to contain both "lower.txt" (from the lower layer) and "new.txt" (from top).
         let expected = vec!["lower.txt".to_string(), "new.txt".to_string()];
         assert_eq!(entries, expected);
+    }
+
+    #[tokio::test]
+    async fn test_rename_directory_with_markers() {
+        // Setup: lower filesystem with a directory "old_dir" that contains:
+        // - "file.txt": a normal file.
+        // - ".wh.hidden.txt": a whiteout marker (simulating that "hidden.txt" should be hidden).
+        // - ".wh..wh..opq": an opaque marker indicating that "old_dir" is opaque.
+        let lower = helper::create_fs(&[
+            "old_dir/file.txt",
+            "old_dir/.wh.hidden.txt",
+            "old_dir/.wh..wh..opq",
+        ])
+        .await;
+        let top = helper::create_fs(&[]).await;
+        let overlay = OverlayFileSystem::new(vec![lower, top]).unwrap();
+
+        // Rename "old_dir" to "new_dir"
+        overlay
+            .rename(Path::new("old_dir"), Path::new("new_dir"))
+            .await
+            .unwrap();
+
+        // Verify:
+        // - "new_dir" exists and its content (including the whiteout marker) is visible.
+        // - "old_dir" is hidden (renamed away by creating a whiteout in its place).
+        assert!(overlay.exists(Path::new("new_dir")).await.unwrap());
+        assert!(overlay.exists(Path::new("new_dir/file.txt")).await.unwrap());
+        assert!(overlay
+            .get_top_layer()
+            .exists(Path::new("new_dir/.wh.hidden.txt"))
+            .await
+            .unwrap());
+        assert!(!overlay.exists(Path::new("old_dir")).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_rename_directory_with_overlapping_metadata() {
+        // Setup: lower filesystem with a directory "old_dir" that has custom metadata and a file.
+        let lower = helper::create_fs(&["old_dir/file.txt"]).await;
+
+        // Set custom metadata for "old_dir" on the lower layer.
+        #[cfg(unix)]
+        {
+            use crate::ModeType;
+            let mut custom_meta = Metadata::new(ModeType::Directory);
+            custom_meta.set_size(1234);
+            lower
+                .set_metadata(Path::new("old_dir"), custom_meta.clone())
+                .await
+                .unwrap();
+        }
+        #[cfg(not(unix))]
+        {
+            use crate::EntityType;
+            let mut custom_meta = Metadata::new(EntityType::Directory);
+            custom_meta.set_size(1234);
+            lower
+                .set_metadata(Path::new("old_dir"), custom_meta.clone())
+                .await
+                .unwrap();
+        }
+
+        let top = helper::create_fs(&[]).await;
+        let overlay = OverlayFileSystem::new(vec![lower, top]).unwrap();
+
+        // Perform the rename.
+        overlay
+            .rename(Path::new("old_dir"), Path::new("new_dir"))
+            .await
+            .unwrap();
+
+        // Verify that the new directory "new_dir" in the top layer has the custom metadata.
+        let new_meta = overlay
+            .get_top_layer()
+            .get_metadata(Path::new("new_dir"))
+            .await
+            .unwrap();
+        assert_eq!(new_meta.get_size(), 1234);
+    }
+
+    #[tokio::test]
+    async fn test_rename_nested_directory_markers() {
+        // Setup: lower filesystem with nested directories including markers.
+        let lower = helper::create_fs(&[
+            "old_dir/subdir/file.txt",
+            "old_dir/subdir/.wh.hidden.txt",
+            "old_dir/subdir/.wh..wh..opq",
+        ])
+        .await;
+        let top = helper::create_fs(&[]).await;
+        let overlay = OverlayFileSystem::new(vec![lower, top]).unwrap();
+
+        // Rename "old_dir" to "new_dir".
+        overlay
+            .rename(Path::new("old_dir"), Path::new("new_dir"))
+            .await
+            .unwrap();
+
+        // Verify:
+        // - The nested file exists at the new location.
+        // - The nested whiteout and opaque marker have been appropriately moved.
+        assert!(overlay
+            .exists(Path::new("new_dir/subdir/file.txt"))
+            .await
+            .unwrap());
+        assert!(overlay
+            .get_top_layer()
+            .exists(Path::new("new_dir/subdir/.wh.hidden.txt"))
+            .await
+            .unwrap());
+        assert!(overlay
+            .get_top_layer()
+            .exists(Path::new("new_dir/subdir/.wh..wh..opq"))
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_rename_creates_whiteout() {
+        // Setup: lower filesystem with a directory "rename_dir" containing a file.
+        let lower = helper::create_fs(&["rename_dir/file.txt"]).await;
+        let top = helper::create_fs(&[]).await;
+        let overlay = OverlayFileSystem::new(vec![lower, top]).unwrap();
+
+        // Rename "rename_dir" to "renamed_dir".
+        overlay
+            .rename(Path::new("rename_dir"), Path::new("renamed_dir"))
+            .await
+            .unwrap();
+
+        // Verify that a whiteout has been created in the top layer for the old directory.
+        // For directories without a parent, the whiteout is named ".wh.rename_dir"
+        let whiteout_path = Path::new(".wh.rename_dir");
+        assert!(overlay
+            .get_top_layer()
+            .exists(&whiteout_path)
+            .await
+            .unwrap());
     }
 }
 
