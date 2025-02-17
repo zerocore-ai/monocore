@@ -28,8 +28,7 @@ use crate::metadata::EntityType;
 #[cfg(unix)]
 use crate::metadata::{Mode, ModeType};
 
-use crate::VfsError;
-use crate::VirtualFileSystem;
+use crate::{VfsError, VirtualFileSystem};
 
 //--------------------------------------------------------------------------------------------------
 // Types
