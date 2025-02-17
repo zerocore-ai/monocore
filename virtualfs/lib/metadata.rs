@@ -11,42 +11,86 @@ use users::{get_current_gid, get_current_uid};
 cfg_if! {
     if #[cfg(unix)] {
         // File type bits
-        const S_IFMT: u32 = 0o170000; // bit mask for the file type bit field
-        const S_IFREG: u32 = 0o100000; // regular file
-        const S_IFDIR: u32 = 0o040000; // directory
-        const S_IFLNK: u32 = 0o120000; // symbolic link
+        /// Bit mask for the file type bit field
+        pub const S_IFMT: u32 = 0o170000;
+
+        /// Regular file
+        pub const S_IFREG: u32 = 0o100000;
+
+        /// Directory
+        pub const S_IFDIR: u32 = 0o040000;
+
+        /// Symbolic link
+        pub const S_IFLNK: u32 = 0o120000;
 
         // Permission bits
-        const S_IRWXU: u32 = 0o700; // user (file owner) has read, write, and execute permission
-        const S_IRUSR: u32 = 0o400; // user has read permission
-        const S_IWUSR: u32 = 0o200; // user has write permission
-        const S_IXUSR: u32 = 0o100; // user has execute permission
+        /// User (file owner) has read, write, and execute permission
+        pub const S_IRWXU: u32 = 0o700;
 
-        const S_IRWXG: u32 = 0o070; // group has read, write, and execute permission
-        const S_IRGRP: u32 = 0o040; // group has read permission
-        const S_IWGRP: u32 = 0o020; // group has write permission
-        const S_IXGRP: u32 = 0o010; // group has execute permission
+        /// User has read permission
+        pub const S_IRUSR: u32 = 0o400;
 
-        const S_IRWXO: u32 = 0o007; // others have read, write, and execute permission
-        const S_IROTH: u32 = 0o004; // others have read permission
-        const S_IWOTH: u32 = 0o002; // others have write permission
-        const S_IXOTH: u32 = 0o001; // others have execute permission
+        /// User has write permission
+        pub const S_IWUSR: u32 = 0o200;
+
+        /// User has execute permission
+        pub const S_IXUSR: u32 = 0o100;
+
+        /// Group has read, write, and execute permission
+        pub const S_IRWXG: u32 = 0o070;
+
+        /// Group has read permission
+        pub const S_IRGRP: u32 = 0o040;
+
+        /// Group has write permission
+        pub const S_IWGRP: u32 = 0o020;
+
+        /// Group has execute permission
+        pub const S_IXGRP: u32 = 0o010;
+
+        /// Others have read, write, and execute permission
+        pub const S_IRWXO: u32 = 0o007;
+
+        /// Others have read permission
+        pub const S_IROTH: u32 = 0o004;
+
+        /// Others have write permission
+        pub const S_IWOTH: u32 = 0o002;
+
+        /// Others have execute permission
+        pub const S_IXOTH: u32 = 0o001;
 
         // Permission mask
-        const S_IPERM: u32 = 0o777; // mask for permission bits
+        /// Mask for permission bits
+        pub const S_IPERM: u32 = 0o777;
 
         // Combined permission constants for user, group, and other
-        const USER_RW: u32 = S_IRUSR | S_IWUSR;
-        const USER_RX: u32 = S_IRUSR | S_IXUSR;
-        const USER_WX: u32 = S_IWUSR | S_IXUSR;
+        /// User has read and write permission
+        pub const USER_RW: u32 = S_IRUSR | S_IWUSR;
 
-        const GROUP_RW: u32 = S_IRGRP | S_IWGRP;
-        const GROUP_RX: u32 = S_IRGRP | S_IXGRP;
-        const GROUP_WX: u32 = S_IWGRP | S_IXGRP;
+        /// User has read and execute permission
+        pub const USER_RX: u32 = S_IRUSR | S_IXUSR;
 
-        const OTHER_RW: u32 = S_IROTH | S_IWOTH;
-        const OTHER_RX: u32 = S_IROTH | S_IXOTH;
-        const OTHER_WX: u32 = S_IWOTH | S_IXOTH;
+        /// User has write and execute permission
+        pub const USER_WX: u32 = S_IWUSR | S_IXUSR;
+
+        /// Group has read and write permission
+        pub const GROUP_RW: u32 = S_IRGRP | S_IWGRP;
+
+        /// Group has read and execute permission
+        pub const GROUP_RX: u32 = S_IRGRP | S_IXGRP;
+
+        /// Group has write and execute permission
+        pub const GROUP_WX: u32 = S_IWGRP | S_IXGRP;
+
+        /// Others have read and write permission
+        pub const OTHER_RW: u32 = S_IROTH | S_IWOTH;
+
+        /// Others have read and execute permission
+        pub const OTHER_RX: u32 = S_IROTH | S_IXOTH;
+
+        /// Others have write and execute permission
+        pub const OTHER_WX: u32 = S_IWOTH | S_IXOTH;
     }
 }
 

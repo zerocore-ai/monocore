@@ -95,6 +95,7 @@
 |                   | **OverlayFS**          |   ✅   | OverlayFS implementation on macOS                        |
 |                   | • Core                 |   ✅   | Core implementation of the OverlayFS                     |
 |                   | • NFS                  |   ✅   | Network File System server implementation                |
+|                   | • NativeFS             |   ✅   | Native filesystem implementation                         |
 |                   | • virtiofs             |  ⬜️   | libkrun virtiofs implementation                          |
 |                   | Sandboxes Registry     |  ⬜️   | Container sandboxing registry implementation             |
 |                   | Docker Registry        |   ✅   | Integration with Docker registry                         |
