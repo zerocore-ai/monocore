@@ -117,7 +117,7 @@ where
         // Wait for either child process to exit or signal to be received
         tokio::select! {
             status = child.wait() => {
-                tracing::info!("Child process {} exited", child_pid);
+                tracing::info!("child process {} exited", child_pid);
 
                 // Stop process monitoring
                 self.process_monitor.stop().await?;
@@ -126,12 +126,12 @@ where
                     if let Ok(status) = status {
                         if status.success() {
                             tracing::info!(
-                                "Child process {} exited successfully",
+                                "child process {} exited successfully",
                                 child_pid
                             );
                         } else {
                             tracing::error!(
-                                "Child process {} exited with status: {:?}",
+                                "child process {} exited with status: {:?}",
                                 child_pid,
                                 status
                             );

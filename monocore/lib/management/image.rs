@@ -1,3 +1,9 @@
+//! Container image management for Monocore.
+//!
+//! This module provides functionality for managing container images from various
+//! registries. It supports pulling images from Docker and Sandboxes.io registries,
+//! handling image layers, and managing the local image cache.
+
 use crate::{
     management::db::{self, OCI_DB_MIGRATOR},
     oci::{DockerRegistry, OciRegistryPull, Reference},
@@ -8,6 +14,7 @@ use crate::{
     MonocoreError, MonocoreResult,
 };
 use futures::future;
+use sqlx::{Pool, Sqlite};
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 use tokio::{fs, process::Command};
@@ -39,6 +46,7 @@ const EXTRACTED_LAYER_SUFFIX: &str = "extracted";
 /// * `name` - The reference to the image or image group to pull
 /// * `image` - If true, indicates that a single image should be pulled
 /// * `image_group` - If true, indicates that an image group should be pulled (Sandboxes.io only)
+/// * `layer_path` - The path to store the layer files
 ///
 /// ## Errors
 ///
@@ -57,17 +65,25 @@ const EXTRACTED_LAYER_SUFFIX: &str = "extracted";
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
 /// // Pull a single image from Docker registry
-/// pull_image("docker.io/library/ubuntu:latest".parse().unwrap(), true, false).await?;
+/// pull_image("docker.io/library/ubuntu:latest".parse().unwrap(), true, false, None).await?;
 ///
 /// // Pull an image from Sandboxes.io registry
-/// pull_image("myimage".parse().unwrap(), false, false).await?;
+/// pull_image("myimage".parse().unwrap(), false, false, None).await?;
 ///
 /// // Pull an image group from Sandboxes.io registry
-/// pull_image("sandboxes.io/mygroup:latest".parse().unwrap(), false, true).await?;
+/// pull_image("sandboxes.io/mygroup:latest".parse().unwrap(), false, true, None).await?;
+///
+/// // Pull an image from Docker registry and store the layers in a custom directory
+/// pull_image("docker.io/library/ubuntu:latest".parse().unwrap(), true, false, Some(PathBuf::from("/custom/path"))).await?;
 /// # Ok(())
 /// # }
 /// ```
-pub async fn pull_image(name: Reference, image: bool, image_group: bool) -> MonocoreResult<()> {
+pub async fn pull_image(
+    name: Reference,
+    image: bool,
+    image_group: bool,
+    layer_path: Option<PathBuf>,
+) -> MonocoreResult<()> {
     // Both cannot be true
     if image && image_group {
         return Err(MonocoreError::InvalidArgument(
@@ -81,7 +97,7 @@ pub async fn pull_image(name: Reference, image: bool, image_group: bool) -> Mono
 
         if registry != SANDBOXES_REGISTRY {
             return Err(MonocoreError::InvalidArgument(format!(
-                "Image group pull is only supported for sandboxes registry, got: {}",
+                "image group pull is only supported for sandboxes registry, got: {}",
                 registry
             )));
         }
@@ -94,7 +110,7 @@ pub async fn pull_image(name: Reference, image: bool, image_group: bool) -> Mono
     let registry = name.to_string().split('/').next().unwrap_or("").to_string();
     let temp_download_dir = tempdir()?.into_path();
     if registry == DOCKER_REGISTRY {
-        pull_docker_registry_image(&name, &temp_download_dir).await
+        pull_docker_registry_image(&name, &temp_download_dir, layer_path).await
     } else if registry == SANDBOXES_REGISTRY {
         match pull_sandboxes_registry_image(&name).await {
             Ok(_) => Ok(()),
@@ -106,7 +122,7 @@ pub async fn pull_image(name: Reference, image: bool, image_group: bool) -> Mono
                 // Create a new reference with docker.io registry for fallback
                 let mut docker_ref = name.clone();
                 docker_ref.set_registry(DOCKER_REGISTRY.to_string());
-                pull_docker_registry_image(&docker_ref, &temp_download_dir).await
+                pull_docker_registry_image(&docker_ref, &temp_download_dir, layer_path).await
             }
         }
     } else {
@@ -123,6 +139,8 @@ pub async fn pull_image(name: Reference, image: bool, image_group: bool) -> Mono
 ///
 /// * `image` - The reference to the Docker image to pull
 /// * `download_dir` - The directory to download the image layers to
+/// * `layer_path` - Optional custom path to store layers
+///
 /// ## Errors
 ///
 /// Returns an error if:
@@ -132,11 +150,17 @@ pub async fn pull_image(name: Reference, image: bool, image_group: bool) -> Mono
 pub async fn pull_docker_registry_image(
     image: &Reference,
     download_dir: impl AsRef<Path>,
+    layer_path: Option<PathBuf>,
 ) -> MonocoreResult<()> {
     let download_dir = download_dir.as_ref();
     let monocore_home_path = get_monocore_home_path();
     let db_path = monocore_home_path.join(OCI_DB_FILENAME);
-    let layers_dir = monocore_home_path.join(LAYERS_SUBDIR);
+
+    // Use custom layer_path if specified, otherwise use default monocore layers directory
+    let layers_dir = match layer_path {
+        Some(path) => path,
+        None => monocore_home_path.join(LAYERS_SUBDIR),
+    };
 
     // Create layers directory if it doesn't exist
     fs::create_dir_all(&layers_dir).await?;
@@ -146,10 +170,9 @@ pub async fn pull_docker_registry_image(
     // Get or create a connection pool to the database
     let pool = db::get_or_create_db_pool(&db_path, &OCI_DB_MIGRATOR).await?;
 
-    // Check if the image already exists in the database
-    tracing::info!("checking if image {} already exists in database", image);
-    if db::image_exists(&pool, &image.to_string()).await? {
-        tracing::info!("image {} already exists in database, skipping pull", image);
+    // Check if we need to pull the image
+    if check_image_layers(&pool, image, &layers_dir).await? {
+        tracing::info!("image {} and all its layers exist, skipping pull", image);
         return Ok(());
     }
 
@@ -210,6 +233,56 @@ pub async fn pull_sandboxes_registry_image_group(_group: &Reference) -> Monocore
 // Functions: Helpers
 //--------------------------------------------------------------------------------------------------
 
+/// Checks if all layers for an image exist in both the database and the layers directory.
+///
+/// ## Arguments
+///
+/// * `pool` - The database connection pool
+/// * `image` - The reference to the image to check
+/// * `layers_dir` - The directory where layers should be stored
+///
+/// ## Returns
+///
+/// Returns Ok(true) if all layers exist and are valid, Ok(false) if any layers are missing
+/// or invalid. Any errors during the check process will return Ok(false) with a warning log.
+async fn check_image_layers(
+    pool: &Pool<Sqlite>,
+    image: &Reference,
+    layers_dir: impl AsRef<Path>,
+) -> MonocoreResult<bool> {
+    let layers_dir = layers_dir.as_ref();
+
+    // Check if the image exists in the database
+    match db::image_exists(pool, &image.to_string()).await {
+        Ok(true) => {
+            // Image exists, check if all layers are present
+            match db::get_image_layers(pool, &image.to_string()).await {
+                Ok(layers) => {
+                    for (digest, _, _) in layers {
+                        // Check if layer exists in the layers directory
+                        let layer_path =
+                            layers_dir.join(format!("{}.{}", digest, EXTRACTED_LAYER_SUFFIX));
+                        if !layer_path.exists() {
+                            tracing::warn!("layer {} not found in layers directory", digest);
+                            return Ok(false);
+                        }
+                    }
+                    Ok(true)
+                }
+                Err(e) => {
+                    tracing::warn!("error checking layers: {}, will pull image", e);
+                    Ok(false)
+                }
+            }
+        }
+        Ok(false) => Ok(false),
+        Err(e) => {
+            tracing::warn!("error checking image existence: {}, will pull image", e);
+            Ok(false)
+        }
+    }
+}
+
 /// Extracts a layer from the downloaded tar.gz file into an extracted directory.
 /// The extracted directory will be named as <layer-name>.extracted
 async fn extract_layer(
@@ -229,6 +302,28 @@ async fn extract_layer(
     let extract_dir = extract_base_dir
         .as_ref()
         .join(format!("{}.{}", file_name, EXTRACTED_LAYER_SUFFIX));
+
+    // Check if the layer is already extracted
+    if extract_dir.exists() {
+        // Check if the directory has content (not empty)
+        let mut read_dir =
+            fs::read_dir(&extract_dir)
+                .await
+                .map_err(|e| MonocoreError::LayerHandling {
+                    source: e,
+                    layer: file_name.to_string(),
+                })?;
+
+        if read_dir.next_entry().await?.is_some() {
+            tracing::info!(
+                "layer {} already extracted at {}, skipping extraction",
+                file_name,
+                extract_dir.display()
+            );
+            return Ok(());
+        }
+    }
+
     fs::create_dir_all(&extract_dir)
         .await
         .map_err(|e| MonocoreError::LayerHandling {
@@ -317,7 +412,7 @@ mod tests {
         let image_ref: Reference = "docker.io/library/nginx:stable-alpine".parse().unwrap();
 
         // Call the function under test
-        pull_docker_registry_image(&image_ref, &download_dir).await?;
+        pull_docker_registry_image(&image_ref, &download_dir, None).await?;
 
         // Initialize database connection for verification
         let db_path = monocore_home.join(OCI_DB_FILENAME);

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::{cli::styles, oci::Reference};
+use crate::{cli::styles, config::DEFAULT_SCRIPT, oci::Reference};
 use clap::Parser;
 use typed_path::Utf8UnixPathBuf;
 
@@ -32,7 +32,7 @@ pub enum MonocoreSubcommand {
     #[command(name = "init")]
     Init {
         /// Path to initialize the project in
-        #[arg(value_name = "PATH")]
+        #[arg(short, long)]
         path: Option<PathBuf>,
     },
 
@@ -40,7 +40,7 @@ pub enum MonocoreSubcommand {
     #[command(name = "add")]
     Add {
         /// Add a sandbox
-        #[arg(short, long)]
+        #[arg(short, long, default_value_t = true)]
         sandbox: bool,
 
         /// Add a build
@@ -204,7 +204,7 @@ pub enum MonocoreSubcommand {
     #[command(name = "run")]
     Run {
         /// Target sandbox
-        #[arg(short, long)]
+        #[arg(short, long, default_value_t = true)]
         sandbox: bool,
 
         /// Name of the sandbox
@@ -212,19 +212,27 @@ pub enum MonocoreSubcommand {
         name: String,
 
         /// Script to run
-        #[arg(long)]
-        script: Option<String>,
+        #[arg(default_value = DEFAULT_SCRIPT)]
+        script: String,
 
         /// Additional arguments
         #[arg(last = true)]
         args: Vec<String>,
+
+        /// Project path
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Config path
+        #[arg(short, long)]
+        config: Option<PathBuf>,
     },
 
     /// Start a sandbox
     #[command(name = "start")]
     Start {
         /// Target sandbox
-        #[arg(short, long)]
+        #[arg(short, long, default_value_t = true)]
         sandbox: bool,
 
         /// Name of the sandbox
@@ -240,7 +248,7 @@ pub enum MonocoreSubcommand {
     #[command(name = "shell")]
     Shell {
         /// Target sandbox
-        #[arg(short, long)]
+        #[arg(short, long, default_value_t = true)]
         sandbox: bool,
 
         /// Name of the sandbox
@@ -308,7 +316,7 @@ pub enum MonocoreSubcommand {
     #[command(name = "install")]
     Install {
         /// Whether to install from an image
-        #[arg(short, long)]
+        #[arg(short, long, default_value_t = true)]
         image: bool,
 
         /// Whether to install from an image group
@@ -319,7 +327,6 @@ pub enum MonocoreSubcommand {
         name: String,
 
         /// Script to install
-        #[arg(long)]
         script: Option<String>,
 
         /// New name for the script
@@ -330,11 +337,10 @@ pub enum MonocoreSubcommand {
     #[command(name = "uninstall")]
     Uninstall {
         /// Script to uninstall
-        #[arg(long)]
         script: Option<String>,
 
         /// Whether to uninstall from an image
-        #[arg(short, long)]
+        #[arg(short, long, default_value_t = true)]
         image: bool,
 
         /// Whether to uninstall from an image group
@@ -353,7 +359,7 @@ pub enum MonocoreSubcommand {
     #[command(name = "up")]
     Up {
         /// Target sandboxes
-        #[arg(short, long)]
+        #[arg(short, long, default_value_t = true)]
         sandbox: bool,
 
         /// Target group
@@ -368,7 +374,7 @@ pub enum MonocoreSubcommand {
     #[command(name = "down")]
     Down {
         /// Target sandboxes
-        #[arg(short, long)]
+        #[arg(short, long, default_value_t = true)]
         sandbox: bool,
 
         /// Target group
@@ -383,7 +389,7 @@ pub enum MonocoreSubcommand {
     #[command(name = "status")]
     Status {
         /// Target sandboxes
-        #[arg(short, long)]
+        #[arg(short, long, default_value_t = true)]
         sandbox: bool,
 
         /// Target group
@@ -406,7 +412,7 @@ pub enum MonocoreSubcommand {
         build: bool,
 
         /// Build from sandbox
-        #[arg(short, long)]
+        #[arg(short, long, default_value_t = true)]
         sandbox: bool,
 
         /// Build from group
@@ -426,7 +432,7 @@ pub enum MonocoreSubcommand {
     #[command(name = "pull")]
     Pull {
         /// Whether to pull an image
-        #[arg(short, long)]
+        #[arg(short, long, default_value_t = true)]
         image: bool,
 
         /// Whether to pull an image group
@@ -435,6 +441,10 @@ pub enum MonocoreSubcommand {
 
         /// Name of the image or image group
         name: Reference,
+
+        /// Path to store the layer files
+        #[arg(short = 'L', long)]
+        layer_path: Option<PathBuf>,
     },
 
     /// Push an image

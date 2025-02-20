@@ -2,11 +2,10 @@
 
 mod defaults;
 mod env_pair;
-// mod merge;
 mod monocore;
 mod path_pair;
 mod port_pair;
-// pub mod validate;
+mod reference_path;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -17,3 +16,4 @@ pub use env_pair::*;
 pub use monocore::*;
 pub use path_pair::*;
 pub use port_pair::*;
+pub use reference_path::*;

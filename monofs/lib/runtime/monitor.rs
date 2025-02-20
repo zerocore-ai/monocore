@@ -59,7 +59,7 @@ impl NfsServerMonitor {
 
     /// Generates a unique log name using name, process ID, and current timestamp.
     ///
-    /// The ID format is: "{name}-{pid}-{timestamp}.{suffix}"
+    /// The ID format is: "mfsrun-{name}-{timestamp}-{child_pid}.log"
     fn generate_log_name(&self, child_pid: u32, name: impl AsRef<str>) -> String {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -70,8 +70,8 @@ impl NfsServerMonitor {
             "{}-{}-{}-{}.{}",
             MFSRUN_LOG_PREFIX,
             name.as_ref(),
-            child_pid,
             timestamp,
+            child_pid,
             LOG_SUFFIX
         )
     }

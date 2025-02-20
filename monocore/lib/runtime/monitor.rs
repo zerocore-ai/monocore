@@ -31,6 +31,9 @@ pub struct MicroVmMonitor {
 
     /// The log directory
     log_dir: PathBuf,
+
+    /// The root filesystem path
+    root_path: PathBuf,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -43,18 +46,20 @@ impl MicroVmMonitor {
         supervisor_pid: u32,
         sandbox_db_path: impl AsRef<Path>,
         log_dir: impl Into<PathBuf>,
+        root_path: impl Into<PathBuf>,
     ) -> MonocoreResult<Self> {
         Ok(Self {
             supervisor_pid,
             sandbox_db: management::get_db_pool(sandbox_db_path.as_ref()).await?,
             log_path: None,
             log_dir: log_dir.into(),
+            root_path: root_path.into(),
         })
     }
 
     /// Generates a unique log name using name, process ID, and current timestamp.
     ///
-    /// The ID format is: "{name}-{pid}-{timestamp}.{suffix}"
+    /// The ID format is: "mcrun-{name}-{timestamp}-{child_pid}.log"
     fn generate_log_name(&self, child_pid: u32, name: impl AsRef<str>) -> String {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -65,8 +70,8 @@ impl MicroVmMonitor {
             "{}-{}-{}-{}.{}",
             MCRUN_LOG_PREFIX,
             name.as_ref(),
-            child_pid,
             timestamp,
+            child_pid,
             LOG_SUFFIX
         )
     }
@@ -85,7 +90,7 @@ impl ProcessMonitor for MicroVmMonitor {
         mut stdout: ChildStdout,
         mut stderr: ChildStderr,
     ) -> MonoutilsResult<()> {
-        let log_name = self.generate_log_name(pid, name);
+        let log_name = self.generate_log_name(pid, &name);
         let log_path = self.log_dir.join(&log_name);
 
         let microvm_log = RotatingLog::new(&log_path).await?;
@@ -98,12 +103,15 @@ impl ProcessMonitor for MicroVmMonitor {
         // Insert sandbox entry into database
         sqlx::query(
             r#"
-            INSERT INTO sandboxes (supervisor_pid, microvm_pid)
-            VALUES (?, ?)
+            INSERT INTO sandboxes (name, supervisor_pid, microvm_pid, status, root_path)
+            VALUES (?, ?, ?, ?, ?)
             "#,
         )
+        .bind(name)
         .bind(self.supervisor_pid)
         .bind(microvm_pid)
+        .bind("STARTING")
+        .bind(self.root_path.to_string_lossy().into_owned())
         .execute(&self.sandbox_db)
         .await
         .map_err(MonoutilsError::custom)?;
@@ -157,12 +165,13 @@ impl ProcessMonitor for MicroVmMonitor {
         .await
         .map_err(MonoutilsError::custom)?;
 
-        // Delete the log file if it exists
-        if let Some(log_path) = &self.log_path {
-            if let Err(e) = tokio::fs::remove_file(log_path).await {
-                tracing::warn!(error = %e, "Failed to delete microvm log file");
-            }
-        }
+        // TODO:  We might need a better strategy for cleaning up the log files
+        // // Delete the log file if it exists
+        // if let Some(log_path) = &self.log_path {
+        //     if let Err(e) = tokio::fs::remove_file(log_path).await {
+        //         tracing::warn!(error = %e, "Failed to delete microvm log file");
+        //     }
+        // }
 
         // Reset the log path
         self.log_path = None;

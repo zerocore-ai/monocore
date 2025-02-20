@@ -5,13 +5,6 @@ fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = Path::new(&manifest_dir).parent().unwrap().join("build");
 
-    // Print current directory and build directory for debugging
-    println!(
-        "cargo:warning=Current dir: {:?}",
-        std::env::current_dir().unwrap()
-    );
-    println!("cargo:warning=Build dir: {:?}", build_dir);
-
     // Add build directory as first search path
     println!("cargo:rustc-link-search=native={}", build_dir.display());
 

@@ -38,8 +38,14 @@ pub const OCI_DB_FILENAME: &str = "oci.db";
 /// The filename for the monoimage database
 pub const MONOIMAGE_DB_FILENAME: &str = "monoimage.db";
 
+/// The filename for the monocore config file
+pub const MONOCORE_CONFIG_FILENAME: &str = "monocore.yaml";
+
 /// The prefix for mcrun log files
 pub const MCRUN_LOG_PREFIX: &str = "mcrun";
+
+/// The directory on the microvm where sandbox scripts are stored
+pub const SANDBOX_SCRIPT_DIR: &str = ".sandbox_scripts";
 
 //--------------------------------------------------------------------------------------------------
 // Functions

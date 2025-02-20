@@ -1,4 +1,4 @@
-use std::{net::Ipv4Addr, path::PathBuf};
+use std::path::PathBuf;
 
 use typed_path::Utf8UnixPathBuf;
 
@@ -14,6 +14,7 @@ use super::{LinuxRlimit, LogLevel, MicroVm, MicroVmConfig};
 //--------------------------------------------------------------------------------------------------
 
 /// The builder for a MicroVm configuration.
+#[derive(Debug)]
 pub struct MicroVmConfigBuilder<RootPath, RamMib> {
     log_level: LogLevel,
     root_path: RootPath,
@@ -27,8 +28,6 @@ pub struct MicroVmConfigBuilder<RootPath, RamMib> {
     args: Vec<String>,
     env: Vec<EnvPair>,
     console_output: Option<Utf8UnixPathBuf>,
-    assigned_ip: Option<Ipv4Addr>,
-    local_only: bool,
 }
 
 /// The builder for a MicroVm.
@@ -62,6 +61,7 @@ pub struct MicroVmConfigBuilder<RootPath, RamMib> {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct MicroVmBuilder<RootPath, RamMib> {
     inner: MicroVmConfigBuilder<RootPath, RamMib>,
 }
@@ -128,8 +128,6 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
             args: self.args,
             env: self.env,
             console_output: self.console_output,
-            assigned_ip: self.assigned_ip,
-            local_only: self.local_only,
         }
     }
 
@@ -186,8 +184,6 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
             args: self.args,
             env: self.env,
             console_output: self.console_output,
-            assigned_ip: self.assigned_ip,
-            local_only: self.local_only,
         }
     }
 
@@ -435,56 +431,6 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// - Captures both stdout and stderr
     pub fn console_output(mut self, console_output: impl Into<Utf8UnixPathBuf>) -> Self {
         self.console_output = Some(console_output.into());
-        self
-    }
-
-    /// Sets the assigned IP address for the MicroVm.
-    ///
-    /// When set, any connections to 127.0.0.1 in the guest will be automatically
-    /// rewritten to use this address instead.
-    ///
-    /// ## Examples
-    ///
-    /// ```rust
-    /// use monocore::vm::MicroVmConfigBuilder;
-    /// use std::net::Ipv4Addr;
-    ///
-    /// let config = MicroVmConfigBuilder::default()
-    ///     .assigned_ip(Ipv4Addr::new(10, 0, 2, 15));  // Rewrite localhost to 10.0.2.15
-    /// ```
-    ///
-    /// ## Notes
-    /// - On macOS, non-default loopback addresses need to be configured first:
-    ///   ```bash
-    ///   sudo ifconfig lo0 alias <assigned_ip>
-    ///   ```
-    /// - This setting is ignored if passt or gvproxy networking is used
-    pub fn assigned_ip(mut self, assigned_ip: Ipv4Addr) -> Self {
-        self.assigned_ip = Some(assigned_ip);
-        self
-    }
-
-    /// Sets whether the MicroVm is restricted to local connections only.
-    ///
-    /// When enabled, the VM is only allowed to connect to 127.0.0.1 (or the assigned IP
-    /// if set). When disabled, it can connect to any non-loopback address.
-    ///
-    /// ## Examples
-    ///
-    /// ```rust
-    /// use monocore::vm::MicroVmConfigBuilder;
-    /// use std::net::Ipv4Addr;
-    ///
-    /// let config = MicroVmConfigBuilder::default()
-    ///     .assigned_ip(Ipv4Addr::new(10, 0, 2, 15))
-    ///     .local_only(true);  // Restrict to local connections only
-    /// ```
-    ///
-    /// ## Notes
-    /// - This setting is ignored if assigned_ip is not set
-    /// - Useful for restricting network access for security
-    pub fn local_only(mut self, local_only: bool) -> Self {
-        self.local_only = local_only;
         self
     }
 }
@@ -817,18 +763,6 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
         self.inner = self.inner.console_output(console_output);
         self
     }
-
-    /// Sets the assigned IP address for the MicroVm.
-    pub fn assigned_ip(mut self, assigned_ip: Ipv4Addr) -> Self {
-        self.inner = self.inner.assigned_ip(assigned_ip);
-        self
-    }
-
-    /// Sets whether the MicroVm is restricted to local connections only.
-    pub fn local_only(mut self, local_only: bool) -> Self {
-        self.inner = self.inner.local_only(local_only);
-        self
-    }
 }
 
 impl MicroVmConfigBuilder<PathBuf, u32> {
@@ -847,8 +781,6 @@ impl MicroVmConfigBuilder<PathBuf, u32> {
             args: self.args,
             env: self.env,
             console_output: self.console_output,
-            assigned_ip: self.assigned_ip,
-            local_only: self.local_only,
         }
     }
 }
@@ -903,8 +835,6 @@ impl MicroVmBuilder<PathBuf, u32> {
             args: self.inner.args,
             env: self.inner.env,
             console_output: self.inner.console_output,
-            assigned_ip: self.inner.assigned_ip,
-            local_only: self.inner.local_only,
         })
     }
 }
@@ -928,8 +858,6 @@ impl Default for MicroVmConfigBuilder<(), ()> {
             args: vec![],
             env: vec![],
             console_output: None,
-            assigned_ip: None,
-            local_only: true,
         }
     }
 }
@@ -949,14 +877,12 @@ impl Default for MicroVmBuilder<(), ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::Ipv4Addr;
 
     #[test]
     fn test_microvm_builder() -> anyhow::Result<()> {
         let root_path = "/tmp";
         let workdir_path = "/workdir";
         let exec_path = "/bin/example";
-        let assigned_ip = Ipv4Addr::new(10, 0, 2, 15);
 
         let builder = MicroVmBuilder::default()
             .log_level(LogLevel::Debug)
@@ -970,9 +896,7 @@ mod tests {
             .exec_path(exec_path)
             .args(["arg1", "arg2"])
             .env(["KEY1=VALUE1".parse()?, "KEY2=VALUE2".parse()?])
-            .console_output("/tmp/console.log")
-            .assigned_ip(assigned_ip)
-            .local_only(true);
+            .console_output("/tmp/console.log");
 
         assert_eq!(builder.inner.log_level, LogLevel::Debug);
         assert_eq!(builder.inner.root_path, PathBuf::from(root_path));
@@ -1001,8 +925,6 @@ mod tests {
             builder.inner.console_output,
             Some(Utf8UnixPathBuf::from("/tmp/console.log"))
         );
-        assert_eq!(builder.inner.assigned_ip, Some(assigned_ip));
-        assert!(builder.inner.local_only);
         Ok(())
     }
 
@@ -1029,45 +951,6 @@ mod tests {
         assert!(builder.inner.args.is_empty());
         assert!(builder.inner.env.is_empty());
         assert_eq!(builder.inner.console_output, None);
-        assert_eq!(builder.inner.assigned_ip, None);
-        assert!(builder.inner.local_only); // Default should be true for security
-        Ok(())
-    }
-
-    #[test]
-    fn test_network_configuration() -> anyhow::Result<()> {
-        let root_path = "/tmp";
-        let assigned_ip = Ipv4Addr::new(10, 0, 2, 15);
-
-        // Test with network restrictions
-        let restricted_builder = MicroVmBuilder::default()
-            .root_path(root_path)
-            .ram_mib(512)
-            .assigned_ip(assigned_ip)
-            .local_only(true);
-
-        assert_eq!(restricted_builder.inner.assigned_ip, Some(assigned_ip));
-        assert!(restricted_builder.inner.local_only);
-
-        // Test without network restrictions
-        let unrestricted_builder = MicroVmBuilder::default()
-            .root_path(root_path)
-            .ram_mib(512)
-            .assigned_ip(assigned_ip)
-            .local_only(false);
-
-        assert_eq!(unrestricted_builder.inner.assigned_ip, Some(assigned_ip));
-        assert!(!unrestricted_builder.inner.local_only);
-
-        // Test without assigned IP
-        let no_ip_builder = MicroVmBuilder::default()
-            .root_path(root_path)
-            .ram_mib(512)
-            .local_only(true);
-
-        assert_eq!(no_ip_builder.inner.assigned_ip, None);
-        assert!(no_ip_builder.inner.local_only);
-
         Ok(())
     }
 }
