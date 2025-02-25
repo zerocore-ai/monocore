@@ -65,9 +65,12 @@ pub async fn run_sandbox(
         )));
     };
 
+    // Make root_path relative to project directory
+    let root_path = project_dir.join(root_path);
+
     // Patch the rootfs with the sandbox scripts
     let scripts = sandbox_config.get_full_scripts();
-    rootfs::patch_native_rootfs_with_scripts(root_path, scripts, sandbox_config.get_shell())?;
+    rootfs::patch_native_rootfs_with_scripts(&root_path, scripts, sandbox_config.get_shell())?;
 
     // Get the .menv directory path
     let menv_path = project_dir.join(MONOCORE_ENV_DIR);
@@ -93,6 +96,12 @@ pub async fn run_sandbox(
     let exec_path = format!("/{}/{}", SANDBOX_SCRIPT_DIR, script);
 
     tracing::info!("starting sandbox supervisor...");
+    tracing::info!("root_path: {}", root_path.display());
+    tracing::info!("log_dir: {}", log_dir.display());
+    tracing::info!("sandbox_db_path: {}", sandbox_db_path.display());
+    tracing::info!("workdir_path: {}", workdir_path);
+    tracing::info!("exec_path: {}", exec_path);
+
     let mut command = Command::new(mcrun_path);
     command
         .arg("supervisor")
@@ -111,18 +120,35 @@ pub async fn run_sandbox(
         .arg("--workdir-path")
         .arg(&workdir_path)
         .arg("--exec-path")
-        .arg(&exec_path);
+        .arg(&exec_path)
+        .arg("--forward-output");
+
+    // Only pass RUST_LOG if it's set in the environment
+    if let Some(rust_log) = std::env::var_os("RUST_LOG") {
+        tracing::debug!("using existing RUST_LOG: {:?}", rust_log);
+        command.env("RUST_LOG", rust_log);
+    }
 
     if !args.is_empty() {
         command.arg("--args").arg(args.join(","));
     }
 
-    let status = command.spawn()?;
+    let mut child = command.spawn()?;
 
     tracing::info!(
         "started supervisor process with PID: {}",
-        status.id().unwrap_or(0)
+        child.id().unwrap_or(0)
     );
+
+    // Wait for the child process to complete
+    let status = child.wait().await?;
+    if !status.success() {
+        tracing::error!("supervisor process exited with status: {}", status);
+        return Err(MonocoreError::SupervisorError(format!(
+            "supervisor process failed with exit status: {}",
+            status
+        )));
+    }
 
     Ok(())
 }

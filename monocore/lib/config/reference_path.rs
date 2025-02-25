@@ -32,27 +32,6 @@ pub enum ReferencePath {
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
-// impl Serialize for ReferencePath {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         // Use Display implementation to convert to string
-//         serializer.serialize_str(&self.to_string())
-//     }
-// }
-
-// impl<'de> Deserialize<'de> for ReferencePath {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         let s = String::deserialize(deserializer)?;
-//         // Use FromStr implementation to parse the string
-//         ReferencePath::from_str(&s).map_err(serde::de::Error::custom)
-//     }
-// }
-
 impl FromStr for ReferencePath {
     type Err = MonocoreError;
 

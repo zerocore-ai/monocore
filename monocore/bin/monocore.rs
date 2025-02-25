@@ -3,7 +3,6 @@ use monocore::{
     cli::{MonocoreArgs, MonocoreSubcommand},
     management, MonocoreResult,
 };
-use tracing_subscriber::{fmt, EnvFilter};
 
 //--------------------------------------------------------------------------------------------------
 // Functions: main
@@ -11,16 +10,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 #[tokio::main]
 async fn main() -> MonocoreResult<()> {
-    // Initialize tracing subscriber with EnvFilter
-    fmt()
-        .with_target(false)
-        .with_file(false)
-        .with_line_number(false)
-        .with_thread_ids(false)
-        .with_thread_names(false)
-        .with_level(true)
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    tracing_subscriber::fmt::init();
 
     // Parse command line arguments
     let args = MonocoreArgs::parse();

@@ -46,12 +46,14 @@
 //!     --arg="8080" \
 //!     --mapped-dirs=/host/path:/guest/path \
 //!     --port-map=8080:80 \
-//!     --env=KEY=VALUE
+//!     --env=KEY=VALUE \
+//!     --forward-output
 //! ```
 
 use std::env;
 
 use anyhow::Result;
+use chrono::Duration;
 use clap::Parser;
 use monocore::{
     cli::{McrunArgs, McrunSubcommand},
@@ -67,9 +69,6 @@ use monoutils::runtime::Supervisor;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging without ANSI colors
-    tracing_subscriber::fmt().with_ansi(false).init();
-
     // Parse command line arguments
     let args = McrunArgs::parse();
 
@@ -86,6 +85,8 @@ async fn main() -> Result<()> {
             mapped_dirs,
             port_map,
         } => {
+            tracing_subscriber::fmt::init();
+
             // Parse mapped directories
             let mapped_dirs: Vec<PathPair> = mapped_dirs
                 .iter()
@@ -133,6 +134,7 @@ async fn main() -> Result<()> {
             child_name,
             sandbox_db_path,
             log_level,
+            forward_output,
             root_path,
             num_vcpus,
             ram_mib,
@@ -143,6 +145,9 @@ async fn main() -> Result<()> {
             mapped_dirs,
             port_map,
         } => {
+            tracing_subscriber::fmt::init();
+            tracing::info!("setting up supervisor");
+
             // Get current executable path
             let child_exe = env::current_exe()?;
 
@@ -155,6 +160,8 @@ async fn main() -> Result<()> {
                 sandbox_db_path,
                 log_dir.clone(),
                 root_path.clone(),
+                Duration::days(1),
+                forward_output,
             )
             .await?;
 
@@ -194,7 +201,7 @@ async fn main() -> Result<()> {
             }
 
             // Compose child environment variables
-            let child_envs = vec![("RUST_LOG", "info")];
+            let child_envs = vec![("RUST_LOG", "mcrun=info,monocore=info")];
 
             // Create and start supervisor
             let mut supervisor = Supervisor::new(
@@ -210,5 +217,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    Ok(())
+    // NOTE: Force exit to make process actually exit when supervisor runs a child in TTY mode.
+    // Otherwise, the process will not exit by itself and will wait for enter key to be pressed.
+    std::process::exit(0);
 }

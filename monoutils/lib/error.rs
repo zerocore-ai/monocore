@@ -29,6 +29,14 @@ pub enum MonoutilsError {
     #[error("io error: {0}")]
     IoError(#[from] std::io::Error),
 
+    /// An error that occurred during a runtime operation
+    #[error("runtime error: {0}")]
+    Runtime(String),
+
+    /// An error from the nix crate
+    #[error("nix error: {0}")]
+    NixError(#[from] nix::Error),
+
     /// Custom error.
     #[error("Custom error: {0}")]
     Custom(#[from] AnyError),
