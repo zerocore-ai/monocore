@@ -13,13 +13,16 @@
 //! To run as a MicroVM:
 //! ```bash
 //! mcrun microvm \
+//!     --log-level=3 \
 //!     --root-path=/path/to/rootfs \
+//!     --num-vcpus=2 \
 //!     --ram-mib=1024 \
-//!     --mapped-dirs=/host/path:/guest/path \
-//!     --port-map=8080:80 \
 //!     --workdir-path=/app \
 //!     --exec-path=/usr/bin/python3 \
-//!     --args="-m" --args="http.server" --args="8080"
+//!     --mapped-dirs=/host/path:/guest/path \
+//!     --port-map=8080:80 \
+//!     --env=KEY=VALUE \
+//!     -- -m http.server 8080
 //! ```
 //!
 //! ### Supervisor Mode
@@ -29,12 +32,24 @@
 //! mcrun supervisor \
 //!     --log-dir=/path/to/logs \
 //!     --child-name=my_vm \
-//!     --db-path=/path/to/mcrun.db
+//!     --sandbox-db-path=/path/to/mcrun.db \
+//!     --log-level=3 \
+//!     --root-path=/path/to/rootfs \
+//!     --num-vcpus=2 \
+//!     --ram-mib=1024 \
+//!     --workdir-path=/app \
+//!     --exec-path=/usr/bin/python3 \
+//!     --mapped-dirs=/host/path:/guest/path \
+//!     --port-map=8080:80 \
+//!     --env=KEY=VALUE \
+//!     --forward-output \
+//!     -- -m http.server 8080
 //! ```
 
 use std::env;
 
 use anyhow::Result;
+use chrono::Duration;
 use clap::Parser;
 use monocore::{
     cli::{McrunArgs, McrunSubcommand},
@@ -50,24 +65,24 @@ use monoutils::runtime::Supervisor;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging without ANSI colors
-    tracing_subscriber::fmt().with_ansi(false).init();
-
     // Parse command line arguments
     let args = McrunArgs::parse();
 
     match args.subcommand {
         McrunSubcommand::Microvm {
+            log_level,
             root_path,
             num_vcpus,
             ram_mib,
-            mapped_dirs,
-            port_map,
             workdir_path,
             exec_path,
-            args,
             env,
+            mapped_dirs,
+            port_map,
+            args,
         } => {
+            tracing_subscriber::fmt::init();
+
             // Parse mapped directories
             let mapped_dirs: Vec<PathPair> = mapped_dirs
                 .iter()
@@ -94,6 +109,12 @@ async fn main() -> Result<()> {
                 .args(args.iter().map(|s| s.as_str()))
                 .env(env);
 
+            // Set log level if provided
+            if let Some(log_level) = log_level {
+                builder = builder.log_level(log_level.try_into()?);
+            }
+
+            // Set working directory if provided
             if let Some(workdir_path) = workdir_path {
                 builder = builder.workdir_path(workdir_path);
             }
@@ -101,14 +122,28 @@ async fn main() -> Result<()> {
             // Build and start the MicroVM
             let vm = builder.build()?;
 
-            tracing::info!("Starting MicroVM");
+            tracing::info!("starting µvm");
             vm.start()?;
         }
         McrunSubcommand::Supervisor {
             log_dir,
             child_name,
             sandbox_db_path,
+            log_level,
+            forward_output,
+            root_path,
+            num_vcpus,
+            ram_mib,
+            workdir_path,
+            exec_path,
+            env,
+            mapped_dirs,
+            port_map,
+            args,
         } => {
+            tracing_subscriber::fmt::init();
+            tracing::info!("setting up supervisor");
+
             // Get current executable path
             let child_exe = env::current_exe()?;
 
@@ -116,18 +151,62 @@ async fn main() -> Result<()> {
             let supervisor_pid = std::process::id();
 
             // Create microvm monitor
-            let process_monitor =
-                MicroVmMonitor::new(supervisor_pid, sandbox_db_path, log_dir.clone()).await?;
+            let process_monitor = MicroVmMonitor::new(
+                supervisor_pid,
+                sandbox_db_path,
+                log_dir.clone(),
+                root_path.clone(),
+                Duration::days(1),
+                forward_output,
+            )
+            .await?;
 
-            // Compose child arguments - these are placeholders that will be overridden
-            let child_args = vec![
+            // Compose child arguments
+            let mut child_args = vec![
                 "microvm".to_string(),
-                "--root-path=/".to_string(),
-                "--ram-mib=512".to_string(),
+                format!("--root-path={}", root_path.display()),
+                format!("--num-vcpus={}", num_vcpus),
+                format!("--ram-mib={}", ram_mib),
+                format!("--workdir-path={}", workdir_path.unwrap_or_default()),
+                format!("--exec-path={}", exec_path),
             ];
 
+            // Set env if provided
+            if !env.is_empty() {
+                child_args.push(format!("--env={}", env.join(",")));
+            }
+
+            // Set mapped dirs if provided
+            if !mapped_dirs.is_empty() {
+                child_args.push(format!("--mapped-dirs={}", mapped_dirs.join(",")));
+            }
+
+            // Set port map if provided
+            if !port_map.is_empty() {
+                child_args.push(format!("--port-map={}", port_map.join(",")));
+            }
+
+            // Set log level if provided
+            if let Some(log_level) = log_level {
+                child_args.push(format!("--log-level={}", log_level));
+            }
+
+            // Set args if provided
+            if !args.is_empty() {
+                child_args.push("--".to_string());
+                for arg in args {
+                    child_args.push(arg);
+                }
+            }
+
             // Compose child environment variables
-            let child_envs = vec![("RUST_LOG", "info")];
+            let mut child_envs = Vec::<(String, String)>::new();
+
+            // Only pass RUST_LOG if it's set in the environment
+            if let Ok(rust_log) = std::env::var("RUST_LOG") {
+                tracing::debug!("using existing RUST_LOG: {:?}", rust_log);
+                child_envs.push(("RUST_LOG".to_string(), rust_log));
+            }
 
             // Create and start supervisor
             let mut supervisor = Supervisor::new(
@@ -143,5 +222,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    Ok(())
+    // NOTE: Force exit to make process actually exit when supervisor runs a child in TTY mode.
+    // Otherwise, the process will not exit by itself and will wait for enter key to be pressed.
+    std::process::exit(0);
 }

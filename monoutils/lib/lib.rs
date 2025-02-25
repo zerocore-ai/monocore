@@ -9,6 +9,7 @@ pub mod log;
 pub mod path;
 pub mod runtime;
 pub mod seekable;
+pub mod term;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -20,3 +21,4 @@ pub use log::*;
 pub use path::*;
 pub use runtime::*;
 pub use seekable::*;
+pub use term::*;

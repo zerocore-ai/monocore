@@ -14,6 +14,9 @@ pub const MONOCORE_HOME_ENV_VAR: &str = "MONOCORE_HOME";
 /// Environment variable for the OCI registry domain
 pub const OCI_REGISTRY_ENV_VAR: &str = "OCI_REGISTRY_DOMAIN";
 
+/// Environment variable for the mcrun binary path
+pub const MCRUN_EXE_ENV_VAR: &str = "MCRUN_EXE";
+
 //--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------

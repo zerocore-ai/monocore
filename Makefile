@@ -24,7 +24,9 @@ HOME_BIN := $(HOME)/.local/bin
 # Build Paths and Directories
 # -----------------------------------------------------------------------------
 MONOCORE_RELEASE_BIN := target/release/monocore
-MONOKRUN_RELEASE_BIN := target/release/monokrun
+MCRUN_RELEASE_BIN := target/release/mcrun
+MONOFS_RELEASE_BIN := target/release/monofs
+MFSRUN_RELEASE_BIN := target/release/mfsrun
 EXAMPLES_DIR := target/release/examples
 BENCHES_DIR := target/release
 BUILD_DIR := build
@@ -43,23 +45,31 @@ endif
 # -----------------------------------------------------------------------------
 # Phony Targets Declaration
 # -----------------------------------------------------------------------------
-.PHONY: all build install clean deps example bench bin _run_example _run_bench _run_bin help uninstall
+.PHONY: all build install clean build_libkrun example bench bin _run_example _run_bench _run_bin help uninstall monocore monofs
 
 # -----------------------------------------------------------------------------
 # Main Targets
 # -----------------------------------------------------------------------------
 all: build
 
-build: deps $(MONOCORE_RELEASE_BIN) $(MONOKRUN_RELEASE_BIN)
+build: build_libkrun
+	@$(MAKE) _build_monocore
+	@$(MAKE) _build_monofs
+
+_build_monocore: $(MONOCORE_RELEASE_BIN) $(MCRUN_RELEASE_BIN)
 	@cp $(MONOCORE_RELEASE_BIN) $(BUILD_DIR)/
-	@cp $(MONOKRUN_RELEASE_BIN) $(BUILD_DIR)/
-	@echo "Build artifacts copied to $(BUILD_DIR)/"
+	@cp $(MCRUN_RELEASE_BIN) $(BUILD_DIR)/
+	@echo "Monocore build artifacts copied to $(BUILD_DIR)/"
+
+_build_monofs: $(MONOFS_RELEASE_BIN) $(MFSRUN_RELEASE_BIN)
+	@cp $(MONOFS_RELEASE_BIN) $(BUILD_DIR)/
+	@cp $(MFSRUN_RELEASE_BIN) $(BUILD_DIR)/
+	@echo "Monofs build artifacts copied to $(BUILD_DIR)/"
 
 # -----------------------------------------------------------------------------
 # Binary Building
 # -----------------------------------------------------------------------------
-$(MONOCORE_RELEASE_BIN): deps
-	@mkdir -p $(BUILD_DIR)
+$(MONOCORE_RELEASE_BIN): build_libkrun
 	cd monocore
 ifeq ($(OS),Darwin)
 	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib,-rpath,@executable_path" cargo build --release --bin monocore $(FEATURES)
@@ -68,14 +78,20 @@ else
 	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib,-rpath,\$$ORIGIN" cargo build --release --bin monocore $(FEATURES)
 endif
 
-$(MONOKRUN_RELEASE_BIN): deps
+$(MCRUN_RELEASE_BIN): build_libkrun
 	cd monocore
 ifeq ($(OS),Darwin)
-	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib,-rpath,@executable_path" cargo build --release --bin monokrun $(FEATURES)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../lib,-rpath,@executable_path" cargo build --release --bin mcrun $(FEATURES)
 	codesign --entitlements monocore.entitlements --force -s - $@
 else
-	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib,-rpath,\$$ORIGIN" cargo build --release --bin monokrun $(FEATURES)
+	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib,-rpath,\$$ORIGIN" cargo build --release --bin mcrun $(FEATURES)
 endif
+
+$(MONOFS_RELEASE_BIN):
+	cd monofs && cargo build --release --bin monofs $(FEATURES)
+
+$(MFSRUN_RELEASE_BIN):
+	cd monofs && cargo build --release --bin mfsrun $(FEATURES)
 
 # -----------------------------------------------------------------------------
 # Installation
@@ -84,7 +100,9 @@ install: build
 	install -d $(HOME_BIN)
 	install -d $(HOME_LIB)
 	install -m 755 $(BUILD_DIR)/monocore $(HOME_BIN)/monocore
-	install -m 755 $(BUILD_DIR)/monokrun $(HOME_BIN)/monokrun
+	install -m 755 $(BUILD_DIR)/mcrun $(HOME_BIN)/mcrun
+	install -m 755 $(BUILD_DIR)/monofs $(HOME_BIN)/monofs
+	install -m 755 $(BUILD_DIR)/mfsrun $(HOME_BIN)/mfsrun
 	ln -sf $(HOME_BIN)/monocore $(HOME_BIN)/mc
 	@if [ -n "$(LIBKRUNFW_FILE)" ]; then \
 		install -m 755 $(LIBKRUNFW_FILE) $(HOME_LIB)/; \
@@ -103,13 +121,10 @@ install: build
 # Development Tools
 # -----------------------------------------------------------------------------
 # Development binary target without RUSTFLAGS
-$(MONOKRUN_RELEASE_BIN).dev: deps
+$(MONOKRUN_RELEASE_BIN).dev: build_libkrun
 	cd monocore && cargo build --release --bin monokrun $(FEATURES)
 ifeq ($(OS),Darwin)
 	codesign --entitlements monocore.entitlements --force -s - $(MONOKRUN_RELEASE_BIN)
-endif
-ifdef OVERLAYFS
-	sudo setcap cap_sys_admin+ep $(MONOKRUN_RELEASE_BIN)
 endif
 
 # Run examples
@@ -139,7 +154,9 @@ clean:
 
 uninstall:
 	rm -f $(HOME_BIN)/monocore
-	rm -f $(HOME_BIN)/monokrun
+	rm -f $(HOME_BIN)/mcrun
+	rm -f $(HOME_BIN)/monofs
+	rm -f $(HOME_BIN)/mfsrun
 	rm -f $(HOME_BIN)/mc
 	rm -f $(HOME_LIB)/libkrunfw.dylib
 	rm -f $(HOME_LIB)/libkrun.dylib
@@ -150,7 +167,7 @@ uninstall:
 		rm -f $(HOME_LIB)/$(notdir $(LIBKRUN_FILE)); \
 	fi
 
-deps:
+build_libkrun:
 	./scripts/build_libkrun.sh --no-clean
 
 # Catch-all target to allow example names and arguments
@@ -165,14 +182,14 @@ help:
 	@echo "======================"
 	@echo
 	@echo "Main Targets:"
-	@echo "  make build                   - Build monocore and monokrun binaries"
-	@echo "  make install                 - Install binaries and libraries to ~/.local/{bin,lib}"
-	@echo "  make uninstall               - Remove all installed components"
-	@echo "  make clean                   - Remove build artifacts"
-	@echo "  make deps                    - Build and install dependencies"
+	@echo "  make build                  - Build all components (monocore and monofs)"
+	@echo "  make install                - Install binaries and libraries to ~/.local/{bin,lib}"
+	@echo "  make uninstall              - Remove all installed components"
+	@echo "  make clean                  - Remove build artifacts"
+	@echo "  make build_libkrun          - Build libkrun dependency"
 	@echo
 	@echo "Development Tools:"
-	@echo "  make example <name> [-- <args>]  - Build and run an example"
+	@echo "  make example <n> [-- <args>] - Build and run an example"
 	@echo "    Example: make example microvm_shell -- arg1 arg2"
 	@echo
 	@echo "Note: For commands that accept arguments, use -- to separate them"

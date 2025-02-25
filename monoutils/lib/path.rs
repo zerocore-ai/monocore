@@ -1,6 +1,6 @@
 //! `monoutils::path` is a module containing path utilities for the monocore project.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use typed_path::{Utf8UnixComponent, Utf8UnixPathBuf};
 
@@ -130,18 +130,18 @@ pub fn normalize_path(path: &str, path_type: SupportedPathType) -> MonoutilsResu
     }
 }
 
-/// Resolves the path to a binary, checking both environment variable and default locations.
+/// Resolves the path to a file, checking both environment variable and default locations.
 ///
 /// First checks the environment variable specified by `env_var`.
 /// If that's not set, falls back to `default_path`.
-/// Returns an error if the binary is not found at the resolved location.
-pub fn resolve_binary_path(env_var: &str, default_path: &str) -> MonoutilsResult<PathBuf> {
+/// Returns an error if the file is not found at the resolved location.
+pub fn resolve_env_path(env_var: &str, default_path: impl AsRef<Path>) -> MonoutilsResult<PathBuf> {
     let (path, source) = std::env::var(env_var)
         .map(|p| (PathBuf::from(p), "environment variable"))
-        .unwrap_or_else(|_| (PathBuf::from(default_path), "default path"));
+        .unwrap_or_else(|_| (default_path.as_ref().to_path_buf(), "default path"));
 
     if !path.exists() {
-        return Err(MonoutilsError::BinaryNotFound(
+        return Err(MonoutilsError::FileNotFound(
             path.to_string_lossy().to_string(),
             source.to_string(),
         ));

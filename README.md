@@ -58,13 +58,13 @@
 |                   | • Sandbox Groups       |  ⬜️   | Shared network, volume and env management                |
 | **🛠️ CLI Tools**  |
 |                   | **monocore CLI**       |   🟨   | Project and sandbox management interface                 |
-|                   | • `init`               |  ⬜️   | Interactive project initialization                       |
+|                   | • `init`               |   ✅   | Project initialization                                   |
 |                   | • `add`                |  ⬜️   | Add sandboxes, builds, or groups to project              |
 |                   | • `remove`             |  ⬜️   | Remove project components                                |
 |                   | • `list`               |  ⬜️   | List sandboxes, builds, or groups                        |
 |                   | • `log`                |  ⬜️   | View component logs with filtering                       |
 |                   | • `tree`               |  ⬜️   | Display component layer hierarchy                        |
-|                   | • `run`                |  ⬜️   | Execute defined component scripts                        |
+|                   | • `run`                |   ✅   | Execute defined component scripts                        |
 |                   | • `start`              |  ⬜️   | Execute component start scripts                          |
 |                   | • `shell`              |  ⬜️   | Interactive sandbox shell access                         |
 |                   | • `tmp`                |  ⬜️   | Temporary sandbox creation from images                   |
@@ -101,8 +101,6 @@
 |                   | Docker Registry        |   ✅   | Integration with Docker registry                         |
 |                   | ghcr Registry          |  ⬜️   | Integration with GitHub Container Registry               |
 |                   | Quay Registry          |  ⬜️   | Integration with Red Hat Quay registry                   |
-| **📊 Web UI**     |
-|                   | Desktop                |  ⬜️   | App dashboard                                            |
 | **🔌 SDK**        |
 |                   | Python SDK             |  ⬜️   | Sandbox orchestration with Python                        |
 |                   | TypeScript SDK         |  ⬜️   | Sandbox orchestration with TypeScript                    |

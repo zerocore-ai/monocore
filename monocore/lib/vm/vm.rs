@@ -1,7 +1,6 @@
 use std::{
     ffi::CString,
     fs,
-    net::Ipv4Addr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
@@ -127,17 +126,11 @@ pub struct MicroVmConfig {
 
     /// The console output path to use for the MicroVm.
     pub console_output: Option<Utf8UnixPathBuf>,
-
-    /// The assigned IP address for the MicroVm.
-    pub assigned_ip: Option<Ipv4Addr>,
-
-    /// Whether the MicroVm is restricted to local connections only.
-    pub local_only: bool,
 }
 
 /// The log level to use for the MicroVm.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[repr(u32)]
+#[repr(u8)]
 pub enum LogLevel {
     /// No logging.
     #[default]
@@ -241,19 +234,20 @@ impl MicroVm {
         let ctx_id = self.ctx_id;
         let status = unsafe { ffi::krun_start_enter(ctx_id) };
         if status < 0 {
-            tracing::error!("Failed to start micro VM: {}", status);
+            tracing::error!("failed to start microvm: {}", status);
             return Err(MonocoreError::StartVmFailed(status));
         }
-        tracing::info!("Micro VM exited with status: {}", status);
+        tracing::info!("microvm exited with status: {}", status);
         Ok(status)
     }
 
     fn create_ctx() -> u32 {
         let ctx_id = unsafe { ffi::krun_create_ctx() };
-        assert!(ctx_id >= 0, "Failed to create micro VM context: {}", ctx_id);
+        assert!(ctx_id >= 0, "failed to create microvm context: {}", ctx_id);
         ctx_id as u32
     }
 
+    // TODO: Rename to patch_rootfs_fstab_with_virtiofs_mounts and move to management::rootfs.
     /// Updates the /etc/fstab file in the guest rootfs to mount the mapped directories.
     /// Creates the file if it doesn't exist.
     ///
@@ -359,20 +353,20 @@ impl MicroVm {
         // Set log level
         unsafe {
             let status = ffi::krun_set_log_level(config.log_level as u32);
-            assert!(status >= 0, "Failed to set log level: {}", status);
+            assert!(status >= 0, "failed to set log level: {}", status);
         }
 
         // Set basic VM configuration
         unsafe {
             let status = ffi::krun_set_vm_config(ctx_id, config.num_vcpus, config.ram_mib);
-            assert!(status >= 0, "Failed to set VM config: {}", status);
+            assert!(status >= 0, "failed to set VM config: {}", status);
         }
 
         // Set root path
         let c_root_path = CString::new(config.root_path.to_str().unwrap().as_bytes()).unwrap();
         unsafe {
             let status = ffi::krun_set_root(ctx_id, c_root_path.as_ptr());
-            assert!(status >= 0, "Failed to set root path: {}", status);
+            assert!(status >= 0, "failed to set root path: {}", status);
         }
 
         // Add mapped directories using virtio-fs
@@ -380,10 +374,11 @@ impl MicroVm {
         let root_path = &config.root_path;
         let mapped_dirs = &config.mapped_dirs;
 
+        // TODO: Don't do update here
         // Update fstab
         if let Err(e) = Self::update_rootfs_fstab(root_path, mapped_dirs) {
-            tracing::error!("Failed to update rootfs fstab: {}", e);
-            panic!("Failed to update rootfs fstab: {}", e);
+            tracing::error!("failed to update rootfs fstab: {}", e);
+            panic!("failed to update rootfs fstab: {}", e);
         }
 
         // Then add the virtiofs mounts
@@ -392,7 +387,7 @@ impl MicroVm {
             let host_path = CString::new(dir.get_host().to_string().as_bytes()).unwrap();
             unsafe {
                 let status = ffi::krun_add_virtiofs(ctx_id, tag.as_ptr(), host_path.as_ptr());
-                assert!(status >= 0, "Failed to add mapped directory: {}", status);
+                assert!(status >= 0, "failed to add mapped directory: {}", status);
             }
         }
 
@@ -406,7 +401,7 @@ impl MicroVm {
 
         unsafe {
             let status = ffi::krun_set_port_map(ctx_id, c_port_map_ptrs.as_ptr());
-            assert!(status >= 0, "Failed to set port map: {}", status);
+            assert!(status >= 0, "failed to set port map: {}", status);
         }
 
         // Set resource limits
@@ -419,7 +414,7 @@ impl MicroVm {
             let c_rlimits_ptrs = utils::to_null_terminated_c_array(&c_rlimits);
             unsafe {
                 let status = ffi::krun_set_rlimits(ctx_id, c_rlimits_ptrs.as_ptr());
-                assert!(status >= 0, "Failed to set resource limits: {}", status);
+                assert!(status >= 0, "failed to set resource limits: {}", status);
             }
         }
 
@@ -489,22 +484,6 @@ impl MicroVm {
                 let status = ffi::krun_set_console_output(ctx_id, c_console_output.as_ptr());
                 assert!(status >= 0, "Failed to set console output: {}", status);
             }
-        }
-
-        // Set assigned IP if configured
-        if let Some(assigned_ip) = &config.assigned_ip {
-            let ip_str = assigned_ip.to_string();
-            let c_assigned_ip = CString::new(ip_str).unwrap();
-            unsafe {
-                let status = ffi::krun_set_tsi_rewrite_ip(ctx_id, c_assigned_ip.as_ptr());
-                assert!(status >= 0, "Failed to set assigned IP: {}", status);
-            }
-        }
-
-        // Set local_only mode
-        unsafe {
-            let status = ffi::krun_enable_tsi_local_only(ctx_id, config.local_only);
-            assert!(status >= 0, "Failed to set local only mode: {}", status);
         }
     }
 }
@@ -711,6 +690,22 @@ impl MicroVmConfig {
 impl Drop for MicroVm {
     fn drop(&mut self) {
         unsafe { ffi::krun_free_ctx(self.ctx_id) };
+    }
+}
+
+impl TryFrom<u8> for LogLevel {
+    type Error = MonocoreError;
+
+    fn try_from(value: u8) -> Result<Self, MonocoreError> {
+        match value {
+            0 => Ok(LogLevel::Off),
+            1 => Ok(LogLevel::Error),
+            2 => Ok(LogLevel::Warn),
+            3 => Ok(LogLevel::Info),
+            4 => Ok(LogLevel::Debug),
+            5 => Ok(LogLevel::Trace),
+            _ => Err(MonocoreError::InvalidLogLevel(value)),
+        }
     }
 }
 

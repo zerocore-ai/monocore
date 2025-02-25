@@ -160,38 +160,6 @@ extern "C" {
     /// arguments of passt).
     pub(crate) fn krun_set_port_map(ctx_id: u32, c_port_map: *const *const c_char) -> i32;
 
-    /// Configures the IPv4 address that the TSI implementation will rewrite 127.0.0.1 to.
-    ///
-    /// When set, any connections (listen, connect, sendto_addr, etc.) to 127.0.0.1 in the guest will
-    /// be automatically rewritten to use this address instead.
-    ///
-    /// ## Arguments
-    ///
-    /// * `ctx_id` - The configuration context ID.
-    /// * `rewrite_ip` - A null-terminated string representing the IPv4 address to rewrite to.
-    ///
-    /// ## Notes
-    ///
-    /// - The `rewrite_ip` must be a valid IPv4 address
-    /// - On macOS, non-default loopback addresses are not enabled by default. You may need to
-    ///   configure them first with:
-    ///   ```bash
-    ///   sudo ifconfig lo0 alias <rewrite_ip>
-    ///   ```
-    /// - This setting is ignored if passt or gvproxy networking is used
-    pub(crate) fn krun_set_tsi_rewrite_ip(ctx_id: u32, rewrite_ip: *const c_char) -> i32;
-
-    /// Determines if the VM is only allowed to connect to 127.0.0.1.
-    ///
-    /// When enabled, the VM is only allowed to connect to 127.0.0.1. When disabled,
-    /// it can connect to any non-loopback address (e.g., 93.184.216.34).
-    ///
-    /// ## Arguments
-    ///
-    /// * `ctx_id` - The configuration context ID.
-    /// * `enable` - Whether to restrict connections to 127.0.0.1 only.
-    pub(crate) fn krun_enable_tsi_local_only(ctx_id: u32, enable: bool) -> i32;
-
     /// Enables and configures a virtio-gpu device.
     ///
     /// ## Arguments

@@ -1,3 +1,5 @@
+use std::{path::PathBuf, sync::LazyLock};
+
 //--------------------------------------------------------------------------------------------------
 // Constants
 //--------------------------------------------------------------------------------------------------
@@ -12,4 +14,7 @@ pub const DEFAULT_HOST: &str = "127.0.0.1";
 pub const DEFAULT_NFS_PORT: u32 = 2049;
 
 /// The default path for the mfsrun binary.
-pub const DEFAULT_MFSRUN_BIN_PATH: &str = "./mfsrun";
+pub static DEFAULT_MFSRUN_EXE_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
+    let current_exe = std::env::current_exe().unwrap();
+    current_exe.parent().unwrap().join("mfsrun")
+});

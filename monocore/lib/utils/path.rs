@@ -15,7 +15,7 @@ pub const MONOCORE_ENV_DIR: &str = ".menv";
 pub const MONOCORE_HOME_DIR: &str = ".monocore";
 
 /// The directory where project root filesystems are stored
-pub const ROOTS_SUBDIR: &str = "rootfs";
+pub const ROOTFS_SUBDIR: &str = "rootfs";
 
 /// The directory where base store blocks are stored
 pub const BLOCKS_SUBDIR: &str = "blocks";
@@ -25,6 +25,9 @@ pub const LOG_SUBDIR: &str = "log";
 
 /// The directory where global image layers are stored
 pub const LAYERS_SUBDIR: &str = "layers";
+
+/// The directory where project scripts are stored
+pub const SCRIPTS_SUBDIR: &str = "scripts";
 
 /// The directory where monocore's installed binaries are stored
 pub const BIN_SUBDIR: &str = "bin";
@@ -38,8 +41,17 @@ pub const OCI_DB_FILENAME: &str = "oci.db";
 /// The filename for the monoimage database
 pub const MONOIMAGE_DB_FILENAME: &str = "monoimage.db";
 
+/// The filename for the monocore config file
+pub const MONOCORE_CONFIG_FILENAME: &str = "monocore.yaml";
+
 /// The prefix for mcrun log files
 pub const MCRUN_LOG_PREFIX: &str = "mcrun";
+
+/// The directory on the microvm where sandbox scripts are stored
+pub const SANDBOX_SCRIPT_DIR: &str = ".sandbox_scripts";
+
+/// The suffix added to extracted layer directories
+pub const EXTRACTED_LAYER_SUFFIX: &str = "extracted";
 
 //--------------------------------------------------------------------------------------------------
 // Functions

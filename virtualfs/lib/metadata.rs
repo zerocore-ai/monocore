@@ -2,7 +2,7 @@ use cfg_if::cfg_if;
 use chrono::{DateTime, Utc};
 use getset::{CopyGetters, Getters};
 #[cfg(unix)]
-use users::{get_current_gid, get_current_uid};
+use uzers::{get_current_gid, get_current_uid};
 
 //--------------------------------------------------------------------------------------------------
 // Constants

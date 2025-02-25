@@ -1,8 +1,7 @@
-//! Utility functions for working with environment variables.
+mod config;
 
 //--------------------------------------------------------------------------------------------------
-// constants
+// Exports
 //--------------------------------------------------------------------------------------------------
 
-/// Environment variable for the mfsrun binary path
-pub const MFSRUN_EXE_ENV_VAR: &str = "MFSRUN_EXE";
+pub use config::*;

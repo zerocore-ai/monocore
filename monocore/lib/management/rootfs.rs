@@ -1,3 +1,9 @@
+//! Root filesystem management for Monocore sandboxes.
+//!
+//! This module provides functionality for managing root filesystems used by Monocore sandboxes.
+//! It handles the creation, extraction, and merging of filesystem layers following OCI (Open
+//! Container Initiative) specifications.
+
 use async_recursion::async_recursion;
 use chrono::{TimeZone, Utc};
 use ipldstore::{
@@ -9,6 +15,8 @@ use monofs::filesystem::{
     UNIX_MTIME_KEY, UNIX_UID_KEY,
 };
 use std::{
+    borrow::Cow,
+    collections::HashMap,
     fs,
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::Path,
@@ -355,6 +363,69 @@ where
     metadata
         .set_attribute(UNIX_MTIME_KEY, Ipld::String(mtime.to_rfc3339()))
         .await?;
+
+    Ok(())
+}
+
+/// Patches a native rootfs by adding sandbox script files to a `.sandbox_scripts` directory.
+///
+/// This function:
+/// 1. Creates a `.sandbox_scripts` directory under the rootfs if it doesn't exist
+/// 2. For each script in the provided HashMap, creates a file with the given name
+/// 3. Adds a shebang line using the provided shell path
+/// 4. Makes the script files executable (rwxr-x---)
+/// 5. Creates a `shell` script containing just the shell path
+///
+/// ## Arguments
+///
+/// * `root_path` - Path to the root of the filesystem to patch
+/// * `scripts` - HashMap containing script names and their contents
+/// * `shell_path` - Path to the shell binary within the rootfs (e.g. "/bin/sh")
+///
+/// ## Returns
+///
+/// Returns `MonocoreResult<()>` indicating success or failure
+pub fn clear_and_add_scripts_to_dir(
+    scripts_dir: &Path,
+    scripts: Cow<HashMap<String, String>>,
+    shell_path: impl AsRef<Path>,
+) -> MonocoreResult<()> {
+    // Clear or create the scripts directory
+    if scripts_dir.exists() {
+        // Remove all contents of the directory
+        for entry in fs::read_dir(&scripts_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                fs::remove_file(path)?;
+            } else if path.is_dir() {
+                fs::remove_dir_all(path)?;
+            }
+        }
+    } else {
+        // Create the directory if it doesn't exist
+        fs::create_dir_all(&scripts_dir)?;
+    }
+
+    // Get shell path as string for shebang
+    let shell_path = shell_path.as_ref().to_string_lossy();
+
+    for (script_name, script_content) in scripts.iter() {
+        // Create script file path
+        let script_path = scripts_dir.join(script_name);
+
+        // Write shebang and content
+        let full_content = format!("#!{}\n{}", shell_path, script_content);
+        fs::write(&script_path, full_content)?;
+
+        // Make executable for user and group (rwxr-x---)
+        fs::set_permissions(&script_path, fs::Permissions::from_mode(0o750))?;
+    }
+
+    // Create shell script containing just the shell path
+    let shell_script_path = scripts_dir.join("shell");
+    fs::write(&shell_script_path, shell_path.to_string())?;
+    fs::set_permissions(&shell_script_path, fs::Permissions::from_mode(0o750))?;
 
     Ok(())
 }
