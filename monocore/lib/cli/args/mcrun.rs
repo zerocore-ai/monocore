@@ -46,10 +46,6 @@ pub enum McrunSubcommand {
         #[arg(long)]
         exec_path: String,
 
-        /// Arguments for the executable
-        #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
-        args: Vec<String>,
-
         /// Environment variables (KEY=VALUE format)
         #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
         env: Vec<String>,
@@ -61,6 +57,10 @@ pub enum McrunSubcommand {
         /// Port mappings (host:guest format)
         #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
         port_map: Vec<String>,
+
+        /// Additional arguments after `--`
+        #[arg(last = true)]
+        args: Vec<String>,
     },
     /// Run as supervisor
     Supervisor {
@@ -105,10 +105,6 @@ pub enum McrunSubcommand {
         #[arg(long)]
         exec_path: String,
 
-        /// Arguments for the executable
-        #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
-        args: Vec<String>,
-
         /// Environment variables (KEY=VALUE format)
         #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
         env: Vec<String>,
@@ -120,5 +116,9 @@ pub enum McrunSubcommand {
         /// Port mappings (host:guest format)
         #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
         port_map: Vec<String>,
+
+        /// Additional arguments after `--`
+        #[arg(last = true)]
+        args: Vec<String>,
     },
 }

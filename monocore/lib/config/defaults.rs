@@ -17,7 +17,7 @@ pub static DEFAULT_MONOCORE_HOME: LazyLock<PathBuf> =
     LazyLock::new(|| dirs::home_dir().unwrap().join(MONOCORE_HOME_DIR));
 
 /// The default OCI registry domain.
-pub const DEFAULT_OCI_REGISTRY: &str = "sandboxes.io";
+pub const DEFAULT_OCI_REGISTRY: &str = "docker.io";
 
 /// The default OCI reference tag.
 pub const DEFAULT_OCI_REFERENCE_TAG: &str = "latest";

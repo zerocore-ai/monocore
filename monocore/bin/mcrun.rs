@@ -19,12 +19,10 @@
 //!     --ram-mib=1024 \
 //!     --workdir-path=/app \
 //!     --exec-path=/usr/bin/python3 \
-//!     --arg="-m" \
-//!     --arg="http.server" \
-//!     --arg="8080" \
 //!     --mapped-dirs=/host/path:/guest/path \
 //!     --port-map=8080:80 \
-//!     --env=KEY=VALUE
+//!     --env=KEY=VALUE \
+//!     -- -m http.server 8080
 //! ```
 //!
 //! ### Supervisor Mode
@@ -41,13 +39,11 @@
 //!     --ram-mib=1024 \
 //!     --workdir-path=/app \
 //!     --exec-path=/usr/bin/python3 \
-//!     --arg="-m" \
-//!     --arg="http.server" \
-//!     --arg="8080" \
 //!     --mapped-dirs=/host/path:/guest/path \
 //!     --port-map=8080:80 \
 //!     --env=KEY=VALUE \
-//!     --forward-output
+//!     --forward-output \
+//!     -- -m http.server 8080
 //! ```
 
 use std::env;
@@ -80,10 +76,10 @@ async fn main() -> Result<()> {
             ram_mib,
             workdir_path,
             exec_path,
-            args,
             env,
             mapped_dirs,
             port_map,
+            args,
         } => {
             tracing_subscriber::fmt::init();
 
@@ -140,10 +136,10 @@ async fn main() -> Result<()> {
             ram_mib,
             workdir_path,
             exec_path,
-            args,
             env,
             mapped_dirs,
             port_map,
+            args,
         } => {
             tracing_subscriber::fmt::init();
             tracing::info!("setting up supervisor");
@@ -175,11 +171,6 @@ async fn main() -> Result<()> {
                 format!("--exec-path={}", exec_path),
             ];
 
-            // Set args if provided
-            if !args.is_empty() {
-                child_args.push(format!("--args={}", args.join(",")));
-            }
-
             // Set env if provided
             if !env.is_empty() {
                 child_args.push(format!("--env={}", env.join(",")));
@@ -200,8 +191,22 @@ async fn main() -> Result<()> {
                 child_args.push(format!("--log-level={}", log_level));
             }
 
+            // Set args if provided
+            if !args.is_empty() {
+                child_args.push("--".to_string());
+                for arg in args {
+                    child_args.push(arg);
+                }
+            }
+
             // Compose child environment variables
-            let child_envs = vec![("RUST_LOG", "mcrun=info,monocore=info")];
+            let mut child_envs = Vec::<(String, String)>::new();
+
+            // Only pass RUST_LOG if it's set in the environment
+            if let Ok(rust_log) = std::env::var("RUST_LOG") {
+                tracing::debug!("using existing RUST_LOG: {:?}", rust_log);
+                child_envs.push(("RUST_LOG".to_string(), rust_log));
+            }
 
             // Create and start supervisor
             let mut supervisor = Supervisor::new(

@@ -5,7 +5,7 @@
 //! necessary components for running sandboxes, including configuration files,
 //! databases, and log directories.
 
-use crate::{config::DEFAULT_CONFIG, utils::ROOTS_SUBDIR, MonocoreResult};
+use crate::{config::DEFAULT_CONFIG, utils::ROOTFS_SUBDIR, MonocoreResult};
 use std::path::{Path, PathBuf};
 use tokio::{fs, io::AsyncWriteExt};
 
@@ -70,7 +70,7 @@ async fn create_menv_dirs(menv_path: &Path) -> MonocoreResult<()> {
     fs::create_dir_all(menv_path.join(LOG_SUBDIR)).await?;
 
     // We'll create rootfs directory later when monofs is ready
-    fs::create_dir_all(menv_path.join(ROOTS_SUBDIR)).await?;
+    fs::create_dir_all(menv_path.join(ROOTFS_SUBDIR)).await?;
 
     Ok(())
 }

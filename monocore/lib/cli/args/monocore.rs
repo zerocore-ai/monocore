@@ -215,7 +215,7 @@ pub enum MonocoreSubcommand {
         #[arg(default_value = DEFAULT_SCRIPT)]
         script: String,
 
-        /// Additional arguments
+        /// Additional arguments after `--`
         #[arg(last = true)]
         args: Vec<String>,
 

@@ -23,7 +23,7 @@ use std::{
 };
 use tokio::{fs::File as TokioFile, io::BufReader};
 
-use crate::{utils::SANDBOX_SCRIPT_DIR, MonocoreResult};
+use crate::MonocoreResult;
 
 //--------------------------------------------------------------------------------------------------
 // Constants
@@ -385,21 +385,34 @@ where
 /// ## Returns
 ///
 /// Returns `MonocoreResult<()>` indicating success or failure
-pub fn patch_native_rootfs_with_scripts(
-    root_path: impl AsRef<Path>,
+pub fn clear_and_add_scripts_to_dir(
+    scripts_dir: &Path,
     scripts: Cow<HashMap<String, String>>,
     shell_path: impl AsRef<Path>,
 ) -> MonocoreResult<()> {
-    // Create scripts directory
-    let script_dir = root_path.as_ref().join(SANDBOX_SCRIPT_DIR);
-    fs::create_dir_all(&script_dir)?;
+    // Clear or create the scripts directory
+    if scripts_dir.exists() {
+        // Remove all contents of the directory
+        for entry in fs::read_dir(&scripts_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                fs::remove_file(path)?;
+            } else if path.is_dir() {
+                fs::remove_dir_all(path)?;
+            }
+        }
+    } else {
+        // Create the directory if it doesn't exist
+        fs::create_dir_all(&scripts_dir)?;
+    }
 
     // Get shell path as string for shebang
     let shell_path = shell_path.as_ref().to_string_lossy();
 
     for (script_name, script_content) in scripts.iter() {
         // Create script file path
-        let script_path = script_dir.join(script_name);
+        let script_path = scripts_dir.join(script_name);
 
         // Write shebang and content
         let full_content = format!("#!{}\n{}", shell_path, script_content);
@@ -410,7 +423,7 @@ pub fn patch_native_rootfs_with_scripts(
     }
 
     // Create shell script containing just the shell path
-    let shell_script_path = script_dir.join("shell");
+    let shell_script_path = scripts_dir.join("shell");
     fs::write(&shell_script_path, shell_path.to_string())?;
     fs::set_permissions(&shell_script_path, fs::Permissions::from_mode(0o750))?;
 

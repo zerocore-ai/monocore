@@ -1,10 +1,13 @@
-use nix::unistd::Pid;
 use nix::{
     fcntl::{fcntl, FcntlArg, OFlag},
     pty::openpty,
+    unistd::Pid,
 };
-use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd};
-use std::{path::PathBuf, process::Stdio};
+use std::{
+    os::unix::io::{AsRawFd, FromRawFd, IntoRawFd},
+    path::PathBuf,
+    process::Stdio,
+};
 use tokio::{
     fs::{create_dir_all, File},
     io::unix::AsyncFd,
@@ -12,8 +15,9 @@ use tokio::{
     signal::unix::{signal, SignalKind},
 };
 
-use crate::{path::SUPERVISOR_LOG_FILENAME, MonoutilsResult, ProcessMonitor, RotatingLog};
-use crate::{term, ChildIo};
+use crate::{
+    path::SUPERVISOR_LOG_FILENAME, term, ChildIo, MonoutilsResult, ProcessMonitor, RotatingLog,
+};
 
 //--------------------------------------------------------------------------------------------------
 // Types

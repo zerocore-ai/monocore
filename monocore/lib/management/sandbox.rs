@@ -4,17 +4,19 @@
 //! environments for running applications. It handles sandbox creation, configuration,
 //! and execution based on the Monocore configuration file.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tokio::{fs, process::Command};
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
-    config::{MonocoreConfig, ReferencePath, DEFAULT_MCRUN_EXE_PATH, DEFAULT_WORKDIR},
-    management::rootfs,
+    config::{MonocoreConfig, ReferencePath, Sandbox, DEFAULT_MCRUN_EXE_PATH, DEFAULT_WORKDIR},
+    management::{db, image, rootfs},
+    oci::Reference,
     utils::{
-        LOG_SUBDIR, MCRUN_EXE_ENV_VAR, MONOCORE_CONFIG_FILENAME, MONOCORE_ENV_DIR,
-        SANDBOX_DB_FILENAME, SANDBOX_SCRIPT_DIR,
+        env, EXTRACTED_LAYER_SUFFIX, LAYERS_SUBDIR, LOG_SUBDIR, MCRUN_EXE_ENV_VAR,
+        MONOCORE_CONFIG_FILENAME, MONOCORE_ENV_DIR, OCI_DB_FILENAME, ROOTFS_SUBDIR,
+        SANDBOX_DB_FILENAME, SANDBOX_SCRIPT_DIR, SCRIPTS_SUBDIR,
     },
     MonocoreError, MonocoreResult,
 };
@@ -35,46 +37,54 @@ pub async fn run_sandbox(
     let project_dir = project_dir.unwrap_or_else(|| PathBuf::from("."));
 
     // Get the config file path
-    let config_path =
-        project_dir.join(config_path.unwrap_or_else(|| MONOCORE_CONFIG_FILENAME.into()));
+    let full_config_path = project_dir.join(
+        config_path
+            .clone()
+            .unwrap_or_else(|| MONOCORE_CONFIG_FILENAME.into()),
+    );
 
     // Check if config file exists
-    if !config_path.exists() {
+    if !full_config_path.exists() {
         return Err(MonocoreError::MonocoreConfigNotFound(
-            config_path.to_string_lossy().to_string(),
+            full_config_path.to_string_lossy().to_string(),
         ));
     }
 
     // Read and parse the monocore.yaml config file
-    let config_contents = fs::read_to_string(&config_path).await?;
+    let config_contents = fs::read_to_string(&full_config_path).await?;
     let config: MonocoreConfig = serde_yaml::from_str(&config_contents)?;
 
     // Get the sandbox config
     let Some(sandbox_config) = config.get_sandbox(name) else {
         return Err(MonocoreError::SandboxNotFoundInConfig(
             name.to_string(),
-            config_path,
+            full_config_path,
         ));
     };
-
-    // TODO: We should support overlayfs as default.
-    let ReferencePath::Path(root_path) = sandbox_config.get_image() else {
-        return Err(MonocoreError::custom(anyhow::anyhow!(
-            "currently only local rootfs are supported for sandboxes, `{}` does not specify a valid rootfs",
-            name
-        )));
-    };
-
-    // Make root_path relative to project directory
-    let root_path = project_dir.join(root_path);
-
-    // Patch the rootfs with the sandbox scripts
-    let scripts = sandbox_config.get_full_scripts();
-    rootfs::patch_native_rootfs_with_scripts(&root_path, scripts, sandbox_config.get_shell())?;
 
     // Get the .menv directory path
     let menv_path = project_dir.join(MONOCORE_ENV_DIR);
     fs::create_dir_all(&menv_path).await?;
+
+    let root_path = match sandbox_config.get_image() {
+        ReferencePath::Path(root_path) => {
+            // Create the scripts directory
+            let scripts_dir = root_path.join(SANDBOX_SCRIPT_DIR);
+            fs::create_dir_all(&scripts_dir).await?;
+
+            // Clear the scripts directory and add the scripts
+            let scripts = sandbox_config.get_full_scripts();
+            rootfs::clear_and_add_scripts_to_dir(
+                &scripts_dir,
+                scripts,
+                sandbox_config.get_shell(),
+            )?;
+            project_dir.join(root_path)
+        }
+        ReferencePath::Reference(reference) => {
+            setup_image_rootfs(reference, sandbox_config, &menv_path, config_path.as_ref()).await?
+        }
+    };
 
     // Log directory
     let log_dir = menv_path.join(LOG_SUBDIR);
@@ -82,9 +92,6 @@ pub async fn run_sandbox(
 
     // Sandbox database path
     let sandbox_db_path = menv_path.join(SANDBOX_DB_FILENAME);
-
-    let mcrun_path =
-        monoutils::path::resolve_env_path(MCRUN_EXE_ENV_VAR, &*DEFAULT_MCRUN_EXE_PATH)?;
 
     // Get the workdir path
     let workdir_path = sandbox_config
@@ -97,10 +104,11 @@ pub async fn run_sandbox(
 
     tracing::info!("starting sandbox supervisor...");
     tracing::info!("root_path: {}", root_path.display());
-    tracing::info!("log_dir: {}", log_dir.display());
-    tracing::info!("sandbox_db_path: {}", sandbox_db_path.display());
     tracing::info!("workdir_path: {}", workdir_path);
     tracing::info!("exec_path: {}", exec_path);
+
+    let mcrun_path =
+        monoutils::path::resolve_env_path(MCRUN_EXE_ENV_VAR, &*DEFAULT_MCRUN_EXE_PATH)?;
 
     let mut command = Command::new(mcrun_path);
     command
@@ -129,8 +137,12 @@ pub async fn run_sandbox(
         command.env("RUST_LOG", rust_log);
     }
 
+    // Pass the extra arguments last.
     if !args.is_empty() {
-        command.arg("--args").arg(args.join(","));
+        command.arg("--");
+        for arg in args {
+            command.arg(arg);
+        }
     }
 
     let mut child = command.spawn()?;
@@ -151,4 +163,71 @@ pub async fn run_sandbox(
     }
 
     Ok(())
+}
+
+//--------------------------------------------------------------------------------------------------
+// Functions: Helpers
+//--------------------------------------------------------------------------------------------------
+
+async fn setup_image_rootfs(
+    image: &Reference,
+    sandbox_config: &Sandbox,
+    menv_path: &Path,
+    config_path: Option<&PathBuf>,
+) -> MonocoreResult<PathBuf> {
+    // Pull the image from the registry
+    tracing::info!("pulling image: {}", image);
+    image::pull_image(image.clone(), true, false, None).await?;
+
+    // Get the monocore home path and database path
+    let monocore_home_path = env::get_monocore_home_path();
+    let db_path = monocore_home_path.join(OCI_DB_FILENAME);
+    let layers_dir = monocore_home_path.join(LAYERS_SUBDIR);
+
+    // Get or create a connection pool to the database
+    let pool = db::get_or_create_db_pool(&db_path, &db::OCI_DB_MIGRATOR).await?;
+
+    // Get the layers for the image
+    let layers = db::get_image_layers(&pool, &image.to_string()).await?;
+    tracing::info!("found {} layers for image {}", layers.len(), image);
+
+    // Get the extracted layer paths
+    let mut layer_paths = Vec::new();
+    for (digest, _, _) in &layers {
+        let layer_path = layers_dir.join(format!("{}.{}", digest, EXTRACTED_LAYER_SUFFIX));
+        if !layer_path.exists() {
+            return Err(MonocoreError::PathNotFound(format!(
+                "extracted layer {} not found at {}",
+                digest,
+                layer_path.display()
+            )));
+        }
+        tracing::info!("found extracted layer: {}", layer_path.display());
+        layer_paths.push(layer_path);
+    }
+
+    // Get the scripts directory
+    let mut scripts_dir = menv_path.join(SCRIPTS_SUBDIR);
+    if let Some(config_path) = config_path {
+        scripts_dir = scripts_dir.join(config_path.file_name().unwrap());
+    }
+    tracing::info!("scripts_dir: {}", scripts_dir.display());
+
+    // Clear the scripts directory and add the scripts
+    let scripts = sandbox_config.get_full_scripts();
+    rootfs::clear_and_add_scripts_to_dir(&scripts_dir, scripts, sandbox_config.get_shell())?;
+
+    let mut root_path = menv_path.join(ROOTFS_SUBDIR);
+    if let Some(config_path) = config_path {
+        root_path = root_path.join(config_path.file_name().unwrap());
+    }
+    tracing::info!("root_path: {}", root_path.display());
+
+    // Add the scripts and rootfs directories to the layer paths
+    layer_paths.push(scripts_dir);
+    layer_paths.push(root_path.clone());
+
+    // TODO: Start a overlayfs nfs supervisor here. Wait a few seconds.
+
+    Ok(root_path)
 }

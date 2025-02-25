@@ -9,7 +9,7 @@ use crate::{
     oci::{DockerRegistry, OciRegistryPull, Reference},
     utils::{
         env::get_monocore_home_path,
-        path::{LAYERS_SUBDIR, OCI_DB_FILENAME},
+        path::{LAYERS_SUBDIR, OCI_DB_FILENAME}, EXTRACTED_LAYER_SUFFIX,
     },
     MonocoreError, MonocoreResult,
 };
@@ -23,14 +23,9 @@ use tokio::{fs, process::Command};
 // Constants
 //--------------------------------------------------------------------------------------------------
 
-/// The domain name for the Sandboxes.io registry.
-const SANDBOXES_REGISTRY: &str = "sandboxes.io";
-
 /// The domain name for the Docker registry.
 const DOCKER_REGISTRY: &str = "docker.io";
 
-/// The suffix added to extracted layer directories
-const EXTRACTED_LAYER_SUFFIX: &str = "extracted";
 
 //--------------------------------------------------------------------------------------------------
 // Functions
@@ -92,18 +87,9 @@ pub async fn pull_image(
     }
 
     if image_group {
-        // Only sandboxes registry supports image group pulls.
-        let registry = name.to_string().split('/').next().unwrap_or("").to_string();
-
-        if registry != SANDBOXES_REGISTRY {
-            return Err(MonocoreError::InvalidArgument(format!(
-                "image group pull is only supported for sandboxes registry, got: {}",
-                registry
-            )));
-        }
-
-        // In image group mode, no fallback is applied
-        return pull_sandboxes_registry_image_group(&name).await;
+        return Err(MonocoreError::InvalidArgument(
+            "image group pull is currently not supported".to_string(),
+        ));
     }
 
     // Single image pull mode (default if both flags are false, or if image is true)
@@ -111,20 +97,6 @@ pub async fn pull_image(
     let temp_download_dir = tempdir()?.into_path();
     if registry == DOCKER_REGISTRY {
         pull_docker_registry_image(&name, &temp_download_dir, layer_path).await
-    } else if registry == SANDBOXES_REGISTRY {
-        match pull_sandboxes_registry_image(&name).await {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                tracing::warn!(
-                    "sandboxes registry image pull failed: {}. falling back to DockerRegistry pull.",
-                    e
-                );
-                // Create a new reference with docker.io registry for fallback
-                let mut docker_ref = name.clone();
-                docker_ref.set_registry(DOCKER_REGISTRY.to_string());
-                pull_docker_registry_image(&docker_ref, &temp_download_dir, layer_path).await
-            }
-        }
     } else {
         Err(MonocoreError::InvalidArgument(format!(
             "Unsupported registry: {}",
