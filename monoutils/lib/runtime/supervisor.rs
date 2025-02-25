@@ -1,12 +1,19 @@
 use nix::unistd::Pid;
+use nix::{
+    fcntl::{fcntl, FcntlArg, OFlag},
+    pty::openpty,
+};
+use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd};
 use std::{path::PathBuf, process::Stdio};
 use tokio::{
-    fs::create_dir_all,
+    fs::{create_dir_all, File},
+    io::unix::AsyncFd,
     process::Command,
     signal::unix::{signal, SignalKind},
 };
 
 use crate::{path::SUPERVISOR_LOG_FILENAME, MonoutilsResult, ProcessMonitor, RotatingLog};
+use crate::{term, ChildIo};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -83,8 +90,8 @@ where
     ///
     /// This method:
     /// 1. Creates the log directory if it doesn't exist
-    /// 2. Starts the child process
-    /// 3. Passes stdout/stderr to the process monitor
+    /// 2. Starts the child process with appropriate IO (TTY or pipes)
+    /// 3. Passes the IO to the process monitor
     pub async fn start(&mut self) -> MonoutilsResult<()> {
         // Create log directory if it doesn't exist
         create_dir_all(&self.log_dir).await?;
@@ -92,22 +99,96 @@ where
         // Setup supervisor's rotating log
         let _supervisor_log = RotatingLog::new(self.log_dir.join(SUPERVISOR_LOG_FILENAME)).await?;
 
-        // Start child process
-        let mut child = Command::new(&self.child_exe)
-            .args(&self.child_args)
-            .envs(self.child_envs.iter().map(|(k, v)| (k, v)))
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+        // Check if we're running in an interactive terminal
+        let (mut child, child_io) = if term::is_interactive_terminal() {
+            tracing::info!("running in an interactive terminal");
+            // Create a new pseudo terminal and set master to non-blocking mode
+            let pty = openpty(None, None)?;
+            let master_fd = pty.master.as_raw_fd();
+            {
+                let flags = OFlag::from_bits_truncate(fcntl(master_fd, FcntlArg::F_GETFL)?);
+                let new_flags = flags | OFlag::O_NONBLOCK;
+                fcntl(master_fd, FcntlArg::F_SETFL(new_flags))?;
+            }
 
-        let child_pid = child.id().expect("Failed to get child process ID");
+            // Clone the slave for stdin, stdout, and stderr
+            let slave_in = pty.slave.try_clone()?;
+            let slave_out = pty.slave.try_clone()?;
+            let slave_err = pty.slave;
+
+            // Start child process with PTY
+            let mut command = Command::new(&self.child_exe);
+            command
+                .args(&self.child_args)
+                .envs(self.child_envs.iter().map(|(k, v)| (k, v)))
+                .stdin(Stdio::from(slave_in))
+                .stdout(Stdio::from(slave_out))
+                .stderr(Stdio::from(slave_err));
+
+            // Set up child's session and controlling terminal
+            unsafe {
+                command.pre_exec(|| {
+                    nix::unistd::setsid()
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    if libc::ioctl(libc::STDIN_FILENO, libc::TIOCSCTTY as _, 1 as libc::c_long) < 0
+                    {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+
+            let child = command.spawn()?;
+
+            // Set up master file handles for asynchronous I/O
+            let master_fd_owned = pty.master;
+            let master_write_fd = nix::unistd::dup(master_fd_owned.as_raw_fd())?;
+            let master_read_file =
+                unsafe { std::fs::File::from_raw_fd(master_fd_owned.into_raw_fd()) };
+            let master_write_file = unsafe { std::fs::File::from_raw_fd(master_write_fd) };
+
+            let master_read = AsyncFd::new(master_read_file)?;
+            let master_write = File::from_std(master_write_file);
+
+            // Create the TTY ChildIO
+            let child_io = ChildIo::TTY {
+                master_read,
+                master_write,
+            };
+
+            (child, child_io)
+        } else {
+            tracing::info!("running in a non-interactive terminal");
+            // Start child process with pipes
+            let mut child = Command::new(&self.child_exe)
+                .args(&self.child_args)
+                .envs(self.child_envs.iter().map(|(k, v)| (k, v)))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?;
+
+            // Take ownership of child's stdin/stdout/stderr
+            let stdin = child.stdin.take();
+            let stdout = child.stdout.take();
+            let stderr = child.stderr.take();
+
+            // Create the Piped ChildIO enum
+            let child_io = ChildIo::Piped {
+                stdin,
+                stdout,
+                stderr,
+            };
+
+            (child, child_io)
+        };
+
+        let child_pid = child.id().expect("failed to get child process id");
         self.child_pid = Some(child_pid);
 
-        // Take ownership of child's stdout/stderr and start monitoring
-        let stdout = child.stdout.take().expect("Failed to take child stdout");
-        let stderr = child.stderr.take().expect("Failed to take child stderr");
+        // Start monitoring
         self.process_monitor
-            .start(child_pid, self.child_name.clone(), stdout, stderr)
+            .start(child_pid, self.child_name.clone(), child_io)
             .await?;
 
         // Setup signal handlers
@@ -117,10 +198,10 @@ where
         // Wait for either child process to exit or signal to be received
         tokio::select! {
             status = child.wait() => {
-                tracing::info!("child process {} exited", child_pid);
-
                 // Stop process monitoring
                 self.process_monitor.stop().await?;
+
+                tracing::info!("child process {} exited", child_pid);
 
                 if status.is_ok() {
                     if let Ok(status) = status {
@@ -139,22 +220,22 @@ where
                     }
                 } else {
                     tracing::error!(
-                        "Failed to wait for child process {}: {:?}",
+                        "failed to wait for child process {}: {:?}",
                         child_pid,
                         status
                     );
                 }
             }
             _ = sigterm.recv() => {
-                tracing::info!("Received SIGTERM signal");
-
                 // Stop process monitoring
                 self.process_monitor.stop().await?;
+
+                tracing::info!("received SIGTERM signal");
 
                 if let Some(pid) = self.child_pid.take() {
                     if let Err(e) = nix::sys::signal::kill(Pid::from_raw(pid as i32), nix::sys::signal::Signal::SIGTERM) {
                         tracing::error!(
-                            "Failed to send SIGTERM to process {}: {}",
+                            "failed to send SIGTERM to process {}: {}",
                             pid,
                             e
                         );
@@ -164,21 +245,21 @@ where
                 // Wait for child to exit after sending signal
                 if let Err(e) = child.wait().await {
                     tracing::error!(
-                        "Error waiting for child after SIGTERM: {}",
+                        "error waiting for child after SIGTERM: {}",
                         e
                     );
                 }
             }
             _ = sigint.recv() => {
-                tracing::info!("Received SIGINT signal");
-
                 // Stop process monitoring
                 self.process_monitor.stop().await?;
+
+                tracing::info!("received SIGINT signal");
 
                 if let Some(pid) = self.child_pid.take() {
                     if let Err(e) = nix::sys::signal::kill(Pid::from_raw(pid as i32), nix::sys::signal::Signal::SIGTERM) {
                         tracing::error!(
-                            "Failed to send SIGTERM to process {}: {}",
+                            "failed to send SIGTERM to process {}: {}",
                             pid,
                             e
                         );
@@ -188,7 +269,7 @@ where
                 // Wait for child to exit after sending signal
                 if let Err(e) = child.wait().await {
                     tracing::error!(
-                        "Error waiting for child after SIGINT: {}",
+                        "error waiting for child after SIGINT: {}",
                         e
                     );
                 }
@@ -196,6 +277,7 @@ where
         }
 
         self.child_pid = None;
+
         Ok(())
     }
 }

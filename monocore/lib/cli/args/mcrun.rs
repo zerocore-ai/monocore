@@ -80,6 +80,10 @@ pub enum McrunSubcommand {
         #[arg(long)]
         log_level: Option<u8>,
 
+        /// Whether to forward output to stdout/stderr
+        #[arg(long, default_value = "true")]
+        forward_output: bool,
+
         // Sandbox specific arguments
         /// Root filesystem path
         #[arg(long)]

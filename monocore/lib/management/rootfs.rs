@@ -14,8 +14,9 @@ use monofs::filesystem::{
     Dir, Entity, File, Metadata, SymPathLink, UNIX_ATIME_KEY, UNIX_GID_KEY, UNIX_MODE_KEY,
     UNIX_MTIME_KEY, UNIX_UID_KEY,
 };
-use std::{borrow::Cow, collections::HashMap};
 use std::{
+    borrow::Cow,
+    collections::HashMap,
     fs,
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::Path,
@@ -373,6 +374,7 @@ where
 /// 2. For each script in the provided HashMap, creates a file with the given name
 /// 3. Adds a shebang line using the provided shell path
 /// 4. Makes the script files executable (rwxr-x---)
+/// 5. Creates a `shell` script containing just the shell path
 ///
 /// ## Arguments
 ///
@@ -406,6 +408,11 @@ pub fn patch_native_rootfs_with_scripts(
         // Make executable for user and group (rwxr-x---)
         fs::set_permissions(&script_path, fs::Permissions::from_mode(0o750))?;
     }
+
+    // Create shell script containing just the shell path
+    let shell_script_path = script_dir.join("shell");
+    fs::write(&shell_script_path, shell_path.to_string())?;
+    fs::set_permissions(&shell_script_path, fs::Permissions::from_mode(0o750))?;
 
     Ok(())
 }
