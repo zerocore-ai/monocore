@@ -281,6 +281,10 @@ pub enum MonocoreError {
     /// An error that occurs when an invalid log level is used.
     #[error("invalid log level: {0}")]
     InvalidLogLevel(u8),
+
+    /// An error that occurred when no available ports were found
+    #[error("no available ports found: {host} between {start} and {end}")]
+    NoAvailablePorts { host: String, start: u16, end: u16 },
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

@@ -8,13 +8,14 @@ use std::path::{Path, PathBuf};
 
 use tokio::{fs, process::Command};
 use typed_path::Utf8UnixPathBuf;
+use virtualfs::{DEFAULT_NFS_HOST, DEFAULT_NFS_PORT};
 
 use crate::{
     config::{MonocoreConfig, ReferencePath, Sandbox, DEFAULT_MCRUN_EXE_PATH, DEFAULT_WORKDIR},
-    management::{db, image, rootfs},
+    management::{db, find, image, rootfs},
     oci::Reference,
     utils::{
-        env, EXTRACTED_LAYER_SUFFIX, LAYERS_SUBDIR, LOG_SUBDIR, MCRUN_EXE_ENV_VAR,
+        env, DEFAULT_SUBDIR, EXTRACTED_LAYER_SUFFIX, LAYERS_SUBDIR, LOG_SUBDIR, MCRUN_EXE_ENV_VAR,
         MONOCORE_CONFIG_FILENAME, MONOCORE_ENV_DIR, OCI_DB_FILENAME, ROOTFS_SUBDIR,
         SANDBOX_DB_FILENAME, SANDBOX_SCRIPT_DIR, SCRIPTS_SUBDIR,
     },
@@ -66,7 +67,7 @@ pub async fn run_sandbox(
     let menv_path = project_dir.join(MONOCORE_ENV_DIR);
     fs::create_dir_all(&menv_path).await?;
 
-    let root_path = match sandbox_config.get_image() {
+    let (root_path, overlayfs) = match sandbox_config.get_image() {
         ReferencePath::Path(root_path) => {
             // Create the scripts directory
             let scripts_dir = root_path.join(SANDBOX_SCRIPT_DIR);
@@ -79,10 +80,30 @@ pub async fn run_sandbox(
                 scripts,
                 sandbox_config.get_shell(),
             )?;
-            project_dir.join(root_path)
+
+            // If relative, join with project_dir, otherwise use as is
+            let root_path = if root_path.is_relative() {
+                project_dir.join(root_path)
+            } else {
+                root_path.into()
+            };
+
+            (root_path, None)
         }
         ReferencePath::Reference(reference) => {
-            setup_image_rootfs(reference, sandbox_config, &menv_path, config_path.as_ref()).await?
+            let (root_path, layer_paths) = prepare_image_layers(
+                reference,
+                name,
+                sandbox_config,
+                &menv_path,
+                config_path.as_ref(),
+            )
+            .await?;
+
+            let port = find::find_available_port(DEFAULT_NFS_HOST, DEFAULT_NFS_PORT).await?;
+            tracing::info!("next available port: {}", port);
+
+            (root_path, Some((layer_paths, port)))
         }
     };
 
@@ -131,6 +152,20 @@ pub async fn run_sandbox(
         .arg(&exec_path)
         .arg("--forward-output");
 
+    // Add overlayfs arguments if present
+    if let Some((layer_paths, port)) = overlayfs {
+        command.arg("--overlayfs-layer-paths");
+        command.arg(
+            layer_paths
+                .iter()
+                .map(|p| p.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+        command.arg("--nfs-port");
+        command.arg(port.to_string());
+    }
+
     // Only pass RUST_LOG if it's set in the environment
     if let Some(rust_log) = std::env::var_os("RUST_LOG") {
         tracing::debug!("using existing RUST_LOG: {:?}", rust_log);
@@ -169,12 +204,13 @@ pub async fn run_sandbox(
 // Functions: Helpers
 //--------------------------------------------------------------------------------------------------
 
-async fn setup_image_rootfs(
+async fn prepare_image_layers(
     image: &Reference,
+    name: &str,
     sandbox_config: &Sandbox,
     menv_path: &Path,
     config_path: Option<&PathBuf>,
-) -> MonocoreResult<PathBuf> {
+) -> MonocoreResult<(PathBuf, Vec<PathBuf>)> {
     // Pull the image from the registry
     tracing::info!("pulling image: {}", image);
     image::pull_image(image.clone(), true, false, None).await?;
@@ -208,26 +244,31 @@ async fn setup_image_rootfs(
 
     // Get the scripts directory
     let mut scripts_dir = menv_path.join(SCRIPTS_SUBDIR);
-    if let Some(config_path) = config_path {
-        scripts_dir = scripts_dir.join(config_path.file_name().unwrap());
-    }
+    scripts_dir = if let Some(config_path) = config_path {
+        scripts_dir.join(config_path.file_name().unwrap())
+    } else {
+        scripts_dir.join(DEFAULT_SUBDIR)
+    };
+    scripts_dir = scripts_dir.join(name);
     tracing::info!("scripts_dir: {}", scripts_dir.display());
 
     // Clear the scripts directory and add the scripts
     let scripts = sandbox_config.get_full_scripts();
     rootfs::clear_and_add_scripts_to_dir(&scripts_dir, scripts, sandbox_config.get_shell())?;
 
+    // Get the rootfs directory
     let mut root_path = menv_path.join(ROOTFS_SUBDIR);
-    if let Some(config_path) = config_path {
-        root_path = root_path.join(config_path.file_name().unwrap());
-    }
+    root_path = if let Some(config_path) = config_path {
+        root_path.join(config_path.file_name().unwrap())
+    } else {
+        root_path.join(DEFAULT_SUBDIR)
+    };
+    root_path = root_path.join(name);
     tracing::info!("root_path: {}", root_path.display());
 
     // Add the scripts and rootfs directories to the layer paths
     layer_paths.push(scripts_dir);
     layer_paths.push(root_path.clone());
 
-    // TODO: Start a overlayfs nfs supervisor here. Wait a few seconds.
-
-    Ok(root_path)
+    Ok((root_path, layer_paths))
 }

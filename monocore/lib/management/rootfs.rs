@@ -367,10 +367,10 @@ where
     Ok(())
 }
 
-/// Patches a native rootfs by adding sandbox script files to a `.sandbox_scripts` directory.
+/// Clears and adds sandbox script files to a scripts directory.
 ///
 /// This function:
-/// 1. Creates a `.sandbox_scripts` directory under the rootfs if it doesn't exist
+/// 1. Clears all contents of the scripts directory if it exists, or creates it if it doesn't
 /// 2. For each script in the provided HashMap, creates a file with the given name
 /// 3. Adds a shebang line using the provided shell path
 /// 4. Makes the script files executable (rwxr-x---)
@@ -378,9 +378,9 @@ where
 ///
 /// ## Arguments
 ///
-/// * `root_path` - Path to the root of the filesystem to patch
+/// * `scripts_dir` - Path to the scripts directory
 /// * `scripts` - HashMap containing script names and their contents
-/// * `shell_path` - Path to the shell binary within the rootfs (e.g. "/bin/sh")
+/// * `shell_path` - Path to the shell binary (e.g. "/bin/sh")
 ///
 /// ## Returns
 ///

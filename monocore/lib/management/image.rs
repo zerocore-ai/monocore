@@ -9,7 +9,8 @@ use crate::{
     oci::{DockerRegistry, OciRegistryPull, Reference},
     utils::{
         env::get_monocore_home_path,
-        path::{LAYERS_SUBDIR, OCI_DB_FILENAME}, EXTRACTED_LAYER_SUFFIX,
+        path::{LAYERS_SUBDIR, OCI_DB_FILENAME},
+        EXTRACTED_LAYER_SUFFIX,
     },
     MonocoreError, MonocoreResult,
 };
@@ -25,7 +26,6 @@ use tokio::{fs, process::Command};
 
 /// The domain name for the Docker registry.
 const DOCKER_REGISTRY: &str = "docker.io";
-
 
 //--------------------------------------------------------------------------------------------------
 // Functions

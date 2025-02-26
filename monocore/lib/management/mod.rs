@@ -17,6 +17,8 @@ pub mod image;
 pub mod menv;
 pub mod rootfs;
 pub mod sandbox;
+pub mod supervise;
+pub mod find;
 
 //--------------------------------------------------------------------------------------------------
 // Exports
@@ -27,3 +29,5 @@ pub use image::*;
 pub use menv::*;
 pub use rootfs::*;
 pub use sandbox::*;
+pub use supervise::*;
+pub use find::*;

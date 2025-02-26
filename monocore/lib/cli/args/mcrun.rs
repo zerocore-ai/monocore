@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{net::IpAddr, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 
@@ -76,13 +76,22 @@ pub enum McrunSubcommand {
         #[arg(long)]
         sandbox_db_path: PathBuf,
 
-        /// Log level
-        #[arg(long)]
-        log_level: Option<u8>,
-
         /// Whether to forward output to stdout/stderr
         #[arg(long, default_value = "true")]
         forward_output: bool,
+
+        /// The paths to the overlayfs layers
+        #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
+        overlayfs_layer_paths: Vec<PathBuf>,
+
+        // File specific arguments
+        /// The host to bind to
+        #[arg(long)]
+        nfs_host: Option<IpAddr>,
+
+        /// The port to bind to
+        #[arg(long)]
+        nfs_port: Option<u16>,
 
         // Sandbox specific arguments
         /// Root filesystem path
@@ -99,7 +108,7 @@ pub enum McrunSubcommand {
 
         /// Working directory path
         #[arg(long)]
-        workdir_path: Option<String>,
+        workdir_path: String,
 
         /// Executable path
         #[arg(long)]
@@ -116,6 +125,10 @@ pub enum McrunSubcommand {
         /// Port mappings (host:guest format)
         #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
         port_map: Vec<String>,
+
+        /// Log level
+        #[arg(long)]
+        log_level: Option<u8>,
 
         /// Additional arguments after `--`
         #[arg(last = true)]

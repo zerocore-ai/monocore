@@ -17,6 +17,9 @@ pub const MONOCORE_HOME_DIR: &str = ".monocore";
 /// The directory where project root filesystems are stored
 pub const ROOTFS_SUBDIR: &str = "rootfs";
 
+/// Directory where default `monocore.yaml` things are stored
+pub const DEFAULT_SUBDIR: &str = "default";
+
 /// The directory where base store blocks are stored
 pub const BLOCKS_SUBDIR: &str = "blocks";
 

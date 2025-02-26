@@ -52,6 +52,7 @@ reqwest-retry = "0.6"                                             # Cannot upgra
 ipldstore = { version = "0.2", path = "./ipldstore" }
 monoutils = { version = "0.2", path = "./monoutils" }
 monofs = { version = "0.2", path = "./monofs" }
+virtualfs = { version = "0.2", path = "./virtualfs" }
 multihash = "0.19"
 multihash-codetable = "0.1"
 chrono = { version = "0.4", features = ["serde"] }

@@ -1,6 +1,6 @@
 [package]
 name = "virtualfs"
-version = "0.1.0"
+version = "0.2.0"
 description = "`virtualfs` is a library for virtual file systems."
 authors.workspace = true
 repository.workspace = true
