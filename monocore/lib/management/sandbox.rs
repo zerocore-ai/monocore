@@ -74,7 +74,7 @@ pub async fn run_sandbox(
 
             // Clear the scripts directory and add the scripts
             let scripts = sandbox_config.get_full_scripts();
-            rootfs::clear_and_add_scripts_to_dir(
+            rootfs::patch_rootfs_with_sandbox_scripts(
                 &scripts_dir,
                 scripts,
                 sandbox_config.get_shell(),
@@ -215,7 +215,7 @@ async fn setup_image_rootfs(
 
     // Clear the scripts directory and add the scripts
     let scripts = sandbox_config.get_full_scripts();
-    rootfs::clear_and_add_scripts_to_dir(&scripts_dir, scripts, sandbox_config.get_shell())?;
+    rootfs::patch_rootfs_with_sandbox_scripts(&scripts_dir, scripts, sandbox_config.get_shell())?;
 
     let mut root_path = menv_path.join(ROOTFS_SUBDIR);
     if let Some(config_path) = config_path {
@@ -226,8 +226,6 @@ async fn setup_image_rootfs(
     // Add the scripts and rootfs directories to the layer paths
     layer_paths.push(scripts_dir);
     layer_paths.push(root_path.clone());
-
-    // TODO: Start a overlayfs nfs supervisor here. Wait a few seconds.
 
     Ok(root_path)
 }
