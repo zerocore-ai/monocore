@@ -1,10 +1,4 @@
-use std::{
-    ffi::CString,
-    fs,
-    net::Ipv4Addr,
-    os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
-};
+use std::{ffi::CString, path::PathBuf};
 
 use getset::Getters;
 use monoutils::SupportedPathType;
@@ -22,7 +16,7 @@ use super::{ffi, LinuxRlimit, MicroVmBuilder, MicroVmConfigBuilder};
 //--------------------------------------------------------------------------------------------------
 
 /// The prefix used for virtio-fs tags when mounting shared directories
-const VIRTIOFS_TAG_PREFIX: &str = "virtiofs";
+pub const VIRTIOFS_TAG_PREFIX: &str = "virtiofs";
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -127,17 +121,11 @@ pub struct MicroVmConfig {
 
     /// The console output path to use for the MicroVm.
     pub console_output: Option<Utf8UnixPathBuf>,
-
-    /// The assigned IP address for the MicroVm.
-    pub assigned_ip: Option<Ipv4Addr>,
-
-    /// Whether the MicroVm is restricted to local connections only.
-    pub local_only: bool,
 }
 
 /// The log level to use for the MicroVm.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[repr(u32)]
+#[repr(u8)]
 pub enum LogLevel {
     /// No logging.
     #[default]
@@ -241,96 +229,17 @@ impl MicroVm {
         let ctx_id = self.ctx_id;
         let status = unsafe { ffi::krun_start_enter(ctx_id) };
         if status < 0 {
-            tracing::error!("Failed to start micro VM: {}", status);
+            tracing::error!("failed to start microvm: {}", status);
             return Err(MonocoreError::StartVmFailed(status));
         }
-        tracing::info!("Micro VM exited with status: {}", status);
+        tracing::info!("microvm exited with status: {}", status);
         Ok(status)
     }
 
     fn create_ctx() -> u32 {
         let ctx_id = unsafe { ffi::krun_create_ctx() };
-        assert!(ctx_id >= 0, "Failed to create micro VM context: {}", ctx_id);
+        assert!(ctx_id >= 0, "failed to create microvm context: {}", ctx_id);
         ctx_id as u32
-    }
-
-    /// Updates the /etc/fstab file in the guest rootfs to mount the mapped directories.
-    /// Creates the file if it doesn't exist.
-    ///
-    /// This method:
-    /// 1. Creates or updates the /etc/fstab file in the guest rootfs
-    /// 2. Adds entries for each mapped directory using virtio-fs
-    /// 3. Creates the mount points in the guest rootfs
-    /// 4. Sets appropriate permissions on the fstab file
-    ///
-    /// ## Format
-    /// Each mapped directory is mounted using virtiofs with the following format:
-    /// ```text
-    /// virtiofs_N  /guest/path  virtiofs  defaults  0  0
-    /// ```
-    /// where N is the index of the mapped directory.
-    ///
-    /// ## Arguments
-    /// * `root_path` - Path to the guest rootfs
-    /// * `mapped_dirs` - List of host:guest directory mappings to mount
-    ///
-    /// ## Errors
-    /// Returns an error if:
-    /// - Cannot create directories in the rootfs
-    /// - Cannot read or write the fstab file
-    /// - Cannot set permissions on the fstab file
-    fn update_rootfs_fstab(root_path: &Path, mapped_dirs: &[PathPair]) -> MonocoreResult<()> {
-        let fstab_path = root_path.join("etc/fstab");
-
-        // Create parent directories if they don't exist
-        if let Some(parent) = fstab_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        // Read existing fstab content if it exists
-        let mut fstab_content = if fstab_path.exists() {
-            fs::read_to_string(&fstab_path)?
-        } else {
-            String::new()
-        };
-
-        // Add header comment if file is empty
-        if fstab_content.is_empty() {
-            fstab_content.push_str(
-                "# /etc/fstab: static file system information.\n\
-                 # <file system>\t<mount point>\t<type>\t<options>\t<dump>\t<pass>\n",
-            );
-        }
-
-        // Add entries for mapped directories
-        for (idx, dir) in mapped_dirs.iter().enumerate() {
-            let tag = format!("{}_{}", VIRTIOFS_TAG_PREFIX, idx);
-            let guest_path = dir.get_guest();
-
-            // Add entry for this mapped directory
-            fstab_content.push_str(&format!(
-                "{}\t{}\tvirtiofs\tdefaults\t0\t0\n",
-                tag, guest_path
-            ));
-
-            // Create the mount point directory in the guest rootfs
-            // Convert guest path to a relative path by removing leading slash
-            let guest_path_str = guest_path.as_str();
-            let relative_path = guest_path_str.strip_prefix('/').unwrap_or(guest_path_str);
-            let mount_point = root_path.join(relative_path);
-            fs::create_dir_all(mount_point)?;
-        }
-
-        // Write updated fstab content
-        fs::write(&fstab_path, fstab_content)?;
-
-        // Set proper permissions (644 - rw-r--r--)
-        let perms = fs::metadata(&fstab_path)?.permissions();
-        let mut new_perms = perms;
-        new_perms.set_mode(0o644);
-        fs::set_permissions(&fstab_path, new_perms)?;
-
-        Ok(())
     }
 
     /// Applies the configuration to the MicroVm context.
@@ -359,40 +268,30 @@ impl MicroVm {
         // Set log level
         unsafe {
             let status = ffi::krun_set_log_level(config.log_level as u32);
-            assert!(status >= 0, "Failed to set log level: {}", status);
+            assert!(status >= 0, "failed to set log level: {}", status);
         }
 
         // Set basic VM configuration
         unsafe {
             let status = ffi::krun_set_vm_config(ctx_id, config.num_vcpus, config.ram_mib);
-            assert!(status >= 0, "Failed to set VM config: {}", status);
+            assert!(status >= 0, "failed to set VM config: {}", status);
         }
 
         // Set root path
         let c_root_path = CString::new(config.root_path.to_str().unwrap().as_bytes()).unwrap();
         unsafe {
             let status = ffi::krun_set_root(ctx_id, c_root_path.as_ptr());
-            assert!(status >= 0, "Failed to set root path: {}", status);
+            assert!(status >= 0, "failed to set root path: {}", status);
         }
 
         // Add mapped directories using virtio-fs
-        // First, update the rootfs fstab to mount the directories
-        let root_path = &config.root_path;
         let mapped_dirs = &config.mapped_dirs;
-
-        // Update fstab
-        if let Err(e) = Self::update_rootfs_fstab(root_path, mapped_dirs) {
-            tracing::error!("Failed to update rootfs fstab: {}", e);
-            panic!("Failed to update rootfs fstab: {}", e);
-        }
-
-        // Then add the virtiofs mounts
         for (idx, dir) in mapped_dirs.iter().enumerate() {
             let tag = CString::new(format!("{}_{}", VIRTIOFS_TAG_PREFIX, idx)).unwrap();
             let host_path = CString::new(dir.get_host().to_string().as_bytes()).unwrap();
             unsafe {
                 let status = ffi::krun_add_virtiofs(ctx_id, tag.as_ptr(), host_path.as_ptr());
-                assert!(status >= 0, "Failed to add mapped directory: {}", status);
+                assert!(status >= 0, "failed to add mapped directory: {}", status);
             }
         }
 
@@ -406,7 +305,7 @@ impl MicroVm {
 
         unsafe {
             let status = ffi::krun_set_port_map(ctx_id, c_port_map_ptrs.as_ptr());
-            assert!(status >= 0, "Failed to set port map: {}", status);
+            assert!(status >= 0, "failed to set port map: {}", status);
         }
 
         // Set resource limits
@@ -419,7 +318,7 @@ impl MicroVm {
             let c_rlimits_ptrs = utils::to_null_terminated_c_array(&c_rlimits);
             unsafe {
                 let status = ffi::krun_set_rlimits(ctx_id, c_rlimits_ptrs.as_ptr());
-                assert!(status >= 0, "Failed to set resource limits: {}", status);
+                assert!(status >= 0, "failed to set resource limits: {}", status);
             }
         }
 
@@ -489,22 +388,6 @@ impl MicroVm {
                 let status = ffi::krun_set_console_output(ctx_id, c_console_output.as_ptr());
                 assert!(status >= 0, "Failed to set console output: {}", status);
             }
-        }
-
-        // Set assigned IP if configured
-        if let Some(assigned_ip) = &config.assigned_ip {
-            let ip_str = assigned_ip.to_string();
-            let c_assigned_ip = CString::new(ip_str).unwrap();
-            unsafe {
-                let status = ffi::krun_set_tsi_rewrite_ip(ctx_id, c_assigned_ip.as_ptr());
-                assert!(status >= 0, "Failed to set assigned IP: {}", status);
-            }
-        }
-
-        // Set local_only mode
-        unsafe {
-            let status = ffi::krun_enable_tsi_local_only(ctx_id, config.local_only);
-            assert!(status >= 0, "Failed to set local only mode: {}", status);
         }
     }
 }
@@ -714,6 +597,22 @@ impl Drop for MicroVm {
     }
 }
 
+impl TryFrom<u8> for LogLevel {
+    type Error = MonocoreError;
+
+    fn try_from(value: u8) -> Result<Self, MonocoreError> {
+        match value {
+            0 => Ok(LogLevel::Off),
+            1 => Ok(LogLevel::Error),
+            2 => Ok(LogLevel::Warn),
+            3 => Ok(LogLevel::Info),
+            4 => Ok(LogLevel::Debug),
+            5 => Ok(LogLevel::Trace),
+            _ => Err(MonocoreError::InvalidLogLevel(value)),
+        }
+    }
+}
+
 //--------------------------------------------------------------------------------------------------
 // Tests
 //--------------------------------------------------------------------------------------------------
@@ -723,7 +622,7 @@ mod tests {
     use crate::config::DEFAULT_NUM_VCPUS;
 
     use super::*;
-    use std::{os::unix::fs::PermissionsExt, path::PathBuf};
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     #[test]
@@ -852,141 +751,6 @@ mod tests {
                 InvalidMicroVMConfigError::InvalidCommandLineString(_)
             ))
         ));
-    }
-
-    #[test]
-    fn test_update_rootfs_fstab() -> anyhow::Result<()> {
-        // Create a temporary directory to act as our rootfs
-        let root_dir = TempDir::new()?;
-        let root_path = root_dir.path();
-
-        // Create temporary directories for host paths
-        let host_dir = TempDir::new()?;
-        let host_data = host_dir.path().join("data");
-        let host_config = host_dir.path().join("config");
-        let host_app = host_dir.path().join("app");
-
-        // Create the host directories
-        fs::create_dir_all(&host_data)?;
-        fs::create_dir_all(&host_config)?;
-        fs::create_dir_all(&host_app)?;
-
-        // Create test directory mappings using our temporary paths
-        let mapped_dirs = vec![
-            format!("{}:/container/data", host_data.display()).parse::<PathPair>()?,
-            format!("{}:/etc/app/config", host_config.display()).parse::<PathPair>()?,
-            format!("{}:/app", host_app.display()).parse::<PathPair>()?,
-        ];
-
-        // Update fstab
-        MicroVm::update_rootfs_fstab(root_path, &mapped_dirs)?;
-
-        // Verify fstab file was created with correct content
-        let fstab_path = root_path.join("etc/fstab");
-        assert!(fstab_path.exists());
-
-        let fstab_content = fs::read_to_string(&fstab_path)?;
-
-        // Check header
-        assert!(fstab_content.contains("# /etc/fstab: static file system information"));
-        assert!(fstab_content
-            .contains("<file system>\t<mount point>\t<type>\t<options>\t<dump>\t<pass>"));
-
-        // Check entries
-        assert!(fstab_content.contains("virtiofs_0\t/container/data\tvirtiofs\tdefaults\t0\t0"));
-        assert!(fstab_content.contains("virtiofs_1\t/etc/app/config\tvirtiofs\tdefaults\t0\t0"));
-        assert!(fstab_content.contains("virtiofs_2\t/app\tvirtiofs\tdefaults\t0\t0"));
-
-        // Verify mount points were created
-        assert!(root_path.join("container/data").exists());
-        assert!(root_path.join("etc/app/config").exists());
-        assert!(root_path.join("app").exists());
-
-        // Verify file permissions
-        let perms = fs::metadata(&fstab_path)?.permissions();
-        assert_eq!(perms.mode() & 0o777, 0o644);
-
-        // Test updating existing fstab
-        let host_logs = host_dir.path().join("logs");
-        fs::create_dir_all(&host_logs)?;
-
-        let new_mapped_dirs = vec![
-            format!("{}:/container/data", host_data.display()).parse::<PathPair>()?, // Keep one existing
-            format!("{}:/var/log", host_logs.display()).parse::<PathPair>()?,        // Add new one
-        ];
-
-        // Update fstab again
-        MicroVm::update_rootfs_fstab(root_path, &new_mapped_dirs)?;
-
-        // Verify updated content
-        let updated_content = fs::read_to_string(&fstab_path)?;
-        assert!(updated_content.contains("virtiofs_0\t/container/data\tvirtiofs\tdefaults\t0\t0"));
-        assert!(updated_content.contains("virtiofs_1\t/var/log\tvirtiofs\tdefaults\t0\t0"));
-
-        // Verify new mount point was created
-        assert!(root_path.join("var/log").exists());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_update_rootfs_fstab_permission_errors() -> anyhow::Result<()> {
-        // Skip this test in CI environments
-        if std::env::var("CI").is_ok() {
-            println!("Skipping permission test in CI environment");
-            return Ok(());
-        }
-
-        // Setup a rootfs where we can't write the fstab file
-        let readonly_dir = TempDir::new()?;
-        let readonly_path = readonly_dir.path();
-        let etc_path = readonly_path.join("etc");
-        fs::create_dir_all(&etc_path)?;
-
-        // Make /etc directory read-only to simulate permission issues
-        let mut perms = fs::metadata(&etc_path)?.permissions();
-        perms.set_mode(0o400); // read-only
-        fs::set_permissions(&etc_path, perms)?;
-
-        // Verify permissions were actually set (helpful for debugging)
-        let actual_perms = fs::metadata(&etc_path)?.permissions();
-        println!("Set /etc permissions to: {:o}", actual_perms.mode());
-
-        // Try to update fstab in a read-only /etc directory
-        let host_dir = TempDir::new()?;
-        let host_path = host_dir.path().join("test");
-        fs::create_dir_all(&host_path)?;
-
-        let mapped_dirs =
-            vec![format!("{}:/container/data", host_path.display()).parse::<PathPair>()?];
-
-        // Function should detect it cannot write to /etc/fstab and return an error
-        let result = MicroVm::update_rootfs_fstab(readonly_path, &mapped_dirs);
-
-        // Detailed error reporting for debugging
-        if result.is_ok() {
-            println!("Warning: Write succeeded despite read-only permissions");
-            println!(
-                "Current /etc permissions: {:o}",
-                fs::metadata(&etc_path)?.permissions().mode()
-            );
-            if etc_path.join("fstab").exists() {
-                println!(
-                    "fstab file was created with permissions: {:o}",
-                    fs::metadata(etc_path.join("fstab"))?.permissions().mode()
-                );
-            }
-        }
-
-        assert!(
-            result.is_err(),
-            "Expected error when writing fstab to read-only /etc directory. \
-             Current /etc permissions: {:o}",
-            fs::metadata(&etc_path)?.permissions().mode()
-        );
-        assert!(matches!(result.unwrap_err(), MonocoreError::Io(_)));
-
-        Ok(())
     }
 
     #[test]

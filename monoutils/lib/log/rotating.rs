@@ -231,18 +231,18 @@ async fn handle_channel_data(
                         current_size.store(0, Ordering::Relaxed);
                     }
                     Err(e) => {
-                        eprintln!("Failed to rotate log file: {}", e);
+                        tracing::error!("failed to rotate log file: {}", e);
                         continue;
                     }
                 }
             } else {
-                eprintln!("Failed to clone file handle for rotation");
+                tracing::error!("failed to clone file handle for rotation");
                 continue;
             }
         }
 
         if let Err(e) = file.write_all(&data).await {
-            eprintln!("Failed to write to log file: {}", e);
+            tracing::error!("failed to write to log file: {}", e);
             // On write error, subtract the size we added
             current_size.fetch_sub(data_len, Ordering::Relaxed);
         }

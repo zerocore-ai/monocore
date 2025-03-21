@@ -6,6 +6,7 @@ use crate::{
 use getset::{Getters, Setters};
 use oci_spec::image::Digest;
 use regex::Regex;
+use serde;
 use std::{fmt, str::FromStr};
 
 //--------------------------------------------------------------------------------------------------
@@ -18,6 +19,9 @@ use std::{fmt, str::FromStr};
 /// If no registry or tag is provided in the input string, default values will be used.
 #[derive(Debug, Clone, PartialEq, Eq, Getters, Setters)]
 #[getset(get = "pub with_prefix", set = "pub with_prefix")]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String")]
+#[serde(into = "String")]
 pub struct Reference {
     /// The registry where the image is hosted.
     registry: String,
@@ -164,6 +168,20 @@ impl fmt::Display for Reference {
             ReferenceSelector::Tag { tag, digest: None } => write!(f, ":{}", tag),
             ReferenceSelector::Digest(d) => write!(f, "@{}", d),
         }
+    }
+}
+
+impl From<Reference> for String {
+    fn from(reference: Reference) -> String {
+        reference.to_string()
+    }
+}
+
+impl TryFrom<String> for Reference {
+    type Error = MonocoreError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
     }
 }
 

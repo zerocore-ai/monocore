@@ -1,3 +1,10 @@
+//! Database management for Monocore.
+//!
+//! This module provides database functionality for Monocore, managing both sandbox
+//! and OCI (Open Container Initiative) related data. It handles database initialization,
+//! migrations, and operations for storing and retrieving container images, layers,
+//! and sandbox configurations.
+
 use std::path::Path;
 
 use oci_spec::image::{ImageConfiguration, ImageIndex, ImageManifest, MediaType, Platform};
@@ -15,9 +22,6 @@ pub static SANDBOX_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrat
 
 /// Migrator for the OCI database
 pub static OCI_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrations/oci");
-
-/// Migrator for the monoimage database
-pub static MONOIMAGE_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrations/monoimage");
 
 //--------------------------------------------------------------------------------------------------
 // Functions
@@ -388,27 +392,6 @@ pub(crate) async fn save_or_update_layer(
     }
 }
 
-/// Checks if a layer exists in the database.
-///
-/// ## Arguments
-///
-/// * `pool` - The database connection pool
-/// * `digest` - The digest string of the layer to check
-pub(crate) async fn layer_exists(pool: &Pool<Sqlite>, digest: &str) -> MonocoreResult<bool> {
-    let record = sqlx::query(
-        r#"
-        SELECT COUNT(*) as count
-        FROM layers
-        WHERE digest = ?
-        "#,
-    )
-    .bind(digest)
-    .fetch_one(pool)
-    .await?;
-
-    Ok(record.get::<i64, _>("count") > 0)
-}
-
 /// Checks if an image exists in the database.
 ///
 /// ## Arguments
@@ -428,6 +411,46 @@ pub(crate) async fn image_exists(pool: &Pool<Sqlite>, reference: &str) -> Monoco
     .await?;
 
     Ok(record.get::<i64, _>("count") > 0)
+}
+
+/// Gets all layers for an image from the database.
+///
+/// ## Arguments
+///
+/// * `pool` - The database connection pool
+/// * `reference` - The reference string of the image to get layers for
+///
+/// ## Returns
+///
+/// A vector of tuples containing (digest, diff_id, size_bytes) for each layer
+pub(crate) async fn get_image_layers(
+    pool: &Pool<Sqlite>,
+    reference: &str,
+) -> MonocoreResult<Vec<(String, String, i64)>> {
+    let records = sqlx::query(
+        r#"
+        SELECT l.digest, l.diff_id, l.size_bytes
+        FROM layers l
+        JOIN manifests m ON l.manifest_id = m.id
+        JOIN images i ON m.image_id = i.id
+        WHERE i.reference = ?
+        ORDER BY l.id ASC
+        "#,
+    )
+    .bind(reference)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(records
+        .into_iter()
+        .map(|row| {
+            (
+                row.get::<String, _>("digest"),
+                row.get::<String, _>("diff_id"),
+                row.get::<i64, _>("size_bytes"),
+            )
+        })
+        .collect())
 }
 
 //--------------------------------------------------------------------------------------------------

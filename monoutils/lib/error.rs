@@ -21,13 +21,21 @@ pub enum MonoutilsError {
     #[error("path validation error: {0}")]
     PathValidation(String),
 
-    /// An error that occurred when resolving a binary
-    #[error("binary not found at: {0}\nSource: {1}")]
-    BinaryNotFound(String, String),
+    /// An error that occurred when resolving a file
+    #[error("file not found at: {0}\nSource: {1}")]
+    FileNotFound(String, String),
 
     /// An error that occurred when performing an IO operation
     #[error("io error: {0}")]
     IoError(#[from] std::io::Error),
+
+    /// An error that occurred during a runtime operation
+    #[error("runtime error: {0}")]
+    Runtime(String),
+
+    /// An error from the nix crate
+    #[error("nix error: {0}")]
+    NixError(#[from] nix::Error),
 
     /// Custom error.
     #[error("Custom error: {0}")]

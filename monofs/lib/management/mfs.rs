@@ -1,9 +1,9 @@
 use crate::{
-    config::{DEFAULT_HOST, DEFAULT_MFSRUN_BIN_PATH, DEFAULT_NFS_PORT},
+    config::{DEFAULT_HOST, DEFAULT_MFSRUN_EXE_PATH, DEFAULT_NFS_PORT},
     management::{db, find, FS_DB_MIGRATOR},
     utils::{
         path::{BLOCKS_SUBDIR, FS_DB_FILENAME, LOG_SUBDIR, MFS_DIR_SUFFIX, MFS_LINK_FILENAME},
-        MFSRUN_BIN_PATH_ENV_VAR,
+        MFSRUN_EXE_ENV_VAR,
     },
     FsError, FsResult,
 };
@@ -82,7 +82,7 @@ pub async fn init_mfs(mount_dir: Option<PathBuf>) -> FsResult<u32> {
         .expect("failed to get file name for mount point");
 
     let mfsrun_path =
-        monoutils::path::resolve_binary_path(MFSRUN_BIN_PATH_ENV_VAR, DEFAULT_MFSRUN_BIN_PATH)?;
+        monoutils::path::resolve_env_path(MFSRUN_EXE_ENV_VAR, &*DEFAULT_MFSRUN_EXE_PATH)?;
 
     tracing::info!("mounting the filesystem...");
     let status = Command::new(mfsrun_path)

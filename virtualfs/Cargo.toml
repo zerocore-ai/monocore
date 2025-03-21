@@ -24,7 +24,7 @@ cfg-if.workspace = true
 async-recursion.workspace = true
 nfsserve.workspace = true
 intaglio.workspace = true
-users.workspace = true
+uzers.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

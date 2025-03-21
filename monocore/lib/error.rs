@@ -6,7 +6,7 @@ use sqlx::migrate::MigrateError;
 use std::{
     error::Error,
     fmt::{self, Display},
-    path::StripPrefixError,
+    path::{PathBuf, StripPrefixError},
     time::SystemTimeError,
 };
 use thiserror::Error;
@@ -120,10 +120,6 @@ pub enum MonocoreError {
     #[error("service '{0}' belongs to wrong group: '{1}'")]
     ServiceBelongsToWrongGroup(String, String),
 
-    /// An error that occurred when a channel send operation failed.
-    #[error("channel send error: {0}")]
-    ChannelSendError(#[from] tokio::sync::mpsc::error::SendError<()>),
-
     /// An error that occurred when failed to get shutdown eventfd
     #[error("failed to get shutdown eventfd: {0}")]
     FailedToGetShutdownEventFd(i32),
@@ -135,18 +131,6 @@ pub enum MonocoreError {
     /// An error that occurred when failed to start VM
     #[error("failed to start VM: {0}")]
     FailedToStartVM(i32),
-
-    /// An error that occurred when invalid supervisor arguments were provided.
-    #[error("invalid supervisor arguments: {0}")]
-    InvalidSupervisorArgs(String),
-
-    /// An error that occurred when a service was not found
-    #[error("service not found: {0}")]
-    ServiceNotFound(String),
-
-    /// An error that occurred when a process ID could not be obtained
-    #[error("failed to get process ID for service: {0}")]
-    ProcessIdNotFound(String),
 
     /// An error that occurred when a path does not exist
     #[error("path does not exist: {0}")]
@@ -173,7 +157,7 @@ pub enum MonocoreError {
     SupervisorError(String),
 
     /// An error that occurred when failed to kill process
-    #[error("Failed to kill process: {0}")]
+    #[error("failed to kill process: {0}")]
     ProcessKillError(String),
 
     /// An error that occurred when merging configurations
@@ -239,8 +223,12 @@ pub enum MonocoreError {
     #[error("path validation error: {0}")]
     PathValidation(String),
 
+    /// An error that occurred when the monocore config file was not found
+    #[error("monocore config file not found at: {0}")]
+    MonocoreConfigNotFound(String),
+
     /// An error that occurred when failed to parse configuration file
-    #[error("Failed to parse configuration file: {0}")]
+    #[error("failed to parse configuration file: {0}")]
     ConfigParseError(String),
 
     /// An error that occurred when a log file was not found
@@ -285,6 +273,14 @@ pub enum MonocoreError {
     /// An error that occurred when a CID error occurred
     #[error("CID error: {0}")]
     CidError(#[from] ipld::cid::Error),
+
+    /// An error that occurred when a sandbox was not found in the configuration
+    #[error("sandbox not found in configuration: '{0}' at '{1}'")]
+    SandboxNotFoundInConfig(String, PathBuf),
+
+    /// An error that occurs when an invalid log level is used.
+    #[error("invalid log level: {0}")]
+    InvalidLogLevel(u8),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

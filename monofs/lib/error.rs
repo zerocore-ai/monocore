@@ -192,6 +192,10 @@ pub enum FsError {
     /// An error that occurred when a CBOR decode error occurred
     #[error("CBOR decode error: {0}")]
     CborDecodeError(#[from] serde_ipld_dagcbor::DecodeError<Infallible>),
+
+    /// Child IO must be piped
+    #[error("Child IO must be piped")]
+    ChildIoMustBePiped,
 }
 
 /// An error that can represent any error.

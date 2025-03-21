@@ -1,18 +1,21 @@
 //! Monocore configuration types and helpers.
 
-use std::{collections::HashMap, net::Ipv4Addr};
+use std::{borrow::Cow, collections::HashMap, net::Ipv4Addr};
 
 use getset::Getters;
 use ipnetwork::Ipv4Network as Ipv4Net;
-use oci_spec::distribution::Reference;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use typed_builder::TypedBuilder;
 use typed_path::Utf8UnixPathBuf;
 
-use super::{EnvPair, PathPair, PortPair, DEFAULT_NUM_VCPUS, DEFAULT_RAM_MIB};
-
-use crate::MonocoreResult;
+use crate::{
+    config::{
+        EnvPair, PathPair, PortPair, ReferencePath, DEFAULT_NUM_VCPUS, DEFAULT_RAM_MIB,
+        DEFAULT_SHELL,
+    },
+    MonocoreResult,
+};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -21,7 +24,7 @@ use crate::MonocoreResult;
 /// The monocore configuration.
 #[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Getters)]
 #[getset(get = "pub with_prefix")]
-pub struct Monocore {
+pub struct MonocoreConfig {
     /// The metadata about the configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub(super) meta: Option<Meta>,
@@ -68,8 +71,9 @@ pub struct Meta {
     pub(super) repository: Option<String>,
 
     /// The path to the readme file.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
         serialize_with = "serialize_optional_path",
         deserialize_with = "deserialize_optional_path"
     )]
@@ -82,8 +86,9 @@ pub struct Meta {
     pub(super) tags: Option<Vec<String>>,
 
     /// The icon for the configuration.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
         serialize_with = "serialize_optional_path",
         deserialize_with = "deserialize_optional_path"
     )]
@@ -114,9 +119,9 @@ pub struct Require {
     pub(super) path: Utf8UnixPathBuf,
 
     /// The component mappings.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
-    pub(super) components: Option<HashMap<String, ComponentMapping>>,
+    pub(super) imports: HashMap<String, ComponentMapping>,
 }
 
 /// A build to run.
@@ -127,46 +132,48 @@ pub struct Build {
     #[builder(setter(transform = |name: impl AsRef<str>| name.as_ref().to_string()))]
     pub(super) name: String,
 
-    /// The image to use.
-    pub(super) image: Reference,
+    /// The image to use. This can be a path to a local rootfs or an OCI image reference.
+    pub(super) image: ReferencePath,
 
     /// The amount of RAM in MiB to use.
-    #[serde(default = "Monocore::default_ram_mib")]
-    #[builder(default = Monocore::default_ram_mib())]
+    #[serde(default = "MonocoreConfig::default_ram_mib")]
+    #[builder(default = MonocoreConfig::default_ram_mib())]
     pub(super) ram: u32,
 
     /// The number of vCPUs to use.
-    #[serde(default = "Monocore::default_num_vcpus")]
-    #[builder(default = Monocore::default_num_vcpus())]
+    #[serde(default = "MonocoreConfig::default_num_vcpus")]
+    #[builder(default = MonocoreConfig::default_num_vcpus())]
     pub(super) cpus: u8,
 
     /// The volumes to mount.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
     pub(super) volumes: Vec<PathPair>,
 
     /// The ports to expose.
-    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
     pub(super) ports: Vec<PortPair>,
 
     /// The environment variables to use.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
-    pub(super) envs: Option<Vec<EnvPair>>,
+    pub(super) envs: Vec<EnvPair>,
 
     /// The groups to run in.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
-    pub(super) groups: Option<HashMap<String, GroupConfig>>,
+    pub(super) groups: HashMap<String, GroupConfig>,
 
     /// The builds to depend on.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
-    pub(super) depends_on: Option<Vec<String>>,
+    pub(super) depends_on: Vec<String>,
 
     /// The working directory to use.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
         serialize_with = "serialize_optional_path",
         deserialize_with = "deserialize_optional_path"
     )]
@@ -174,31 +181,34 @@ pub struct Build {
     pub(super) workdir: Option<Utf8UnixPathBuf>,
 
     /// The shell to use.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
-    pub(super) shell: Option<String>,
+    #[serde(default = "Build::default_shell")]
+    #[builder(default = Build::default_shell())]
+    pub(super) shell: String,
 
-    /// The steps to run.
+    /// The scripts that can be run.
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
-    pub(super) steps: Vec<String>,
+    pub(super) scripts: HashMap<String, String>,
 
     /// The files to import.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(
-        serialize_with = "serialize_optional_path_map",
-        deserialize_with = "deserialize_optional_path_map"
+        skip_serializing_if = "HashMap::is_empty",
+        default,
+        serialize_with = "serialize_path_map",
+        deserialize_with = "deserialize_path_map"
     )]
     #[builder(default)]
-    pub(super) imports: Option<HashMap<String, Utf8UnixPathBuf>>,
+    pub(super) imports: HashMap<String, Utf8UnixPathBuf>,
 
     /// The artifacts produced by the build.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(
-        serialize_with = "serialize_optional_path_map",
-        deserialize_with = "deserialize_optional_path_map"
+        skip_serializing_if = "HashMap::is_empty",
+        default,
+        serialize_with = "serialize_path_map",
+        deserialize_with = "deserialize_path_map"
     )]
     #[builder(default)]
-    pub(super) exports: Option<HashMap<String, Utf8UnixPathBuf>>,
+    pub(super) exports: HashMap<String, Utf8UnixPathBuf>,
 }
 
 /// Network reach configuration for a sandbox.
@@ -244,9 +254,9 @@ pub struct SandboxGroupNetworkConfig {
     pub(super) ip: Option<Ipv4Addr>,
 
     /// The domain names for this sandbox in the group
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
-    pub(super) domains: Option<Vec<String>>,
+    pub(super) domains: Vec<String>,
 }
 
 /// Network configuration for a group.
@@ -324,35 +334,38 @@ pub struct Sandbox {
     #[builder(default)]
     pub(super) meta: Option<Meta>,
 
-    /// The image to use.
-    pub(super) image: Reference,
+    /// The image to use. This can be a path to a local rootfs or an OCI image reference.
+    pub(super) image: ReferencePath,
 
     /// The amount of RAM in MiB to use.
-    #[serde(default = "Monocore::default_ram_mib")]
-    #[builder(default = Monocore::default_ram_mib())]
+    #[serde(default = "MonocoreConfig::default_ram_mib")]
+    #[builder(default = MonocoreConfig::default_ram_mib())]
     pub(super) ram: u32,
 
     /// The number of vCPUs to use.
-    #[serde(default = "Monocore::default_num_vcpus")]
-    #[builder(default = Monocore::default_num_vcpus())]
+    #[serde(default = "MonocoreConfig::default_num_vcpus")]
+    #[builder(default = MonocoreConfig::default_num_vcpus())]
     pub(super) cpus: u8,
 
     /// The volumes to mount.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
     pub(super) volumes: Vec<PathPair>,
 
     /// The ports to expose.
-    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
     pub(super) ports: Vec<PortPair>,
 
     /// The environment variables to use.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
-    pub(super) envs: Option<Vec<EnvPair>>,
+    pub(super) envs: Vec<EnvPair>,
 
     /// The environment file to use.
     #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
         serialize_with = "serialize_optional_path",
         deserialize_with = "deserialize_optional_path"
     )]
@@ -360,18 +373,19 @@ pub struct Sandbox {
     pub(super) env_file: Option<Utf8UnixPathBuf>,
 
     /// The groups to run in.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
-    pub(super) groups: Option<HashMap<String, GroupConfig>>,
+    pub(super) groups: HashMap<String, GroupConfig>,
 
     /// The sandboxes to depend on.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
-    pub(super) depends_on: Option<Vec<String>>,
+    pub(super) depends_on: Vec<String>,
 
     /// The working directory to use.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
         serialize_with = "serialize_optional_path",
         deserialize_with = "deserialize_optional_path"
     )]
@@ -379,32 +393,34 @@ pub struct Sandbox {
     pub(super) workdir: Option<Utf8UnixPathBuf>,
 
     /// The shell to use.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
-    pub(super) shell: Option<String>,
+    #[serde(default = "Sandbox::default_shell")]
+    #[builder(default = Sandbox::default_shell())]
+    pub(super) shell: String,
 
     /// The scripts that can be run.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
-    pub(super) scripts: Option<HashMap<String, Vec<String>>>,
+    pub(super) scripts: HashMap<String, String>,
 
     /// The files to import.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(
-        serialize_with = "serialize_optional_path_map",
-        deserialize_with = "deserialize_optional_path_map"
+        skip_serializing_if = "HashMap::is_empty",
+        default,
+        serialize_with = "serialize_path_map",
+        deserialize_with = "deserialize_path_map"
     )]
     #[builder(default)]
-    pub(super) imports: Option<HashMap<String, Utf8UnixPathBuf>>,
+    pub(super) imports: HashMap<String, Utf8UnixPathBuf>,
 
     /// The artifacts produced by the sandbox.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(
-        serialize_with = "serialize_optional_path_map",
-        deserialize_with = "deserialize_optional_path_map"
+        skip_serializing_if = "HashMap::is_empty",
+        default,
+        serialize_with = "serialize_path_map",
+        deserialize_with = "deserialize_path_map"
     )]
     #[builder(default)]
-    pub(super) exports: Option<HashMap<String, Utf8UnixPathBuf>>,
+    pub(super) exports: HashMap<String, Utf8UnixPathBuf>,
 
     /// The network configuration for the sandbox.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -422,14 +438,14 @@ pub struct Sandbox {
 #[getset(get = "pub with_prefix")]
 pub struct GroupConfig {
     /// The volumes to mount.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
-    pub(super) volumes: Option<HashMap<String, PathPair>>,
+    pub(super) volumes: HashMap<String, PathPair>,
 
     /// The environment variables to use.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
-    pub(super) envs: Option<HashMap<String, Vec<EnvPair>>>,
+    pub(super) envs: HashMap<String, Vec<EnvPair>>,
 
     /// The network configuration for this sandbox in the group.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -461,18 +477,19 @@ pub struct Group {
     pub(super) network: Option<GroupNetworkConfig>,
 
     /// The volumes to mount.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(
-        serialize_with = "serialize_optional_path_map",
-        deserialize_with = "deserialize_optional_path_map"
+        skip_serializing_if = "HashMap::is_empty",
+        default,
+        serialize_with = "serialize_path_map",
+        deserialize_with = "deserialize_path_map"
     )]
     #[builder(default)]
-    pub(super) volumes: Option<HashMap<String, Utf8UnixPathBuf>>,
+    pub(super) volumes: HashMap<String, Utf8UnixPathBuf>,
 
     /// The environment variables to use.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
-    pub(super) envs: Option<HashMap<String, Vec<EnvPair>>>,
+    pub(super) envs: HashMap<String, Vec<EnvPair>>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -493,7 +510,7 @@ pub struct MonocoreBuilder {
 // Methods
 //--------------------------------------------------------------------------------------------------
 
-impl Monocore {
+impl MonocoreConfig {
     /// The maximum sandbox dependency chain length.
     pub const MAX_DEPENDENCY_DEPTH: usize = 32;
 
@@ -507,13 +524,6 @@ impl Monocore {
         DEFAULT_RAM_MIB
     }
 
-    /// Get a group by name in this configuration
-    pub fn get_group(&self, group_name: &str) -> Option<&Group> {
-        self.groups
-            .as_ref()
-            .and_then(|groups| groups.iter().find(|g| g.get_name() == group_name))
-    }
-
     /// Get a sandbox by name in this configuration
     pub fn get_sandbox(&self, sandbox_name: &str) -> Option<&Sandbox> {
         self.sandboxes
@@ -521,10 +531,58 @@ impl Monocore {
             .and_then(|sandboxes| sandboxes.iter().find(|s| s.get_name() == sandbox_name))
     }
 
+    /// Get a group by name in this configuration
+    pub fn get_group(&self, group_name: &str) -> Option<&Group> {
+        self.groups
+            .as_ref()
+            .and_then(|groups| groups.iter().find(|g| g.get_name() == group_name))
+    }
+
+    /// Get a build by name in this configuration
+    pub fn get_build(&self, build_name: &str) -> Option<&Build> {
+        self.builds
+            .as_ref()
+            .and_then(|builds| builds.iter().find(|b| b.get_name() == build_name))
+    }
+
     /// Validates the configuration.
     pub fn validate(&self) -> MonocoreResult<()> {
         // TODO: Add validation logic here
         Ok(())
+    }
+}
+
+impl Build {
+    /// Returns the default shell.
+    pub fn default_shell() -> String {
+        DEFAULT_SHELL.to_string()
+    }
+}
+
+impl Sandbox {
+    /// Returns the default shell.
+    pub fn default_shell() -> String {
+        DEFAULT_SHELL.to_string()
+    }
+
+    /// Returns the start script for the sandbox.
+    pub fn get_start_script(&self) -> &str {
+        if let Some(script) = self.scripts.get("start") {
+            script
+        } else {
+            &self.shell
+        }
+    }
+
+    /// Returns the full scripts for the sandbox.
+    pub fn get_full_scripts(&self) -> Cow<HashMap<String, String>> {
+        if self.scripts.contains_key("start") {
+            Cow::Borrowed(&self.scripts)
+        } else {
+            let mut scripts = self.scripts.clone();
+            scripts.insert("start".to_string(), self.shell.clone());
+            Cow::Owned(scripts)
+        }
     }
 }
 
@@ -555,39 +613,39 @@ impl MonocoreBuilder {
     }
 
     /// Sets the files to import
-    pub fn requires(mut self, requires: Vec<Require>) -> Self {
-        self.requires = Some(requires);
+    pub fn requires(mut self, requires: impl IntoIterator<Item = Require>) -> Self {
+        self.requires = Some(requires.into_iter().collect());
         self
     }
 
     /// Sets the builds to run
-    pub fn builds(mut self, builds: Vec<Build>) -> Self {
-        self.builds = Some(builds);
+    pub fn builds(mut self, builds: impl IntoIterator<Item = Build>) -> Self {
+        self.builds = Some(builds.into_iter().collect());
         self
     }
 
     /// Sets the sandboxes to run
-    pub fn sandboxes(mut self, sandboxes: Vec<Sandbox>) -> Self {
-        self.sandboxes = Some(sandboxes);
+    pub fn sandboxes(mut self, sandboxes: impl IntoIterator<Item = Sandbox>) -> Self {
+        self.sandboxes = Some(sandboxes.into_iter().collect());
         self
     }
 
     /// Sets the groups to run the sandboxes in
-    pub fn groups(mut self, groups: Vec<Group>) -> Self {
-        self.groups = Some(groups);
+    pub fn groups(mut self, groups: impl IntoIterator<Item = Group>) -> Self {
+        self.groups = Some(groups.into_iter().collect());
         self
     }
 
     /// Builds the Monocore configuration with validation
-    pub fn build(self) -> MonocoreResult<Monocore> {
+    pub fn build(self) -> MonocoreResult<MonocoreConfig> {
         let monocore = self.build_unchecked();
         monocore.validate()?;
         Ok(monocore)
     }
 
     /// Builds the Monocore configuration without validation
-    pub fn build_unchecked(self) -> Monocore {
-        Monocore {
+    pub fn build_unchecked(self) -> MonocoreConfig {
+        MonocoreConfig {
             meta: self.meta,
             requires: self.requires,
             builds: self.builds,
@@ -638,39 +696,32 @@ where
         .transpose()
 }
 
-fn serialize_optional_path_map<S>(
-    map: &Option<HashMap<String, Utf8UnixPathBuf>>,
+fn serialize_path_map<S>(
+    map: &HashMap<String, Utf8UnixPathBuf>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
-    match map {
-        Some(m) => {
-            use serde::ser::SerializeMap;
-            let mut map_ser = serializer.serialize_map(Some(m.len()))?;
-            for (k, v) in m {
-                map_ser.serialize_entry(k, v.as_str())?;
-            }
-            map_ser.end()
-        }
-        None => serializer.serialize_none(),
+    use serde::ser::SerializeMap;
+    let mut map_ser = serializer.serialize_map(Some(map.len()))?;
+    for (k, v) in map {
+        map_ser.serialize_entry(k, v.as_str())?;
     }
+    map_ser.end()
 }
 
-fn deserialize_optional_path_map<'de, D>(
+fn deserialize_path_map<'de, D>(
     deserializer: D,
-) -> Result<Option<HashMap<String, Utf8UnixPathBuf>>, D::Error>
+) -> Result<HashMap<String, Utf8UnixPathBuf>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    Option::<HashMap<String, String>>::deserialize(deserializer).map(|opt_map| {
-        opt_map.map(|string_map| {
-            string_map
-                .into_iter()
-                .map(|(k, v)| (k, Utf8UnixPathBuf::from(v)))
-                .collect()
-        })
+    HashMap::<String, String>::deserialize(deserializer).map(|string_map| {
+        string_map
+            .into_iter()
+            .map(|(k, v)| (k, Utf8UnixPathBuf::from(v)))
+            .collect()
     })
 }
 
