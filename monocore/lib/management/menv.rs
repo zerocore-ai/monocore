@@ -5,7 +5,11 @@
 //! necessary components for running sandboxes, including configuration files,
 //! databases, and log directories.
 
-use crate::{config::DEFAULT_CONFIG, utils::ROOTFS_SUBDIR, MonocoreResult};
+use crate::{
+    config::{DEFAULT_CONFIG, DEFAULT_MENV_NAMESPACE, DEFAULT_MONOCORE_CONFIG_FILENAME},
+    utils::ROOTFS_SUBDIR,
+    MonocoreResult,
+};
 use std::path::{Path, PathBuf};
 use tokio::{fs, io::AsyncWriteExt};
 
@@ -35,17 +39,37 @@ use super::{db, SANDBOX_DB_MIGRATOR};
 /// # Ok(())
 /// # }
 /// ```
-// TODO: init should add .menv to .gitignore or create it if it doesn't exist
 pub async fn init_menv(project_dir: Option<PathBuf>) -> MonocoreResult<()> {
     // Get the target path, defaulting to current directory if none specified
     let project_dir = project_dir.unwrap_or_else(|| PathBuf::from("."));
 
+    // Create the required files for the monocore environment
+    ensure_menv_files(&project_dir).await?;
+
+    // Create default config file if it doesn't exist
+    create_default_config(&project_dir).await?;
+    tracing::info!(
+        "config file at {}",
+        project_dir.join(DEFAULT_MONOCORE_CONFIG_FILENAME).display()
+    );
+
+    // Update .gitignore to include .menv directory
+    update_gitignore(&project_dir).await?;
+
+    Ok(())
+}
+
+/// Create the required directories and files for a monocore environment
+pub(crate) async fn ensure_menv_files(project_dir: &Path) -> MonocoreResult<()> {
     // Get the .menv directory path
     let menv_path = project_dir.join(MONOCORE_ENV_DIR);
     fs::create_dir_all(&menv_path).await?;
 
-    // Create .menv directory structure
-    create_menv_dirs(&menv_path).await?;
+    // Create log directory if it doesn't exist
+    fs::create_dir_all(menv_path.join(LOG_SUBDIR)).await?;
+
+    // We'll create rootfs directory later when monofs is ready
+    fs::create_dir_all(menv_path.join(ROOTFS_SUBDIR)).await?;
 
     // Get the sandbox database path
     let db_path = menv_path.join(SANDBOX_DB_FILENAME);
@@ -54,30 +78,12 @@ pub async fn init_menv(project_dir: Option<PathBuf>) -> MonocoreResult<()> {
     let _ = db::init_db(&db_path, &SANDBOX_DB_MIGRATOR).await?;
     tracing::info!("sandbox database at {}", db_path.display());
 
-    // Create default config file if it doesn't exist
-    create_default_config(&project_dir).await?;
-    tracing::info!(
-        "config file at {}",
-        project_dir.join("monocore.yaml").display()
-    );
-
     Ok(())
 }
 
-/// Create the required directories for a monocore environment
-async fn create_menv_dirs(menv_path: &Path) -> MonocoreResult<()> {
-    // Create log directory if it doesn't exist
-    fs::create_dir_all(menv_path.join(LOG_SUBDIR)).await?;
-
-    // We'll create rootfs directory later when monofs is ready
-    fs::create_dir_all(menv_path.join(ROOTFS_SUBDIR)).await?;
-
-    Ok(())
-}
-
-/// Create a default monocore.yaml configuration file
-async fn create_default_config(project_dir: &Path) -> MonocoreResult<()> {
-    let config_path = project_dir.join("monocore.yaml");
+/// Create a default monocore configuration file
+pub(crate) async fn create_default_config(project_dir: &Path) -> MonocoreResult<()> {
+    let config_path = project_dir.join(DEFAULT_MONOCORE_CONFIG_FILENAME);
 
     // Only create if it doesn't exist
     if !config_path.exists() {
@@ -86,4 +92,48 @@ async fn create_default_config(project_dir: &Path) -> MonocoreResult<()> {
     }
 
     Ok(())
+}
+
+/// Updates or creates a .gitignore file to include the .menv directory
+pub(crate) async fn update_gitignore(project_dir: &Path) -> MonocoreResult<()> {
+    let gitignore_path = project_dir.join(".gitignore");
+    let canonical_entry = format!("{}/", MONOCORE_ENV_DIR);
+    let acceptable_entries = [MONOCORE_ENV_DIR, &canonical_entry[..]];
+
+    if gitignore_path.exists() {
+        let content = fs::read_to_string(&gitignore_path).await?;
+        let already_present = content.lines().any(|line| {
+            let trimmed = line.trim();
+            acceptable_entries.contains(&trimmed)
+        });
+
+        if !already_present {
+            // Ensure we start on a new line
+            let prefix = if content.ends_with('\n') { "" } else { "\n" };
+            let mut file = fs::OpenOptions::new()
+                .append(true)
+                .open(&gitignore_path)
+                .await?;
+            file.write_all(format!("{}{}\n", prefix, canonical_entry).as_bytes())
+                .await?;
+        }
+    } else {
+        // Create new .gitignore with canonical entry (.menv/)
+        fs::write(&gitignore_path, format!("{}\n", canonical_entry)).await?;
+    }
+
+    Ok(())
+}
+
+/// Creates a namespace for a sandbox within .menv directories.
+pub(crate) fn create_menv_namespace(config_path: Option<&PathBuf>, sandbox_name: &str) -> PathBuf {
+    let mut namespace = if let Some(config_name) = config_path.as_ref().and_then(|p| p.file_name())
+    {
+        PathBuf::from(config_name)
+    } else {
+        PathBuf::from(DEFAULT_MENV_NAMESPACE)
+    };
+
+    namespace.push(sandbox_name);
+    namespace
 }

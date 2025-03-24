@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS sandboxes (
     supervisor_pid INTEGER,
     microvm_pid INTEGER,
     status TEXT NOT NULL,
-    root_path TEXT NOT NULL,
+    rootfs_paths TEXT NOT NULL,
     group_id INTEGER,
     group_ip TEXT,
     config TEXT,

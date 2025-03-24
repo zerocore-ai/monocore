@@ -35,7 +35,7 @@
 |                   | • `list`               |  ⬜️   | List sandboxes, builds, or groups                        |
 |                   | • `log`                |  ⬜️   | View component logs with filtering                       |
 |                   | • `tree`               |  ⬜️   | Display component layer hierarchy                        |
-|                   | • `run`                |  ⬜️   | Execute defined component scripts                        |
+|                   | • `run`                |  ✅  | Execute defined component scripts                        |
 |                   | • `start`              |  ⬜️   | Execute component start scripts                          |
 |                   | • `shell`              |  ⬜️   | Interactive sandbox shell access                         |
 |                   | • `tmp`                |  ⬜️   | Temporary sandbox creation from images                   |
@@ -73,7 +73,7 @@
 |                   | ghcr Registry          |  ⬜️   | Integration with GitHub Container Registry               |
 |                   | Quay Registry          |  ⬜️   | Integration with Red Hat Quay registry                   |
 | **📊 Web UI**     |
-|                   | Dashboard                |  ⬜️   | Sandbox dashboard                                            |
+|                   | Dashboard              |  ⬜️   | Sandbox dashboard                                        |
 | **🔌 SDK**        |
 |                   | Python SDK             |  ⬜️   | Sandbox orchestration with Python                        |
 |                   | TypeScript SDK         |  ⬜️   | Sandbox orchestration with TypeScript                    |

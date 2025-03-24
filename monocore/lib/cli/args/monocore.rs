@@ -31,9 +31,17 @@ pub enum MonocoreSubcommand {
     /// Initialize a new monocore project
     #[command(name = "init")]
     Init {
-        /// Path to initialize the project in
-        #[arg(short, long)]
+        /// A positional argument for specifying the directory to initialize the project in
+        ///
+        /// This argument is mutually exclusive with the `--path` flag
+        #[arg(required = false, conflicts_with = "path_with_flag", name = "PATH")]
         path: Option<PathBuf>,
+
+        /// A flag for specifying the directory to initialize the project in
+        ///
+        /// This flag is mutually exclusive with the positional argument
+        #[arg(short, long = "path", conflicts_with = "path", name = "PATH")]
+        path_with_flag: Option<PathBuf>,
     },
 
     /// Add a new build, sandbox, or group component to the project
@@ -203,17 +211,18 @@ pub enum MonocoreSubcommand {
     /// Run a sandbox script
     #[command(name = "run")]
     Run {
-        /// Target sandbox
-        #[arg(short, long, default_value_t = true)]
-        sandbox: bool,
+        /// Positional argument for specifying the sandbox and script to run
+        #[arg(conflicts_with = "sandbox_script_with_flag", name = "SANDBOX~SCRIPT")]
+        sandbox_script: Option<String>,
 
-        /// Name of the sandbox
-        #[arg(required = true)]
-        name: String,
-
-        /// Script to run
-        #[arg(default_value = DEFAULT_SCRIPT)]
-        script: String,
+        /// Flag for specifying the sandbox and script to run
+        #[arg(
+            short,
+            long = "sandbox",
+            conflicts_with = "sandbox_script",
+            name = "SANDBOX~SCRIPT"
+        )]
+        sandbox_script_with_flag: Option<String>,
 
         /// Additional arguments after `--`
         #[arg(last = true)]

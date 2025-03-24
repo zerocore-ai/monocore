@@ -14,14 +14,15 @@
 //! ```bash
 //! mcrun microvm \
 //!     --log-level=3 \
-//!     --root-path=/path/to/rootfs \
+//!     --native-rootfs=/path/to/rootfs \
+//!     --overlayfs-rootfs=/path/to/rootfs \
 //!     --num-vcpus=2 \
 //!     --ram-mib=1024 \
 //!     --workdir-path=/app \
 //!     --exec-path=/usr/bin/python3 \
 //!     --mapped-dirs=/host/path:/guest/path \
-//!     --port-map=8080:80 \
-//!     --env=KEY=VALUE \
+//!     --port-maps=8080:80 \
+//!     --envs=KEY=VALUE \
 //!     -- -m http.server 8080
 //! ```
 //!
@@ -34,14 +35,15 @@
 //!     --child-name=my_vm \
 //!     --sandbox-db-path=/path/to/mcrun.db \
 //!     --log-level=3 \
-//!     --root-path=/path/to/rootfs \
+//!     --native-rootfs=/path/to/rootfs \
+//!     --overlayfs-rootfs=/path/to/rootfs \
 //!     --num-vcpus=2 \
 //!     --ram-mib=1024 \
 //!     --workdir-path=/app \
 //!     --exec-path=/usr/bin/python3 \
 //!     --mapped-dirs=/host/path:/guest/path \
-//!     --port-map=8080:80 \
-//!     --env=KEY=VALUE \
+//!     --port-maps=8080:80 \
+//!     --envs=KEY=VALUE \
 //!     --forward-output \
 //!     -- -m http.server 8080
 //! ```
@@ -55,7 +57,7 @@ use monocore::{
     cli::{McrunArgs, McrunSubcommand},
     config::{EnvPair, PathPair, PortPair},
     runtime::MicroVmMonitor,
-    vm::MicroVm,
+    vm::{MicroVm, Rootfs},
 };
 use monoutils::runtime::Supervisor;
 
@@ -71,20 +73,35 @@ async fn main() -> Result<()> {
     match args.subcommand {
         McrunSubcommand::Microvm {
             log_level,
-            root_path,
+            native_rootfs,
+            overlayfs_layer,
             num_vcpus,
             ram_mib,
             workdir_path,
             exec_path,
             env,
-            mapped_dirs,
+            mapped_dir,
             port_map,
             args,
         } => {
             tracing_subscriber::fmt::init();
 
+            // Check that only one of native_rootfs or overlayfs_rootfs is provided
+            let rootfs = match (native_rootfs, overlayfs_layer.is_empty()) {
+                (Some(path), true) => Rootfs::Native(path),
+                (None, false) => Rootfs::Overlayfs(overlayfs_layer),
+                (Some(_), false) => {
+                    anyhow::bail!("Cannot specify both native_rootfs and overlayfs_rootfs")
+                }
+                (None, true) => {
+                    anyhow::bail!("Must specify either native_rootfs or overlayfs_rootfs")
+                }
+            };
+
+            tracing::info!("rootfs: {:?}", rootfs);
+
             // Parse mapped directories
-            let mapped_dirs: Vec<PathPair> = mapped_dirs
+            let mapped_dir: Vec<PathPair> = mapped_dir
                 .iter()
                 .map(|s| s.parse())
                 .collect::<Result<_, _>>()?;
@@ -100,10 +117,10 @@ async fn main() -> Result<()> {
 
             // Create and configure MicroVM
             let mut builder = MicroVm::builder()
-                .root_path(root_path)
+                .rootfs(rootfs)
                 .num_vcpus(num_vcpus)
                 .ram_mib(ram_mib)
-                .mapped_dirs(mapped_dirs)
+                .mapped_dirs(mapped_dir)
                 .port_map(port_map)
                 .exec_path(exec_path)
                 .args(args.iter().map(|s| s.as_str()))
@@ -131,13 +148,14 @@ async fn main() -> Result<()> {
             sandbox_db_path,
             log_level,
             forward_output,
-            root_path,
+            native_rootfs,
+            overlayfs_layer,
             num_vcpus,
             ram_mib,
             workdir_path,
             exec_path,
             env,
-            mapped_dirs,
+            mapped_dir,
             port_map,
             args,
         } => {
@@ -150,12 +168,24 @@ async fn main() -> Result<()> {
             // Get supervisor PID
             let supervisor_pid = std::process::id();
 
+            // Get rootfs
+            let rootfs = match (&native_rootfs, &overlayfs_layer.is_empty()) {
+                (Some(path), true) => Rootfs::Native(path.clone()),
+                (None, false) => Rootfs::Overlayfs(overlayfs_layer.clone()),
+                (Some(_), false) => {
+                    anyhow::bail!("Cannot specify both native_rootfs and overlayfs_rootfs")
+                }
+                (None, true) => {
+                    anyhow::bail!("Must specify either native_rootfs or overlayfs_rootfs")
+                }
+            };
+
             // Create microvm monitor
             let process_monitor = MicroVmMonitor::new(
                 supervisor_pid,
                 sandbox_db_path,
                 log_dir.clone(),
-                root_path.clone(),
+                rootfs.clone(),
                 Duration::days(1),
                 forward_output,
             )
@@ -164,26 +194,43 @@ async fn main() -> Result<()> {
             // Compose child arguments
             let mut child_args = vec![
                 "microvm".to_string(),
-                format!("--root-path={}", root_path.display()),
                 format!("--num-vcpus={}", num_vcpus),
                 format!("--ram-mib={}", ram_mib),
                 format!("--workdir-path={}", workdir_path.unwrap_or_default()),
                 format!("--exec-path={}", exec_path),
             ];
 
+            // Set native rootfs if provided
+            if let Some(native_rootfs) = native_rootfs {
+                child_args.push(format!("--native-rootfs={}", native_rootfs.display()));
+            }
+
+            // Set overlayfs rootfs if provided
+            if !overlayfs_layer.is_empty() {
+                for path in overlayfs_layer {
+                    child_args.push(format!("--overlayfs-layer={}", path.display()));
+                }
+            }
+
             // Set env if provided
             if !env.is_empty() {
-                child_args.push(format!("--env={}", env.join(",")));
+                for env in env {
+                    child_args.push(format!("--env={}", env));
+                }
             }
 
             // Set mapped dirs if provided
-            if !mapped_dirs.is_empty() {
-                child_args.push(format!("--mapped-dirs={}", mapped_dirs.join(",")));
+            if !mapped_dir.is_empty() {
+                for dir in mapped_dir {
+                    child_args.push(format!("--mapped-dir={}", dir));
+                }
             }
 
             // Set port map if provided
             if !port_map.is_empty() {
-                child_args.push(format!("--port-map={}", port_map.join(",")));
+                for port_map in port_map {
+                    child_args.push(format!("--port-map={}", port_map));
+                }
             }
 
             // Set log level if provided

@@ -43,13 +43,51 @@ extern "C" {
     /// * `ram_mib` - The amount of RAM in MiB.
     pub(crate) fn krun_set_vm_config(ctx_id: u32, num_vcpus: u8, ram_mib: u32) -> i32;
 
-    /// Sets the path to be use as root for the MicroVm. Not available in libkrun-SEV.
+    /// Sets the path to be used as root for the MicroVm.
+    ///
+    /// Not available in libkrun-SEV.
     ///
     /// ## Arguments
     ///
     /// * `ctx_id` - The configuration context ID.
     /// * `root_path` - The path to be used as root.
+    ///
+    /// ## Returns
+    ///
+    /// Returns 0 on success or a negative error code on failure.
+    ///
+    /// ## Errors
+    ///
+    /// * `-EEXIST` - A root device is already set
+    ///
+    /// ## Notes
+    ///
+    /// This function is mutually exclusive with `krun_set_overlayfs_root`.
     pub(crate) fn krun_set_root(ctx_id: u32, root_path: *const c_char) -> i32;
+
+    /// Sets up an OverlayFS to be used as root for the MicroVm.
+    ///
+    /// Not available in libkrun-SEV.
+    ///
+    /// ## Arguments
+    ///
+    /// * `ctx_id` - The configuration context ID.
+    /// * `root_layers` - A null-terminated array of string pointers representing filesystem paths
+    ///   to be used as layers for the OverlayFS. Must contain at least one layer.
+    ///
+    /// ## Returns
+    ///
+    /// Returns 0 on success or a negative error code on failure.
+    ///
+    /// ## Errors
+    ///
+    /// * `-EINVAL` - No layers are provided
+    /// * `-EEXIST` - A root device is already set
+    ///
+    /// ## Notes
+    ///
+    /// This function is mutually exclusive with `krun_set_root`.
+    pub(crate) fn krun_set_overlayfs_root(ctx_id: u32, root_layers: *const *const c_char) -> i32;
 
     /// Adds a disk image to be used as a general partition for the MicroVm.
     ///
