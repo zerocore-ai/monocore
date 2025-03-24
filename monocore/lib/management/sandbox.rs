@@ -12,8 +12,8 @@ use typed_path::Utf8UnixPathBuf;
 
 use crate::{
     config::{
-        EnvPair, Monocore, PathPair, PortPair, ReferenceOrPath, Sandbox, DEFAULT_MCRUN_EXE_PATH,
-        DEFAULT_MONOCORE_CONFIG_FILENAME,
+        EnvPair, Monocore, PathPair, PathSegment, PortPair, ReferenceOrPath, Sandbox,
+        DEFAULT_MCRUN_EXE_PATH, DEFAULT_MONOCORE_CONFIG_FILENAME,
     },
     management::{db, image, menv, rootfs},
     oci::Reference,
@@ -76,23 +76,21 @@ const TEMPORARY_SANDBOX_NAME: &str = "tmp";
 ///     Ok(())
 /// }
 /// ```
-pub async fn run_sandbox(
-    sandbox: &str,
-    script: &str,
+pub async fn run(
+    sandbox_name: &str,
+    script_name: &str,
     project_dir: Option<PathBuf>,
-    config_path: Option<PathBuf>,
+    config_file: Option<&str>,
     args: Vec<String>,
 ) -> MonocoreResult<()> {
     // Get the target path, defaulting to current directory if none specified
     let project_dir = project_dir.unwrap_or_else(|| PathBuf::from("."));
     let canonical_project_dir = fs::canonicalize(project_dir).await?;
 
-    // Get the config file path
-    let full_config_path = canonical_project_dir.join(
-        config_path
-            .clone()
-            .unwrap_or_else(|| DEFAULT_MONOCORE_CONFIG_FILENAME.into()),
-    );
+    // Validate the config file path
+    let config_file = config_file.unwrap_or_else(|| DEFAULT_MONOCORE_CONFIG_FILENAME);
+    let _ = PathSegment::try_from(config_file)?;
+    let full_config_path = canonical_project_dir.join(config_file);
 
     tracing::debug!("full_config_path: {}", full_config_path.display());
 
@@ -110,9 +108,9 @@ pub async fn run_sandbox(
     tracing::debug!("config: {:?}", config);
 
     // Get the sandbox config
-    let Some(sandbox_config) = config.get_sandbox(sandbox) else {
+    let Some(sandbox_config) = config.get_sandbox(sandbox_name) else {
         return Err(MonocoreError::SandboxNotFoundInConfig(
-            sandbox.to_string(),
+            sandbox_name.to_string(),
             full_config_path,
         ));
     };
@@ -125,10 +123,22 @@ pub async fn run_sandbox(
 
     let rootfs = match sandbox_config.get_image() {
         ReferenceOrPath::Path(root_path) => {
-            setup_native_rootfs(&canonical_project_dir.join(root_path), sandbox_config).await?
+            setup_native_rootfs(
+                &canonical_project_dir.join(root_path),
+                sandbox_config,
+                script_name,
+            )
+            .await?
         }
         ReferenceOrPath::Reference(reference) => {
-            setup_image_rootfs(reference, sandbox_config, &menv_path, config_path.as_ref()).await?
+            setup_image_rootfs(
+                reference,
+                sandbox_config,
+                &menv_path,
+                &config_file,
+                script_name,
+            )
+            .await?
         }
     };
 
@@ -140,7 +150,7 @@ pub async fn run_sandbox(
     let sandbox_db_path = menv_path.join(SANDBOX_DB_FILENAME);
 
     // Get the exec path
-    let exec_path = format!("/{}/{}", SANDBOX_SCRIPT_DIR, script);
+    let exec_path = format!("/{}/{}", SANDBOX_SCRIPT_DIR, script_name);
 
     tracing::info!("starting sandbox supervisor...");
 
@@ -155,8 +165,10 @@ pub async fn run_sandbox(
         .arg("supervisor")
         .arg("--log-dir")
         .arg(&log_dir)
-        .arg("--child-name")
-        .arg(sandbox)
+        .arg("--sandbox-name")
+        .arg(sandbox_name)
+        .arg("--config-file")
+        .arg(config_file)
         .arg("--sandbox-db-path")
         .arg(&sandbox_db_path)
         .arg("--exec-path")
@@ -280,7 +292,7 @@ pub async fn run_sandbox(
 ///     Ok(())
 /// }
 /// ```
-pub async fn run_temp_sandbox(
+pub async fn run_temp(
     image: &Reference,
     script: &str,
     cpus: Option<u8>,
@@ -295,7 +307,7 @@ pub async fn run_temp_sandbox(
     let temp_dir_path = temp_dir.path().to_path_buf();
 
     // Initialize menv in the temporary directory
-    menv::init_menv(Some(temp_dir_path.clone())).await?;
+    menv::initialize(Some(temp_dir_path.clone())).await?;
 
     // Parse the volume, port, and env strings into their respective types
     let volumes: Vec<PathPair> = volumes.into_iter().filter_map(|v| v.parse().ok()).collect();
@@ -345,7 +357,7 @@ pub async fn run_temp_sandbox(
     tokio::fs::write(&config_path, serde_yaml::to_string(&config)?).await?;
 
     // Run the sandbox with the temporary configuration
-    run_sandbox(
+    run(
         TEMPORARY_SANDBOX_NAME,
         script,
         Some(temp_dir_path.clone()),
@@ -354,10 +366,9 @@ pub async fn run_temp_sandbox(
     )
     .await?;
 
-    tracing::info!("temporary sandbox exited successfully");
-
     // Explicitly close the TempDir to clean up the temporary directory
     temp_dir.close()?;
+    tracing::info!("temporary sandbox directory cleaned up");
 
     Ok(())
 }
@@ -370,11 +381,12 @@ async fn setup_image_rootfs(
     image: &Reference,
     sandbox_config: &Sandbox,
     menv_path: &Path,
-    config_path: Option<&PathBuf>,
+    config_file: &str,
+    script_name: &str,
 ) -> MonocoreResult<Rootfs> {
     // Pull the image from the registry
     tracing::info!("pulling image: {}", image);
-    image::pull_image(image.clone(), true, false, None).await?;
+    image::pull(image.clone(), true, false, None).await?;
 
     // Get the monocore home path and database path
     let monocore_home_path = env::get_monocore_home_path();
@@ -382,7 +394,7 @@ async fn setup_image_rootfs(
     let layers_dir = monocore_home_path.join(LAYERS_SUBDIR);
 
     // Get or create a connection pool to the database
-    let pool = db::get_or_create_db_pool(&db_path, &db::OCI_DB_MIGRATOR).await?;
+    let pool = db::get_or_create_pool(&db_path, &db::OCI_DB_MIGRATOR).await?;
 
     // Get the layers for the image
     let layers = db::get_image_layers(&pool, &image.to_string()).await?;
@@ -404,20 +416,28 @@ async fn setup_image_rootfs(
     }
 
     // Get sandbox namespace
-    let namespace = menv::create_menv_namespace(config_path, sandbox_config.get_name());
+    let namespaced_name = PathBuf::from(config_file).join(sandbox_config.get_name());
 
     // Create the scripts directory
-    let patch_dir = menv_path.join(PATCH_SUBDIR).join(&namespace);
+    let patch_dir = menv_path.join(PATCH_SUBDIR).join(&namespaced_name);
     let script_dir = patch_dir.join(SANDBOX_SCRIPT_DIR);
     fs::create_dir_all(&script_dir).await?;
     tracing::info!("script_dir: {}", script_dir.display());
 
-    // Clear the patch directory and add the scripts
+    // Validate script exists
     let scripts = sandbox_config.get_full_scripts();
-    rootfs::patch_rootfs_with_sandbox_scripts(&script_dir, scripts, sandbox_config.get_shell())?;
+    if !scripts.contains_key(script_name) {
+        return Err(MonocoreError::ScriptNotFoundInSandbox(
+            script_name.to_string(),
+            sandbox_config.get_name().to_string(),
+        ));
+    }
+
+    // Clear the patch directory and add the scripts
+    rootfs::patch_with_sandbox_scripts(&script_dir, scripts, sandbox_config.get_shell())?;
 
     // Create the top root path
-    let top_root_path = menv_path.join(ROOTFS_SUBDIR).join(&namespace);
+    let top_root_path = menv_path.join(ROOTFS_SUBDIR).join(&namespaced_name);
     fs::create_dir_all(&top_root_path).await?;
     tracing::info!("top_root_path: {}", top_root_path.display());
 
@@ -428,14 +448,26 @@ async fn setup_image_rootfs(
     Ok(Rootfs::Overlayfs(layer_paths))
 }
 
-async fn setup_native_rootfs(root_path: &Path, sandbox_config: &Sandbox) -> MonocoreResult<Rootfs> {
+async fn setup_native_rootfs(
+    root_path: &Path,
+    sandbox_config: &Sandbox,
+    script_name: &str,
+) -> MonocoreResult<Rootfs> {
     // Create the scripts directory
     let scripts_dir = root_path.join(SANDBOX_SCRIPT_DIR);
     fs::create_dir_all(&scripts_dir).await?;
 
-    // Clear the scripts directory and add the scripts
+    // Validate script exists
     let scripts = sandbox_config.get_full_scripts();
-    rootfs::patch_rootfs_with_sandbox_scripts(&scripts_dir, scripts, sandbox_config.get_shell())?;
+    if !scripts.contains_key(script_name) {
+        return Err(MonocoreError::ScriptNotFoundInSandbox(
+            script_name.to_string(),
+            sandbox_config.get_name().to_string(),
+        ));
+    }
+
+    // Clear the scripts directory and add the scripts
+    rootfs::patch_with_sandbox_scripts(&scripts_dir, scripts, sandbox_config.get_shell())?;
 
     Ok(Rootfs::Native(root_path.to_path_buf()))
 }

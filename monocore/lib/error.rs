@@ -281,6 +281,18 @@ pub enum MonocoreError {
     /// An error that occurs when an invalid log level is used.
     #[error("invalid log level: {0}")]
     InvalidLogLevel(u8),
+
+    /// Empty path segment
+    #[error("empty path segment")]
+    EmptyPathSegment,
+
+    /// Invalid path component (e.g. ".", "..", "/")
+    #[error("invalid path component: {0}")]
+    InvalidPathComponent(String),
+
+    /// Script not found in sandbox configuration
+    #[error("script '{0}' not found in sandbox configuration '{1}'")]
+    ScriptNotFoundInSandbox(String, String),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

@@ -128,9 +128,14 @@ async fn main() -> Result<()> {
             let supervisor_pid = std::process::id();
 
             // Create nfs server monitor
-            let process_monitor =
-                NfsServerMonitor::new(supervisor_pid, fs_db_path, mount_dir, log_dir.clone())
-                    .await?;
+            let process_monitor = NfsServerMonitor::new(
+                supervisor_pid,
+                fs_db_path,
+                child_name,
+                mount_dir,
+                log_dir.clone(),
+            )
+            .await?;
 
             // Compose child arguments
             let child_args = vec![
@@ -144,14 +149,8 @@ async fn main() -> Result<()> {
             let child_envs = vec![("RUST_LOG", "info")];
 
             // Create and start supervisor
-            let mut supervisor = Supervisor::new(
-                child_exe,
-                child_args,
-                child_envs,
-                child_name,
-                log_dir,
-                process_monitor,
-            );
+            let mut supervisor =
+                Supervisor::new(child_exe, child_args, child_envs, log_dir, process_monitor);
 
             supervisor.start().await?;
         }

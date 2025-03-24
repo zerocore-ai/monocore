@@ -72,13 +72,17 @@ pub enum McrunSubcommand {
         #[arg(long)]
         log_dir: PathBuf,
 
-        /// Name of the child process
-        #[arg(long)]
-        child_name: String,
-
         /// Path to the sandbox metrics and metadata database file
         #[arg(long)]
         sandbox_db_path: PathBuf,
+
+        /// Name of the child process
+        #[arg(long)]
+        sandbox_name: String,
+
+        /// Path to the sandbox config file
+        #[arg(long)]
+        config_file: String,
 
         /// Log level
         #[arg(long)]

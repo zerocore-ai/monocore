@@ -43,7 +43,7 @@ pub enum ChildIo {
 #[async_trait]
 pub trait ProcessMonitor {
     /// Start monitoring a process
-    async fn start(&mut self, pid: u32, name: String, child_io: ChildIo) -> MonoutilsResult<()>;
+    async fn start(&mut self, pid: u32, child_io: ChildIo) -> MonoutilsResult<()>;
 
     /// Stop monitoring
     async fn stop(&mut self) -> MonoutilsResult<()>;

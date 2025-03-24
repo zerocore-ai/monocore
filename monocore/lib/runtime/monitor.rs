@@ -16,7 +16,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
-use crate::{management, utils::MCRUN_LOG_PREFIX, vm::Rootfs, MonocoreResult};
+use crate::{management::db, utils::MCRUN_LOG_PREFIX, vm::Rootfs, MonocoreResult};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -26,6 +26,12 @@ use crate::{management, utils::MCRUN_LOG_PREFIX, vm::Rootfs, MonocoreResult};
 pub struct MicroVmMonitor {
     /// The database for tracking sandbox metrics and metadata
     sandbox_db: Pool<Sqlite>,
+
+    /// The name of the sandbox
+    sandbox_name: String,
+
+    /// The config file for the sandbox
+    config_file: String,
 
     /// The supervisor PID
     supervisor_pid: u32,
@@ -58,6 +64,8 @@ impl MicroVmMonitor {
     pub async fn new(
         supervisor_pid: u32,
         sandbox_db_path: impl AsRef<Path>,
+        sandbox_name: String,
+        config_file: String,
         log_dir: impl Into<PathBuf>,
         rootfs: Rootfs,
         retention_duration: Duration,
@@ -65,7 +73,9 @@ impl MicroVmMonitor {
     ) -> MonocoreResult<Self> {
         Ok(Self {
             supervisor_pid,
-            sandbox_db: management::get_db_pool(sandbox_db_path.as_ref()).await?,
+            sandbox_db: db::get_pool(sandbox_db_path.as_ref()).await?,
+            sandbox_name,
+            config_file,
             log_path: None,
             log_dir: log_dir.into(),
             rootfs,
@@ -78,19 +88,15 @@ impl MicroVmMonitor {
     /// Generates a unique log name using name, process ID, and current timestamp.
     ///
     /// The ID format is: "mcrun-{name}-{timestamp}-{child_pid}.log"
-    fn generate_log_name(&self, child_pid: u32, name: impl AsRef<str>) -> String {
+    fn generate_log_name(&self, child_pid: u32) -> String {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
 
         format!(
-            "{}-{}-{}-{}.{}",
-            MCRUN_LOG_PREFIX,
-            name.as_ref(),
-            timestamp,
-            child_pid,
-            LOG_SUFFIX
+            "{}-{}-{}-{}-{}.{}",
+            MCRUN_LOG_PREFIX, self.config_file, self.sandbox_name, timestamp, child_pid, LOG_SUFFIX
         )
     }
 
@@ -113,8 +119,8 @@ impl MicroVmMonitor {
 
 #[async_trait]
 impl ProcessMonitor for MicroVmMonitor {
-    async fn start(&mut self, pid: u32, name: String, child_io: ChildIo) -> MonoutilsResult<()> {
-        let log_name = self.generate_log_name(pid, &name);
+    async fn start(&mut self, pid: u32, child_io: ChildIo) -> MonoutilsResult<()> {
+        let log_name = self.generate_log_name(pid);
         let log_path = self.log_dir.join(&log_name);
 
         let microvm_log =
@@ -137,18 +143,15 @@ impl ProcessMonitor for MicroVmMonitor {
         };
 
         // Insert sandbox entry into database
-        sqlx::query(
-            r#"
-            INSERT INTO sandboxes (name, supervisor_pid, microvm_pid, status, rootfs_paths)
-            VALUES (?, ?, ?, ?, ?)
-            "#,
+        db::save_sandbox(
+            &self.sandbox_db,
+            &self.sandbox_name,
+            &self.config_file,
+            self.supervisor_pid,
+            microvm_pid,
+            "STARTING",
+            &rootfs_paths,
         )
-        .bind(name)
-        .bind(self.supervisor_pid)
-        .bind(microvm_pid)
-        .bind("STARTING")
-        .bind(rootfs_paths)
-        .execute(&self.sandbox_db)
         .await
         .map_err(MonoutilsError::custom)?;
 

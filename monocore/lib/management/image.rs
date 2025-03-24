@@ -9,7 +9,8 @@ use crate::{
     oci::{DockerRegistry, OciRegistryPull, Reference},
     utils::{
         env::get_monocore_home_path,
-        path::{LAYERS_SUBDIR, OCI_DB_FILENAME}, EXTRACTED_LAYER_SUFFIX,
+        path::{LAYERS_SUBDIR, OCI_DB_FILENAME},
+        EXTRACTED_LAYER_SUFFIX,
     },
     MonocoreError, MonocoreResult,
 };
@@ -25,7 +26,6 @@ use tokio::{fs, process::Command};
 
 /// The domain name for the Docker registry.
 const DOCKER_REGISTRY: &str = "docker.io";
-
 
 //--------------------------------------------------------------------------------------------------
 // Functions
@@ -61,20 +61,20 @@ const DOCKER_REGISTRY: &str = "docker.io";
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
 /// // Pull a single image from Docker registry
-/// pull_image("docker.io/library/ubuntu:latest".parse().unwrap(), true, false, None).await?;
+/// pull("docker.io/library/ubuntu:latest".parse().unwrap(), true, false, None).await?;
 ///
 /// // Pull an image from Sandboxes.io registry
-/// pull_image("myimage".parse().unwrap(), false, false, None).await?;
+/// pull("myimage".parse().unwrap(), false, false, None).await?;
 ///
 /// // Pull an image group from Sandboxes.io registry
-/// pull_image("sandboxes.io/mygroup:latest".parse().unwrap(), false, true, None).await?;
+/// pull("sandboxes.io/mygroup:latest".parse().unwrap(), false, true, None).await?;
 ///
 /// // Pull an image from Docker registry and store the layers in a custom directory
-/// pull_image("docker.io/library/ubuntu:latest".parse().unwrap(), true, false, Some(PathBuf::from("/custom/path"))).await?;
+/// pull("docker.io/library/ubuntu:latest".parse().unwrap(), true, false, Some(PathBuf::from("/custom/path"))).await?;
 /// # Ok(())
 /// # }
 /// ```
-pub async fn pull_image(
+pub async fn pull(
     name: Reference,
     image: bool,
     image_group: bool,
@@ -97,7 +97,7 @@ pub async fn pull_image(
     let registry = name.to_string().split('/').next().unwrap_or("").to_string();
     let temp_download_dir = tempdir()?.into_path();
     if registry == DOCKER_REGISTRY {
-        pull_docker_registry_image(&name, &temp_download_dir, layer_path).await
+        pull_from_docker_registry(&name, &temp_download_dir, layer_path).await
     } else {
         Err(MonocoreError::InvalidArgument(format!(
             "Unsupported registry: {}",
@@ -120,7 +120,7 @@ pub async fn pull_image(
 /// * Failed to create temporary directories
 /// * Failed to initialize Docker registry client
 /// * Failed to pull the image from Docker registry
-pub async fn pull_docker_registry_image(
+pub async fn pull_from_docker_registry(
     image: &Reference,
     download_dir: impl AsRef<Path>,
     layer_path: Option<PathBuf>,
@@ -141,7 +141,7 @@ pub async fn pull_docker_registry_image(
     let docker_registry = DockerRegistry::new(download_dir, &db_path).await?;
 
     // Get or create a connection pool to the database
-    let pool = db::get_or_create_db_pool(&db_path, &OCI_DB_MIGRATOR).await?;
+    let pool = db::get_or_create_pool(&db_path, &OCI_DB_MIGRATOR).await?;
 
     // Check if we need to pull the image
     if check_image_layers(&pool, image, &layers_dir).await? {
@@ -181,7 +181,7 @@ pub async fn pull_docker_registry_image(
 ///
 /// Returns an error if:
 /// * Sandboxes registry image pull is not implemented
-pub async fn pull_sandboxes_registry_image(_image: &Reference) -> MonocoreResult<()> {
+pub async fn pull_from_sandboxes_registry(_image: &Reference) -> MonocoreResult<()> {
     return Err(MonocoreError::NotImplemented(
         "sandboxes registry image pull is not implemented".to_string(),
     ));
@@ -196,7 +196,7 @@ pub async fn pull_sandboxes_registry_image(_image: &Reference) -> MonocoreResult
 ///
 /// Returns an error if:
 /// * Sandboxes registry image group pull is not implemented
-pub async fn pull_sandboxes_registry_image_group(_group: &Reference) -> MonocoreResult<()> {
+pub async fn pull_group_from_sandboxes_registry(_group: &Reference) -> MonocoreResult<()> {
     return Err(MonocoreError::NotImplemented(
         "Sandboxes registry image group pull is not implemented".to_string(),
     ));
@@ -370,7 +370,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     #[ignore = "makes network requests to Docker registry to pull an image"]
-    async fn test_image_pull_docker_registry_image() -> MonocoreResult<()> {
+    async fn test_image_pull_from_docker_registry() -> MonocoreResult<()> {
         // Create temporary directories for test
         let temp_dir = TempDir::new()?;
         let monocore_home = temp_dir.path().join("monocore_home");
@@ -385,11 +385,11 @@ mod tests {
         let image_ref: Reference = "docker.io/library/nginx:stable-alpine".parse().unwrap();
 
         // Call the function under test
-        pull_docker_registry_image(&image_ref, &download_dir, None).await?;
+        pull_from_docker_registry(&image_ref, &download_dir, None).await?;
 
         // Initialize database connection for verification
         let db_path = monocore_home.join(OCI_DB_FILENAME);
-        let pool = db::get_or_create_db_pool(&db_path, &OCI_DB_MIGRATOR).await?;
+        let pool = db::get_or_create_pool(&db_path, &OCI_DB_MIGRATOR).await?;
 
         // Verify image exists in database
         let image_exists = db::image_exists(&pool, &image_ref.to_string()).await?;

@@ -33,7 +33,7 @@ pub static OCI_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrations
 ///
 /// * `db_path` - Path where the SQLite database file should be created
 /// * `migrator` - SQLx migrator containing database schema migrations to run
-pub async fn init_db(
+pub async fn initialize(
     db_path: impl AsRef<Path>,
     migrator: &Migrator,
 ) -> MonocoreResult<Pool<Sqlite>> {
@@ -66,7 +66,7 @@ pub async fn init_db(
 /// This function initializes a new SQLite connection pool with specified configuration parameters
 /// for managing database connections efficiently. The pool is configured with a maximum of 5
 /// concurrent connections.
-pub async fn get_db_pool(db_path: impl AsRef<Path>) -> MonocoreResult<Pool<Sqlite>> {
+pub async fn get_pool(db_path: impl AsRef<Path>) -> MonocoreResult<Pool<Sqlite>> {
     let db_path = db_path.as_ref();
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
@@ -86,16 +86,48 @@ pub async fn get_db_pool(db_path: impl AsRef<Path>) -> MonocoreResult<Pool<Sqlit
 ///
 /// * `db_path` - Path to the SQLite database file
 /// * `migrator` - SQLx migrator containing database schema migrations to run
-pub async fn get_or_create_db_pool(
+pub async fn get_or_create_pool(
     db_path: impl AsRef<Path>,
     migrator: &Migrator,
 ) -> MonocoreResult<Pool<Sqlite>> {
     // Initialize the database if it doesn't exist
-    init_db(&db_path, migrator).await
+    initialize(&db_path, migrator).await
 }
 
 //--------------------------------------------------------------------------------------------------
-// Functions: Helpers
+// Functions: Sandboxes
+//--------------------------------------------------------------------------------------------------
+
+/// Saves a sandbox to the database and returns its ID
+pub(crate) async fn save_sandbox(
+    pool: &Pool<Sqlite>,
+    name: &str,
+    config_file: &str,
+    supervisor_pid: u32,
+    microvm_pid: u32,
+    status: &str,
+    rootfs_paths: &str,
+) -> MonocoreResult<i64> {
+    let record = sqlx::query(
+        r#"
+        INSERT INTO sandboxes (name, config_file, supervisor_pid, microvm_pid, status, rootfs_paths)
+        VALUES (?, ?, ?, ?, ?, ?)
+        RETURNING id
+        "#,
+    )
+    .bind(name)
+    .bind(config_file)
+    .bind(supervisor_pid)
+    .bind(microvm_pid)
+    .bind(status)
+    .bind(rootfs_paths)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(record.get::<i64, _>("id"))
+}
+//--------------------------------------------------------------------------------------------------
+// Functions: Images
 //--------------------------------------------------------------------------------------------------
 
 /// Saves an image to the database and returns its ID
@@ -470,10 +502,10 @@ mod tests {
         let db_path = temp_dir.path().join("test_sandbox.db");
 
         // Initialize database
-        init_db(&db_path, &SANDBOX_DB_MIGRATOR).await?;
+        initialize(&db_path, &SANDBOX_DB_MIGRATOR).await?;
 
         // Test database connection
-        let pool = get_db_pool(&db_path).await?;
+        let pool = get_pool(&db_path).await?;
 
         // Verify tables exist by querying them
         let tables = sqlx::query("SELECT name FROM sqlite_master WHERE type='table'")
@@ -508,10 +540,10 @@ mod tests {
         let db_path = temp_dir.path().join("test_oci.db");
 
         // Initialize database
-        init_db(&db_path, &OCI_DB_MIGRATOR).await?;
+        initialize(&db_path, &OCI_DB_MIGRATOR).await?;
 
         // Test database connection
-        let pool = get_db_pool(&db_path).await?;
+        let pool = get_pool(&db_path).await?;
 
         // Verify tables exist by querying them
         let tables = sqlx::query("SELECT name FROM sqlite_master WHERE type='table'")

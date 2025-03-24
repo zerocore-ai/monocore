@@ -22,6 +22,9 @@ pub struct NfsServerMonitor {
     /// The database for tracking filesystem metrics and metadata.
     fs_db: Pool<Sqlite>,
 
+    /// The name of the filesystem
+    name: String,
+
     /// The supervisor PID
     supervisor_pid: u32,
 
@@ -44,11 +47,13 @@ impl NfsServerMonitor {
     pub async fn new(
         supervisor_pid: u32,
         fs_db_path: impl AsRef<Path>,
+        name: String,
         mount_dir: impl Into<PathBuf>,
         log_dir: impl Into<PathBuf>,
     ) -> FsResult<Self> {
         Ok(Self {
             fs_db: management::get_db_pool(fs_db_path.as_ref()).await?,
+            name,
             supervisor_pid,
             mount_dir: mount_dir.into(),
             log_dir: log_dir.into(),
@@ -59,7 +64,7 @@ impl NfsServerMonitor {
     /// Generates a unique log name using name, process ID, and current timestamp.
     ///
     /// The ID format is: "mfsrun-{name}-{timestamp}-{child_pid}.log"
-    fn generate_log_name(&self, child_pid: u32, name: impl AsRef<str>) -> String {
+    fn generate_log_name(&self, child_pid: u32) -> String {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -67,11 +72,7 @@ impl NfsServerMonitor {
 
         format!(
             "{}-{}-{}-{}.{}",
-            MFSRUN_LOG_PREFIX,
-            name.as_ref(),
-            timestamp,
-            child_pid,
-            LOG_SUFFIX
+            MFSRUN_LOG_PREFIX, self.name, timestamp, child_pid, LOG_SUFFIX
         )
     }
 }
@@ -82,13 +83,13 @@ impl NfsServerMonitor {
 
 #[async_trait]
 impl ProcessMonitor for NfsServerMonitor {
-    async fn start(&mut self, pid: u32, name: String, child_io: ChildIo) -> MonoutilsResult<()> {
+    async fn start(&mut self, pid: u32, child_io: ChildIo) -> MonoutilsResult<()> {
         let ChildIo::Piped { stdout, stderr, .. } = child_io else {
             return Err(MonoutilsError::custom(FsError::ChildIoMustBePiped));
         };
 
         // Setup child's log
-        let log_name = self.generate_log_name(pid, &name);
+        let log_name = self.generate_log_name(pid);
         let log_path = self.log_dir.join(&log_name);
 
         let nfs_server_log = RotatingLog::new(&log_path).await?;
@@ -104,7 +105,7 @@ impl ProcessMonitor for NfsServerMonitor {
             VALUES (?, ?, ?, ?)
             "#,
         )
-        .bind(name)
+        .bind(&self.name)
         .bind(self.mount_dir.to_string_lossy().to_string())
         .bind(self.supervisor_pid)
         .bind(pid)

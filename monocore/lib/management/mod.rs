@@ -11,19 +11,15 @@
 //! - `menv`: Monocore environment management
 //! - `rootfs`: Root filesystem operations for containers
 //! - `sandbox`: Sandbox creation and management
-
-pub mod db;
-pub mod image;
-pub mod menv;
-pub mod rootfs;
-pub mod sandbox;
+//! - `orchestra`: Orchestra management for sandboxes
 
 //--------------------------------------------------------------------------------------------------
 // Exports
 //--------------------------------------------------------------------------------------------------
 
-pub use db::*;
-pub use image::*;
-pub use menv::*;
-pub use rootfs::*;
-pub use sandbox::*;
+pub mod db;
+pub mod image;
+pub mod menv;
+pub mod orchestra;
+pub mod rootfs;
+pub mod sandbox;

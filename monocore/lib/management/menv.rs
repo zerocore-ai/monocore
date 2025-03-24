@@ -6,7 +6,7 @@
 //! databases, and log directories.
 
 use crate::{
-    config::{DEFAULT_CONFIG, DEFAULT_MENV_NAMESPACE, DEFAULT_MONOCORE_CONFIG_FILENAME},
+    config::{DEFAULT_CONFIG, DEFAULT_MONOCORE_CONFIG_FILENAME},
     utils::ROOTFS_SUBDIR,
     MonocoreResult,
 };
@@ -15,7 +15,7 @@ use tokio::{fs, io::AsyncWriteExt};
 
 use crate::utils::path::{LOG_SUBDIR, MONOCORE_ENV_DIR, SANDBOX_DB_FILENAME};
 
-use super::{db, SANDBOX_DB_MIGRATOR};
+use super::db;
 
 //--------------------------------------------------------------------------------------------------
 // Functions
@@ -39,7 +39,7 @@ use super::{db, SANDBOX_DB_MIGRATOR};
 /// # Ok(())
 /// # }
 /// ```
-pub async fn init_menv(project_dir: Option<PathBuf>) -> MonocoreResult<()> {
+pub async fn initialize(project_dir: Option<PathBuf>) -> MonocoreResult<()> {
     // Get the target path, defaulting to current directory if none specified
     let project_dir = project_dir.unwrap_or_else(|| PathBuf::from("."));
 
@@ -59,6 +59,10 @@ pub async fn init_menv(project_dir: Option<PathBuf>) -> MonocoreResult<()> {
     Ok(())
 }
 
+//--------------------------------------------------------------------------------------------------
+// Functions: Helpers
+//--------------------------------------------------------------------------------------------------
+
 /// Create the required directories and files for a monocore environment
 pub(crate) async fn ensure_menv_files(project_dir: &Path) -> MonocoreResult<()> {
     // Get the .menv directory path
@@ -75,7 +79,7 @@ pub(crate) async fn ensure_menv_files(project_dir: &Path) -> MonocoreResult<()> 
     let db_path = menv_path.join(SANDBOX_DB_FILENAME);
 
     // Initialize sandbox database
-    let _ = db::init_db(&db_path, &SANDBOX_DB_MIGRATOR).await?;
+    let _ = db::initialize(&db_path, &db::SANDBOX_DB_MIGRATOR).await?;
     tracing::info!("sandbox database at {}", db_path.display());
 
     Ok(())
@@ -123,17 +127,4 @@ pub(crate) async fn update_gitignore(project_dir: &Path) -> MonocoreResult<()> {
     }
 
     Ok(())
-}
-
-/// Creates a namespace for a sandbox within .menv directories.
-pub(crate) fn create_menv_namespace(config_path: Option<&PathBuf>, sandbox_name: &str) -> PathBuf {
-    let mut namespace = if let Some(config_name) = config_path.as_ref().and_then(|p| p.file_name())
-    {
-        PathBuf::from(config_name)
-    } else {
-        PathBuf::from(DEFAULT_MENV_NAMESPACE)
-    };
-
-    namespace.push(sandbox_name);
-    namespace
 }
