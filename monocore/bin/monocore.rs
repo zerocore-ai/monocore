@@ -2,7 +2,9 @@ use clap::{CommandFactory, Parser};
 use monocore::{
     cli::{MonocoreArgs, MonocoreSubcommand},
     config::DEFAULT_SCRIPT,
-    management, MonocoreError, MonocoreResult,
+    management::{image, menv, sandbox},
+    oci::Reference,
+    MonocoreError, MonocoreResult,
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -10,6 +12,8 @@ use monocore::{
 //--------------------------------------------------------------------------------------------------
 
 const SANDBOX_SCRIPT_SEPARATOR: char = '~';
+const START_SCRIPT: &str = "start";
+const SHELL_SCRIPT: &str = "shell";
 
 //--------------------------------------------------------------------------------------------------
 // Functions: main
@@ -36,9 +40,7 @@ async fn main() -> MonocoreResult<()> {
                 }
                 (None, None) => None,
             };
-
-            tracing::trace!("initializing monocore project: path={path:?}");
-            management::init_menv(path).await?;
+            menv::init_menv(path).await?;
         }
         Some(MonocoreSubcommand::Pull {
             image,
@@ -46,8 +48,7 @@ async fn main() -> MonocoreResult<()> {
             name,
             layer_path,
         }) => {
-            tracing::trace!("pulling image: name={name}, image={image}, image_group={image_group}, layer_path={layer_path:?}");
-            management::pull_image(name, image, image_group, layer_path).await?;
+            image::pull_image(name, image, image_group, layer_path).await?;
         }
         Some(MonocoreSubcommand::Run {
             sandbox_script,
@@ -56,29 +57,56 @@ async fn main() -> MonocoreResult<()> {
             path,
             config,
         }) => {
-            let sandbox_script = match (sandbox_script, sandbox_script_with_flag) {
-                (Some(name), None) => name,
-                (None, Some(name)) => name,
-                (Some(_), Some(_)) => {
-                    return Err(MonocoreError::InvalidArgument(
-                        "Please use only one method to specify the sandbox.".to_string(),
-                    ));
-                }
-                (None, None) => {
-                    return Err(MonocoreError::InvalidArgument(
-                        "Must specify a sandbox name".to_string(),
-                    ));
-                }
-            };
+            let sandbox_script = determine_name_from_positional_or_flag_args(
+                sandbox_script,
+                sandbox_script_with_flag,
+                "sandbox",
+            )?;
+            let (sandbox, script) = parse_name_and_script(&sandbox_script);
 
-            // Split the sandbox script into sandbox name and script name
-            let (sandbox, script) = match sandbox_script.split_once(SANDBOX_SCRIPT_SEPARATOR) {
-                Some((sandbox, script)) => (sandbox.to_string(), script.to_string()),
-                None => (sandbox_script, DEFAULT_SCRIPT.to_string()),
-            };
-
-            tracing::trace!("running sandbox: sandbox={sandbox}, script={script:?}, args={args:?}, path={path:?}");
-            management::run_sandbox(&sandbox, script, args, path, config).await?;
+            sandbox::run_sandbox(&sandbox, script, path, config, args).await?;
+        }
+        Some(MonocoreSubcommand::Start {
+            sandbox,
+            sandbox_with_flag,
+            args,
+            path,
+            config,
+        }) => {
+            let sandbox =
+                determine_name_from_positional_or_flag_args(sandbox, sandbox_with_flag, "sandbox")?;
+            sandbox::run_sandbox(&sandbox, START_SCRIPT, path, config, args).await?;
+        }
+        Some(MonocoreSubcommand::Shell {
+            sandbox,
+            sandbox_with_flag,
+            args,
+            path,
+            config,
+        }) => {
+            let sandbox =
+                determine_name_from_positional_or_flag_args(sandbox, sandbox_with_flag, "sandbox")?;
+            sandbox::run_sandbox(&sandbox, SHELL_SCRIPT, path, config, args).await?;
+        }
+        Some(MonocoreSubcommand::Tmp {
+            image_script,
+            image_script_with_flag,
+            cpus,
+            ram,
+            volumes,
+            ports,
+            envs,
+            workdir,
+        }) => {
+            let image_script = determine_name_from_positional_or_flag_args(
+                image_script,
+                image_script_with_flag,
+                "image",
+            )?;
+            let (image, script) = parse_name_and_script(&image_script);
+            let image = image.parse::<Reference>()?;
+            sandbox::run_temp_sandbox(&image, script, cpus, ram, volumes, ports, envs, workdir)
+                .await?;
         }
         Some(_) => (), // TODO: implement other subcommands
         None => {
@@ -92,3 +120,33 @@ async fn main() -> MonocoreResult<()> {
 //--------------------------------------------------------------------------------------------------
 // Functions: *
 //--------------------------------------------------------------------------------------------------
+
+fn determine_name_from_positional_or_flag_args(
+    positional: Option<String>,
+    flag: Option<String>,
+    name_type: &str,
+) -> MonocoreResult<String> {
+    match (positional, flag) {
+        (Some(name), None) => Ok(name),
+        (None, Some(name)) => Ok(name),
+        (Some(_), Some(_)) => {
+            return Err(MonocoreError::InvalidArgument(
+                format!("Please use only one method to specify the {}", name_type).to_string(),
+            ));
+        }
+        (None, None) => {
+            return Err(MonocoreError::InvalidArgument(
+                format!("Must specify a {}", name_type).to_string(),
+            ))
+        }
+    }
+}
+
+fn parse_name_and_script(name_and_script: &str) -> (&str, &str) {
+    let (name, script) = match name_and_script.split_once(SANDBOX_SCRIPT_SEPARATOR) {
+        Some((name, script)) => (name, script),
+        None => (name_and_script, DEFAULT_SCRIPT),
+    };
+
+    (name, script)
+}

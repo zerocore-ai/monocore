@@ -1,7 +1,7 @@
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
-    config::{EnvPair, PathPair, PortPair, DEFAULT_NUM_VCPUS},
+    config::{EnvPair, PathPair, PortPair, DEFAULT_NUM_VCPUS, DEFAULT_RAM_MIB},
     MonocoreResult,
 };
 
@@ -12,17 +12,32 @@ use super::{LinuxRlimit, LogLevel, MicroVm, MicroVmConfig, Rootfs};
 //--------------------------------------------------------------------------------------------------
 
 /// The builder for a MicroVm configuration.
+///
+/// ## Required Fields
+/// - `rootfs`: The root filesystem to use for the MicroVm.
+/// - `exec_path`: The path to the executable to run in the MicroVm.
+///
+/// ## Optional Fields
+/// - `num_vcpus`: The number of virtual CPUs to use for the MicroVm.
+/// - `ram_mib`: The amount of RAM in MiB to use for the MicroVm.
+/// - `mapped_dirs`: The directories to mount in the MicroVm.
+/// - `port_map`: The ports to map in the MicroVm.
+/// - `rlimits`: The resource limits to use for the MicroVm.
+/// - `workdir_path`: The working directory to use for the MicroVm.
+/// - `args`: The arguments to pass to the executable.
+/// - `env`: The environment variables to use for the MicroVm.
+/// - `console_output`: The path to the file to write the console output to.
 #[derive(Debug)]
-pub struct MicroVmConfigBuilder<R, M> {
+pub struct MicroVmConfigBuilder<R, E> {
     log_level: LogLevel,
     rootfs: R,
-    num_vcpus: Option<u8>,
-    ram_mib: M,
+    num_vcpus: u8,
+    ram_mib: u32,
     mapped_dirs: Vec<PathPair>,
     port_map: Vec<PortPair>,
     rlimits: Vec<LinuxRlimit>,
     workdir_path: Option<Utf8UnixPathBuf>,
-    exec_path: Option<Utf8UnixPathBuf>,
+    exec_path: E,
     args: Vec<String>,
     env: Vec<EnvPair>,
     console_output: Option<Utf8UnixPathBuf>,
@@ -35,10 +50,25 @@ pub struct MicroVmConfigBuilder<R, M> {
 /// RAM size, virtio-fs mounts, port mappings, resource limits, working directory, executable path,
 /// arguments, environment variables, and console output.
 ///
+/// ## Required Fields
+/// - `rootfs`: The root filesystem to use for the MicroVm.
+/// - `exec_path`: The path to the executable to run in the MicroVm.
+///
+/// ## Optional Fields
+/// - `num_vcpus`: The number of virtual CPUs to use for the MicroVm.
+/// - `ram_mib`: The amount of RAM in MiB to use for the MicroVm.
+/// - `mapped_dirs`: The directories to mount in the MicroVm.
+/// - `port_map`: The ports to map in the MicroVm.
+/// - `rlimits`: The resource limits to use for the MicroVm.
+/// - `workdir_path`: The working directory to use for the MicroVm.
+/// - `args`: The arguments to pass to the executable.
+/// - `env`: The environment variables to use for the MicroVm.
+/// - `console_output`: The path to the file to write the console output to.
+///
 /// ## Examples
 ///
 /// ```rust
-/// use monocore::vm::{MicroVmBuilder, LogLevel};
+/// use monocore::vm::{MicroVmBuilder, LogLevel, Rootfs};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> anyhow::Result<()> {
@@ -60,8 +90,8 @@ pub struct MicroVmConfigBuilder<R, M> {
 /// # }
 /// ```
 #[derive(Debug)]
-pub struct MicroVmBuilder<R, M> {
-    inner: MicroVmConfigBuilder<R, M>,
+pub struct MicroVmBuilder<R, E> {
+    inner: MicroVmConfigBuilder<R, E>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -103,7 +133,7 @@ impl<R, M> MicroVmConfigBuilder<R, M> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::MicroVmConfigBuilder;
+    /// use monocore::vm::{MicroVmConfigBuilder, Rootfs};
     /// use std::path::PathBuf;
     ///
     /// let config = MicroVmConfigBuilder::default()
@@ -157,7 +187,7 @@ impl<R, M> MicroVmConfigBuilder<R, M> {
     /// - The number of vCPUs should not exceed the host's physical CPU cores
     /// - More vCPUs aren't always better - consider the workload's needs
     pub fn num_vcpus(mut self, num_vcpus: u8) -> Self {
-        self.num_vcpus = Some(num_vcpus);
+        self.num_vcpus = num_vcpus;
         self
     }
 
@@ -178,21 +208,9 @@ impl<R, M> MicroVmConfigBuilder<R, M> {
     /// - The value is in MiB (1 GiB = 1024 MiB)
     /// - Consider the host's available memory when setting this value
     /// - Common values: 512 MiB for minimal systems, 1024-2048 MiB for typical workloads
-    pub fn ram_mib(self, ram_mib: u32) -> MicroVmConfigBuilder<R, u32> {
-        MicroVmConfigBuilder {
-            log_level: self.log_level,
-            rootfs: self.rootfs,
-            num_vcpus: self.num_vcpus,
-            ram_mib,
-            mapped_dirs: self.mapped_dirs,
-            port_map: self.port_map,
-            rlimits: self.rlimits,
-            workdir_path: self.workdir_path,
-            exec_path: self.exec_path,
-            args: self.args,
-            env: self.env,
-            console_output: self.console_output,
-        }
+    pub fn ram_mib(mut self, ram_mib: u32) -> Self {
+        self.ram_mib = ram_mib;
+        self
     }
 
     /// Sets the directory mappings for the MicroVm using virtio-fs.
@@ -349,9 +367,24 @@ impl<R, M> MicroVmConfigBuilder<R, M> {
     /// - The path must be absolute
     /// - The executable must exist and be executable in the guest filesystem
     /// - The path is relative to the guest's root filesystem
-    pub fn exec_path(mut self, exec_path: impl Into<Utf8UnixPathBuf>) -> Self {
-        self.exec_path = Some(exec_path.into());
-        self
+    pub fn exec_path(
+        self,
+        exec_path: impl Into<Utf8UnixPathBuf>,
+    ) -> MicroVmConfigBuilder<R, Utf8UnixPathBuf> {
+        MicroVmConfigBuilder {
+            log_level: self.log_level,
+            rootfs: self.rootfs,
+            num_vcpus: self.num_vcpus,
+            ram_mib: self.ram_mib,
+            mapped_dirs: self.mapped_dirs,
+            port_map: self.port_map,
+            rlimits: self.rlimits,
+            workdir_path: self.workdir_path,
+            exec_path: exec_path.into(),
+            args: self.args,
+            env: self.env,
+            console_output: self.console_output,
+        }
     }
 
     /// Sets the command-line arguments for the executable.
@@ -451,15 +484,16 @@ impl<R, M> MicroVmBuilder<R, M> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::{LogLevel, MicroVmBuilder};
+    /// use monocore::vm::{LogLevel, MicroVmBuilder, Rootfs};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVmBuilder::default()
     ///     .log_level(LogLevel::Debug)  // Enable debug logging
-    ///     .root_path(temp_dir.path())
+    ///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
     ///     .ram_mib(1024)
+    ///     .exec_path("/bin/echo")
     ///     .build()?;
     /// # Ok(())
     /// # }
@@ -486,24 +520,20 @@ impl<R, M> MicroVmBuilder<R, M> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::MicroVmBuilder;
+    /// use monocore::vm::{MicroVmBuilder, Rootfs};
     /// use std::path::PathBuf;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// // Option 1: Direct passthrough
     /// let vm = MicroVmBuilder::default()
-    ///     .rootfs(Rootfs::Native(PathBuf::from("/path/to/rootfs")))
-    ///     .ram_mib(1024)
-    ///     .build()?;
+    ///     .rootfs(Rootfs::Native(PathBuf::from("/path/to/rootfs")));
     ///
     /// // Option 2: Overlayfs with layers
     /// let vm = MicroVmBuilder::default()
     ///     .rootfs(Rootfs::Overlayfs(vec![
     ///         PathBuf::from("/path/to/layer1"),
     ///         PathBuf::from("/path/to/layer2")
-    ///     ]))
-    ///     .ram_mib(1024)
-    ///     .build()?;
+    ///     ]));
     /// # Ok(())
     /// # }
     /// ```
@@ -526,15 +556,16 @@ impl<R, M> MicroVmBuilder<R, M> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::MicroVmBuilder;
+    /// use monocore::vm::{MicroVmBuilder, Rootfs};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVmBuilder::default()
-    ///     .rootfs(Rootfs::Native(temp_dir.path()))
+    ///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
     ///     .ram_mib(1024)
     ///     .num_vcpus(2)  // Allocate 2 virtual CPU cores
+    ///     .exec_path("/bin/echo")
     ///     .build()?;
     /// # Ok(())
     /// # }
@@ -555,14 +586,15 @@ impl<R, M> MicroVmBuilder<R, M> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::MicroVmBuilder;
+    /// use monocore::vm::{MicroVmBuilder, Rootfs};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVmBuilder::default()
-    ///     .rootfs(Rootfs::Native(temp_dir.path()))
+    ///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
     ///     .ram_mib(1024)  // Allocate 1 GiB of RAM
+    ///     .exec_path("/bin/echo")
     ///     .build()?;
     /// # Ok(())
     /// # }
@@ -572,10 +604,9 @@ impl<R, M> MicroVmBuilder<R, M> {
     /// - The value is in MiB (1 GiB = 1024 MiB)
     /// - Consider the host's available memory when setting this value
     /// - This is a required field - the build will fail if not set
-    pub fn ram_mib(self, ram_mib: u32) -> MicroVmBuilder<R, u32> {
-        MicroVmBuilder {
-            inner: self.inner.ram_mib(ram_mib),
-        }
+    pub fn ram_mib(mut self, ram_mib: u32) -> Self {
+        self.inner = self.inner.ram_mib(ram_mib);
+        self
     }
 
     /// Sets the directory mappings for the MicroVm using virtio-fs.
@@ -682,9 +713,13 @@ impl<R, M> MicroVmBuilder<R, M> {
     ///
     /// MicroVmBuilder::default().exec_path("/path/to/exec");
     /// ```
-    pub fn exec_path(mut self, exec_path: impl Into<Utf8UnixPathBuf>) -> Self {
-        self.inner = self.inner.exec_path(exec_path);
-        self
+    pub fn exec_path(
+        self,
+        exec_path: impl Into<Utf8UnixPathBuf>,
+    ) -> MicroVmBuilder<R, Utf8UnixPathBuf> {
+        MicroVmBuilder {
+            inner: self.inner.exec_path(exec_path),
+        }
     }
 
     /// Sets the command-line arguments for the executable.
@@ -781,13 +816,13 @@ impl<R, M> MicroVmBuilder<R, M> {
     }
 }
 
-impl MicroVmConfigBuilder<Rootfs, u32> {
+impl MicroVmConfigBuilder<Rootfs, Utf8UnixPathBuf> {
     /// Builds the MicroVm configuration.
     pub fn build(self) -> MicroVmConfig {
         MicroVmConfig {
             log_level: self.log_level,
             rootfs: self.rootfs,
-            num_vcpus: self.num_vcpus.unwrap_or(DEFAULT_NUM_VCPUS),
+            num_vcpus: self.num_vcpus,
             ram_mib: self.ram_mib,
             mapped_dirs: self.mapped_dirs,
             port_map: self.port_map,
@@ -801,7 +836,7 @@ impl MicroVmConfigBuilder<Rootfs, u32> {
     }
 }
 
-impl MicroVmBuilder<Rootfs, u32> {
+impl MicroVmBuilder<Rootfs, Utf8UnixPathBuf> {
     /// Builds the MicroVm.
     ///
     /// This method creates a `MicroVm` instance based on the configuration set in the builder.
@@ -810,13 +845,13 @@ impl MicroVmBuilder<Rootfs, u32> {
     /// ## Examples
     ///
     /// ```no_run
-    /// use monocore::vm::MicroVmBuilder;
+    /// use monocore::vm::{MicroVmBuilder, Rootfs};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVmBuilder::default()
-    ///     .rootfs(Rootfs::Native(temp_dir.path()))
+    ///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
     ///     .ram_mib(1024)
     ///     .exec_path("/usr/bin/python3")
     ///     .args(["-c", "print('Hello from MicroVm!')"])
@@ -828,10 +863,6 @@ impl MicroVmBuilder<Rootfs, u32> {
     /// # }
     /// ```
     ///
-    /// ## Required Configuration
-    /// - `root_path` - Path to the root filesystem
-    /// - `ram_mib` - Amount of RAM to allocate
-    ///
     /// ## Notes
     /// - The build will fail if required configuration is missing
     /// - The build will fail if the root path doesn't exist
@@ -841,7 +872,7 @@ impl MicroVmBuilder<Rootfs, u32> {
         MicroVm::from_config(MicroVmConfig {
             log_level: self.inner.log_level,
             rootfs: self.inner.rootfs,
-            num_vcpus: self.inner.num_vcpus.unwrap_or(DEFAULT_NUM_VCPUS),
+            num_vcpus: self.inner.num_vcpus,
             ram_mib: self.inner.ram_mib,
             mapped_dirs: self.inner.mapped_dirs,
             port_map: self.inner.port_map,
@@ -864,13 +895,13 @@ impl Default for MicroVmConfigBuilder<(), ()> {
         Self {
             log_level: LogLevel::default(),
             rootfs: (),
-            num_vcpus: Some(DEFAULT_NUM_VCPUS),
-            ram_mib: (),
+            num_vcpus: DEFAULT_NUM_VCPUS,
+            ram_mib: DEFAULT_RAM_MIB,
             mapped_dirs: vec![],
             port_map: vec![],
             rlimits: vec![],
             workdir_path: None,
-            exec_path: None,
+            exec_path: (),
             args: vec![],
             env: vec![],
             console_output: None,
@@ -918,7 +949,7 @@ mod tests {
 
         assert_eq!(builder.inner.log_level, LogLevel::Debug);
         assert_eq!(builder.inner.rootfs, rootfs);
-        assert_eq!(builder.inner.num_vcpus, Some(2));
+        assert_eq!(builder.inner.num_vcpus, 2);
         assert_eq!(builder.inner.ram_mib, 1024);
         assert_eq!(
             builder.inner.mapped_dirs,
@@ -930,10 +961,7 @@ mod tests {
             builder.inner.workdir_path,
             Some(Utf8UnixPathBuf::from(workdir_path))
         );
-        assert_eq!(
-            builder.inner.exec_path,
-            Some(Utf8UnixPathBuf::from(exec_path))
-        );
+        assert_eq!(builder.inner.exec_path, Utf8UnixPathBuf::from(exec_path));
         assert_eq!(builder.inner.args, ["arg1", "arg2"]);
         assert_eq!(
             builder.inner.env,
@@ -953,19 +981,20 @@ mod tests {
 
         let builder = MicroVmBuilder::default()
             .rootfs(rootfs.clone())
-            .ram_mib(ram_mib);
+            .exec_path("/bin/echo");
 
         assert_eq!(builder.inner.rootfs, rootfs);
         assert_eq!(builder.inner.ram_mib, ram_mib);
 
         // Check that other fields have default values
         assert_eq!(builder.inner.log_level, LogLevel::default());
-        assert_eq!(builder.inner.num_vcpus, Some(DEFAULT_NUM_VCPUS));
+        assert_eq!(builder.inner.num_vcpus, DEFAULT_NUM_VCPUS);
+        assert_eq!(builder.inner.ram_mib, DEFAULT_RAM_MIB);
         assert!(builder.inner.mapped_dirs.is_empty());
         assert!(builder.inner.port_map.is_empty());
         assert!(builder.inner.rlimits.is_empty());
         assert_eq!(builder.inner.workdir_path, None);
-        assert_eq!(builder.inner.exec_path, None);
+        assert_eq!(builder.inner.exec_path, Utf8UnixPathBuf::from("/bin/echo"));
         assert!(builder.inner.args.is_empty());
         assert!(builder.inner.env.is_empty());
         assert_eq!(builder.inner.console_output, None);

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::{cli::styles, config::DEFAULT_SCRIPT, oci::Reference};
+use crate::{cli::styles, oci::Reference};
 use clap::Parser;
 use typed_path::Utf8UnixPathBuf;
 
@@ -31,13 +31,13 @@ pub enum MonocoreSubcommand {
     /// Initialize a new monocore project
     #[command(name = "init")]
     Init {
-        /// A positional argument for specifying the directory to initialize the project in
+        /// Specifies the directory to initialize the project in
         ///
         /// This argument is mutually exclusive with the `--path` flag
         #[arg(required = false, conflicts_with = "path_with_flag", name = "PATH")]
         path: Option<PathBuf>,
 
-        /// A flag for specifying the directory to initialize the project in
+        /// Specifies the directory to initialize the project in
         ///
         /// This flag is mutually exclusive with the positional argument
         #[arg(short, long = "path", conflicts_with = "path", name = "PATH")]
@@ -211,11 +211,11 @@ pub enum MonocoreSubcommand {
     /// Run a sandbox script
     #[command(name = "run")]
     Run {
-        /// Positional argument for specifying the sandbox and script to run
+        /// Specifies the sandbox and script to run
         #[arg(conflicts_with = "sandbox_script_with_flag", name = "SANDBOX~SCRIPT")]
         sandbox_script: Option<String>,
 
-        /// Flag for specifying the sandbox and script to run
+        /// Specifies the sandbox and script to run
         #[arg(
             short,
             long = "sandbox",
@@ -224,9 +224,29 @@ pub enum MonocoreSubcommand {
         )]
         sandbox_script_with_flag: Option<String>,
 
+        /// Project path
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Config path
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+
         /// Additional arguments after `--`
         #[arg(last = true)]
         args: Vec<String>,
+    },
+
+    /// Start a sandbox
+    #[command(name = "start")]
+    Start {
+        /// Specifies the sandbox
+        #[arg(conflicts_with = "sandbox_with_flag", name = "SANDBOX")]
+        sandbox: Option<String>,
+
+        /// Specifies the sandbox
+        #[arg(short, long = "sandbox", conflicts_with = "sandbox", name = "SANDBOX")]
+        sandbox_with_flag: Option<String>,
 
         /// Project path
         #[arg(short, long)]
@@ -235,18 +255,6 @@ pub enum MonocoreSubcommand {
         /// Config path
         #[arg(short, long)]
         config: Option<PathBuf>,
-    },
-
-    /// Start a sandbox
-    #[command(name = "start")]
-    Start {
-        /// Target sandbox
-        #[arg(short, long, default_value_t = true)]
-        sandbox: bool,
-
-        /// Name of the sandbox
-        #[arg(required = true)]
-        name: String,
 
         /// Additional arguments
         #[arg(last = true)]
@@ -256,25 +264,46 @@ pub enum MonocoreSubcommand {
     /// Open a shell in a sandbox
     #[command(name = "shell")]
     Shell {
-        /// Target sandbox
-        #[arg(short, long, default_value_t = true)]
-        sandbox: bool,
+        /// Specifies the sandbox
+        #[arg(conflicts_with = "sandbox_with_flag", name = "SANDBOX")]
+        sandbox: Option<String>,
 
-        /// Name of the sandbox
-        #[arg(required = true)]
-        name: String,
+        /// Specifies the sandbox
+        #[arg(short, long = "sandbox", conflicts_with = "sandbox", name = "SANDBOX")]
+        sandbox_with_flag: Option<String>,
+
+        /// Project path
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Config path
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+
+        /// Additional arguments
+        #[arg(last = true)]
+        args: Vec<String>,
     },
 
     /// Create a temporary sandbox
     #[command(name = "tmp")]
     Tmp {
-        /// Image to use
-        #[arg(short, long)]
-        image: String,
+        /// Specifies the image and script to run
+        #[arg(conflicts_with = "image_script_with_flag", name = "IMAGE~SCRIPT")]
+        image_script: Option<String>,
+
+        /// Specifies the image and script to run
+        #[arg(
+            short,
+            long = "image",
+            conflicts_with = "image_script",
+            name = "IMAGE~SCRIPT"
+        )]
+        image_script_with_flag: Option<String>,
 
         /// Number of CPUs
         #[arg(long)]
-        cpus: Option<u32>,
+        cpus: Option<u8>,
 
         /// RAM in MB
         #[arg(long)]
@@ -292,33 +321,9 @@ pub enum MonocoreSubcommand {
         #[arg(long)]
         envs: Vec<String>,
 
-        /// Groups to join
-        #[arg(long)]
-        groups: Vec<String>,
-
         /// Working directory
         #[arg(long)]
         workdir: Option<Utf8UnixPathBuf>,
-
-        /// Shell to use
-        #[arg(long)]
-        shell: Option<String>,
-
-        /// Scripts to add
-        #[arg(long)]
-        scripts: Vec<String>,
-
-        /// Files to import
-        #[arg(long)]
-        imports: Vec<String>,
-
-        /// Files to export
-        #[arg(long)]
-        exports: Vec<String>,
-
-        /// Network configuration
-        #[arg(long)]
-        network: Option<String>,
     },
 
     /// Install a script from an image
