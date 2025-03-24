@@ -102,8 +102,9 @@ pub enum Rootfs {
 /// # fn main() -> anyhow::Result<()> {
 /// let temp_dir = TempDir::new()?;
 /// let config = MicroVmConfig::builder()
-///     .rootfs(Root::Native(temp_dir.path()))
+///     .rootfs(Rootfs::Native(temp_dir.path()))
 ///     .ram_mib(1024)
+///     .exec_path("/bin/echo")
 ///     .build();
 ///
 /// let vm = MicroVm::from_config(config)?;
@@ -138,7 +139,7 @@ pub struct MicroVmConfig {
     pub workdir_path: Option<Utf8UnixPathBuf>,
 
     /// The executable path to use for the MicroVm.
-    pub exec_path: Option<Utf8UnixPathBuf>,
+    pub exec_path: Utf8UnixPathBuf,
 
     /// The arguments to pass to the executable.
     pub args: Vec<String>,
@@ -214,6 +215,7 @@ impl MicroVm {
     /// let vm = MicroVm::builder()
     ///     .root_path(temp_dir.path())
     ///     .ram_mib(1024)
+    ///     .exec_path("/bin/echo")
     ///     .build()?;
     /// # Ok(())
     /// # }
@@ -375,53 +377,34 @@ impl MicroVm {
         }
 
         // Set executable path, arguments, and environment variables
-        if let Some(exec_path) = &config.exec_path {
-            let c_exec_path = CString::new(exec_path.to_string().as_bytes()).unwrap();
+        let c_exec_path = CString::new(config.exec_path.to_string().as_bytes()).unwrap();
 
-            let c_argv: Vec<_> = config
-                .args
-                .iter()
-                .map(|s| CString::new(s.as_str()).unwrap())
-                .collect();
-            let c_argv_ptrs = utils::to_null_terminated_c_array(&c_argv);
+        let c_argv: Vec<_> = config
+            .args
+            .iter()
+            .map(|s| CString::new(s.as_str()).unwrap())
+            .collect();
+        let c_argv_ptrs = utils::to_null_terminated_c_array(&c_argv);
 
-            let c_env: Vec<_> = config
-                .env
-                .iter()
-                .map(|s| CString::new(s.to_string()).unwrap())
-                .collect();
-            let c_env_ptrs = utils::to_null_terminated_c_array(&c_env);
+        let c_env: Vec<_> = config
+            .env
+            .iter()
+            .map(|s| CString::new(s.to_string()).unwrap())
+            .collect();
+        let c_env_ptrs = utils::to_null_terminated_c_array(&c_env);
 
-            unsafe {
-                let status = ffi::krun_set_exec(
-                    ctx_id,
-                    c_exec_path.as_ptr(),
-                    c_argv_ptrs.as_ptr(),
-                    c_env_ptrs.as_ptr(),
-                );
-                assert!(
-                    status >= 0,
-                    "Failed to set executable configuration: {}",
-                    status
-                );
-            }
-        } else {
-            // If no executable path is set, we still need to set the environment variables
-            let c_env: Vec<_> = config
-                .env
-                .iter()
-                .map(|s| CString::new(s.to_string()).unwrap())
-                .collect();
-            let c_env_ptrs = utils::to_null_terminated_c_array(&c_env);
-
-            unsafe {
-                let status = ffi::krun_set_env(ctx_id, c_env_ptrs.as_ptr());
-                assert!(
-                    status >= 0,
-                    "Failed to set environment variables: {}",
-                    status
-                );
-            }
+        unsafe {
+            let status = ffi::krun_set_exec(
+                ctx_id,
+                c_exec_path.as_ptr(),
+                c_argv_ptrs.as_ptr(),
+                c_env_ptrs.as_ptr(),
+            );
+            assert!(
+                status >= 0,
+                "Failed to set executable configuration: {}",
+                status
+            );
         }
 
         // Set console output
@@ -452,6 +435,7 @@ impl MicroVmConfig {
     /// let config = MicroVmConfig::builder()
     ///     .root_path(temp_dir.path())
     ///     .ram_mib(1024)
+    ///     .exec_path("/bin/echo")
     ///     .build();
     /// # Ok(())
     /// # }
@@ -534,6 +518,7 @@ impl MicroVmConfig {
     /// let config = MicroVmConfig::builder()
     ///     .root_path(temp_dir.path())
     ///     .ram_mib(1024)
+    ///     .exec_path("/bin/echo")
     ///     .build();
     ///
     /// assert!(config.validate().is_ok());
@@ -589,9 +574,7 @@ impl MicroVmConfig {
             ));
         }
 
-        if let Some(exec_path) = &self.exec_path {
-            Self::validate_command_line(exec_path.as_ref())?;
-        }
+        Self::validate_command_line(self.exec_path.as_ref())?;
 
         for arg in &self.args {
             Self::validate_command_line(arg)?;
@@ -689,6 +672,7 @@ mod tests {
             .log_level(LogLevel::Info)
             .rootfs(Rootfs::Native(PathBuf::from("/tmp")))
             .ram_mib(512)
+            .exec_path("/bin/echo")
             .build();
 
         assert!(config.log_level == LogLevel::Info);
@@ -703,7 +687,7 @@ mod tests {
         let config = MicroVmConfig::builder()
             .log_level(LogLevel::Info)
             .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
-            .ram_mib(512)
+            .exec_path("/bin/echo")
             .build();
 
         assert!(config.validate().is_ok());
@@ -715,6 +699,7 @@ mod tests {
             .log_level(LogLevel::Info)
             .rootfs(Rootfs::Native(PathBuf::from("/non/existent/path")))
             .ram_mib(512)
+            .exec_path("/bin/echo")
             .build();
 
         assert!(matches!(
@@ -732,6 +717,7 @@ mod tests {
             .log_level(LogLevel::Info)
             .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
             .ram_mib(0)
+            .exec_path("/bin/echo")
             .build();
 
         assert!(matches!(
@@ -879,6 +865,7 @@ mod tests {
         let valid_config = MicroVmConfig::builder()
             .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
             .ram_mib(1024)
+            .exec_path("/bin/echo")
             .mapped_dirs([
                 format!("{}:/app", host_dir1.display()).parse()?,
                 format!("{}:/data", host_dir2.display()).parse()?,
@@ -891,6 +878,7 @@ mod tests {
         let invalid_config = MicroVmConfig::builder()
             .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
             .ram_mib(1024)
+            .exec_path("/bin/echo")
             .mapped_dirs([
                 format!("{}:/app/data", host_dir1.display()).parse()?,
                 format!("{}:/app", host_dir2.display()).parse()?,

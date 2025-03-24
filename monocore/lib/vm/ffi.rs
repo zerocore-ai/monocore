@@ -294,6 +294,7 @@ extern "C" {
     ///
     /// Passing NULL for `c_envp` will auto-generate an array collecting the the variables currently
     /// present in the environment.
+    #[allow(dead_code)]
     pub(crate) fn krun_set_env(ctx_id: u32, c_envp: *const *const c_char) -> i32;
 
     /// Sets the filepath to the TEE configuration file for the MicroVm. Only available in

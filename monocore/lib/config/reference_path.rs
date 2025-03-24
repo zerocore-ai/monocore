@@ -18,7 +18,7 @@ use crate::{oci::Reference, MonocoreError};
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "String")]
 #[serde(into = "String")]
-pub enum ReferencePath {
+pub enum ReferenceOrPath {
     /// An OCI-compliant image reference (e.g., "docker.io/library/ubuntu:latest").
     /// This is used when the rootfs should be pulled from a container registry.
     Reference(Reference),
@@ -32,10 +32,10 @@ pub enum ReferencePath {
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
-impl FromStr for ReferencePath {
+impl FromStr for ReferenceOrPath {
     type Err = MonocoreError;
 
-    /// Parses a string into a ReferencePath.
+    /// Parses a string into a ReferenceOrPath.
     ///
     /// The parsing rules are:
     /// - If the string starts with "." or "/", it is interpreted as a path to a local rootfs
@@ -45,37 +45,37 @@ impl FromStr for ReferencePath {
     ///
     /// ```
     /// # use std::str::FromStr;
-    /// # use monocore::config::ReferencePath;
+    /// # use monocore::config::ReferenceOrPath;
     /// // Parse as local rootfs path
-    /// let local = ReferencePath::from_str("./my-rootfs").unwrap();
-    /// let absolute = ReferencePath::from_str("/var/lib/my-rootfs").unwrap();
+    /// let local = ReferenceOrPath::from_str("./my-rootfs").unwrap();
+    /// let absolute = ReferenceOrPath::from_str("/var/lib/my-rootfs").unwrap();
     ///
     /// // Parse as OCI image reference
-    /// let image = ReferencePath::from_str("ubuntu:latest").unwrap();
-    /// let full = ReferencePath::from_str("docker.io/library/debian:11").unwrap();
+    /// let image = ReferenceOrPath::from_str("ubuntu:latest").unwrap();
+    /// let full = ReferenceOrPath::from_str("docker.io/library/debian:11").unwrap();
     /// ```
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Check if the string starts with "." or "/" to determine if it's a path
         if s.starts_with('.') || s.starts_with('/') {
-            Ok(ReferencePath::Path(PathBuf::from(s)))
+            Ok(ReferenceOrPath::Path(PathBuf::from(s)))
         } else {
             // Parse as an image reference
             let reference = Reference::from_str(s)?;
-            Ok(ReferencePath::Reference(reference))
+            Ok(ReferenceOrPath::Reference(reference))
         }
     }
 }
 
-impl Display for ReferencePath {
+impl Display for ReferenceOrPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ReferencePath::Path(path) => write!(f, "{}", path.display()),
-            ReferencePath::Reference(reference) => write!(f, "{}", reference),
+            ReferenceOrPath::Path(path) => write!(f, "{}", path.display()),
+            ReferenceOrPath::Reference(reference) => write!(f, "{}", reference),
         }
     }
 }
 
-impl TryFrom<String> for ReferencePath {
+impl TryFrom<String> for ReferenceOrPath {
     type Error = MonocoreError;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
@@ -83,7 +83,7 @@ impl TryFrom<String> for ReferencePath {
     }
 }
 
-impl Into<String> for ReferencePath {
+impl Into<String> for ReferenceOrPath {
     fn into(self) -> String {
         self.to_string()
     }
@@ -111,9 +111,9 @@ mod tests {
         ];
 
         for case in cases {
-            let reference = ReferencePath::from_str(case).unwrap();
+            let reference = ReferenceOrPath::from_str(case).unwrap();
             match &reference {
-                ReferencePath::Path(path) => {
+                ReferenceOrPath::Path(path) => {
                     assert_eq!(path, &PathBuf::from(case));
                     assert_eq!(reference.to_string(), case);
                 }
@@ -135,9 +135,9 @@ mod tests {
         ];
 
         for case in cases {
-            let reference = ReferencePath::from_str(case).unwrap();
+            let reference = ReferenceOrPath::from_str(case).unwrap();
             match &reference {
-                ReferencePath::Path(path) => {
+                ReferenceOrPath::Path(path) => {
                     assert_eq!(path, &PathBuf::from(case));
                     assert_eq!(reference.to_string(), case);
                 }
@@ -158,9 +158,9 @@ mod tests {
         ];
 
         for case in cases {
-            let reference = ReferencePath::from_str(case).unwrap();
+            let reference = ReferenceOrPath::from_str(case).unwrap();
             match &reference {
-                ReferencePath::Reference(ref_) => {
+                ReferenceOrPath::Reference(ref_) => {
                     assert_eq!(reference.to_string(), ref_.to_string());
                 }
                 _ => panic!("Expected Reference variant for {}", case),
@@ -180,9 +180,9 @@ mod tests {
         ];
 
         for case in cases {
-            let reference = ReferencePath::from_str(case).unwrap();
+            let reference = ReferenceOrPath::from_str(case).unwrap();
             match &reference {
-                ReferencePath::Reference(ref_) => {
+                ReferenceOrPath::Reference(ref_) => {
                     assert_eq!(reference.to_string(), ref_.to_string());
                 }
                 _ => panic!("Expected Reference variant for {}", case),
@@ -200,9 +200,9 @@ mod tests {
         ];
 
         for case in cases {
-            let reference = ReferencePath::from_str(&case).unwrap();
+            let reference = ReferenceOrPath::from_str(&case).unwrap();
             match &reference {
-                ReferencePath::Reference(ref_) => {
+                ReferenceOrPath::Reference(ref_) => {
                     assert_eq!(reference.to_string(), ref_.to_string());
                 }
                 _ => panic!("Expected Reference variant for {}", case),
@@ -220,9 +220,9 @@ mod tests {
         ];
 
         for case in cases {
-            let reference = ReferencePath::from_str(case).unwrap();
+            let reference = ReferenceOrPath::from_str(case).unwrap();
             match &reference {
-                ReferencePath::Reference(ref_) => {
+                ReferenceOrPath::Reference(ref_) => {
                     assert_eq!(reference.to_string(), ref_.to_string());
                 }
                 _ => panic!("Expected Reference variant for {}", case),
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn test_empty_input() {
         // Test empty input
-        assert!(ReferencePath::from_str("").is_err());
+        assert!(ReferenceOrPath::from_str("").is_err());
     }
 
     #[test]
@@ -250,7 +250,7 @@ mod tests {
         ];
 
         for (input, expected) in test_cases {
-            let reference = ReferencePath::from_str(input).unwrap();
+            let reference = ReferenceOrPath::from_str(input).unwrap();
             assert_eq!(reference.to_string(), expected);
         }
     }
@@ -258,15 +258,15 @@ mod tests {
     #[test]
     fn test_serde_path_roundtrip() {
         let test_cases = vec![
-            ReferencePath::Path(PathBuf::from("./local/rootfs")),
-            ReferencePath::Path(PathBuf::from("/absolute/path/to/rootfs")),
-            ReferencePath::Path(PathBuf::from(".")),
-            ReferencePath::Path(PathBuf::from("/root")),
+            ReferenceOrPath::Path(PathBuf::from("./local/rootfs")),
+            ReferenceOrPath::Path(PathBuf::from("/absolute/path/to/rootfs")),
+            ReferenceOrPath::Path(PathBuf::from(".")),
+            ReferenceOrPath::Path(PathBuf::from("/root")),
         ];
 
         for case in test_cases {
             let serialized = serde_yaml::to_string(&case).unwrap();
-            let deserialized: ReferencePath = serde_yaml::from_str(&serialized).unwrap();
+            let deserialized: ReferenceOrPath = serde_yaml::from_str(&serialized).unwrap();
             assert_eq!(case, deserialized);
         }
     }
@@ -281,9 +281,9 @@ mod tests {
         ];
 
         for case in test_cases {
-            let reference = ReferencePath::from_str(case).unwrap();
+            let reference = ReferenceOrPath::from_str(case).unwrap();
             let serialized = serde_yaml::to_string(&reference).unwrap();
-            let deserialized: ReferencePath = serde_yaml::from_str(&serialized).unwrap();
+            let deserialized: ReferenceOrPath = serde_yaml::from_str(&serialized).unwrap();
             assert_eq!(reference, deserialized);
         }
     }
@@ -291,12 +291,12 @@ mod tests {
     #[test]
     fn test_serde_yaml_format() {
         // Test Path variant serialization format
-        let path = ReferencePath::Path(PathBuf::from("/test/rootfs"));
+        let path = ReferenceOrPath::Path(PathBuf::from("/test/rootfs"));
         let serialized = serde_yaml::to_string(&path).unwrap();
         assert_eq!(serialized.trim(), "/test/rootfs");
 
         // Test Reference variant serialization format
-        let reference = ReferencePath::from_str("ubuntu:latest").unwrap();
+        let reference = ReferenceOrPath::from_str("ubuntu:latest").unwrap();
         let serialized = serde_yaml::to_string(&reference).unwrap();
         assert!(serialized.trim().contains("ubuntu:latest"));
     }
@@ -305,10 +305,10 @@ mod tests {
     fn test_serde_invalid_input() {
         // Test deserializing invalid YAML
         let invalid_yaml = "- not a valid reference path";
-        assert!(serde_yaml::from_str::<ReferencePath>(invalid_yaml).is_err());
+        assert!(serde_yaml::from_str::<ReferenceOrPath>(invalid_yaml).is_err());
 
         // Test deserializing invalid reference format
         let invalid_reference = "invalid!reference:format";
-        assert!(serde_yaml::from_str::<ReferencePath>(invalid_reference).is_err());
+        assert!(serde_yaml::from_str::<ReferenceOrPath>(invalid_reference).is_err());
     }
 }

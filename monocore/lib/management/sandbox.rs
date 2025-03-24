@@ -6,11 +6,15 @@
 
 use std::path::{Path, PathBuf};
 
+use tempfile;
 use tokio::{fs, process::Command};
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
-    config::{MonocoreConfig, ReferencePath, Sandbox, DEFAULT_MCRUN_EXE_PATH, DEFAULT_MONOCORE_CONFIG_FILENAME, DEFAULT_WORKDIR},
+    config::{
+        EnvPair, Monocore, PathPair, PortPair, ReferenceOrPath, Sandbox, DEFAULT_MCRUN_EXE_PATH,
+        DEFAULT_MONOCORE_CONFIG_FILENAME,
+    },
     management::{db, image, menv, rootfs},
     oci::Reference,
     utils::{
@@ -23,16 +27,60 @@ use crate::{
 };
 
 //--------------------------------------------------------------------------------------------------
+// Constants
+//--------------------------------------------------------------------------------------------------
+
+const TEMPORARY_SANDBOX_NAME: &str = "tmp";
+
+//--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------
 
-/// Runs a sandbox
+/// Runs a sandbox with the specified configuration and script.
+///
+/// This function executes a sandbox environment based on the configuration specified in the Monocore
+/// config file. It handles both native rootfs and image-based rootfs setups.
+///
+/// ## Arguments
+///
+/// * `sandbox` - The name of the sandbox to run as defined in the Monocore config file
+/// * `script` - The name of the script to execute within the sandbox (e.g., "start", "shell")
+/// * `project_dir` - Optional path to the project directory. If None, defaults to current directory
+/// * `config_path` - Optional path to the Monocore config file. If None, uses default filename
+/// * `args` - Additional arguments to pass to the sandbox script
+///
+/// ## Returns
+///
+/// Returns `Ok(())` if the sandbox runs and exits successfully, or a `MonocoreError` if:
+/// - The config file is not found
+/// - The specified sandbox is not found in the config
+/// - The supervisor process fails to start or exits with an error
+/// - Any filesystem operations fail
+///
+/// ## Example
+///
+/// ```no_run
+/// use std::path::PathBuf;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     // Run a sandbox named "dev" with the "start" script
+///     sandbox::run_sandbox(
+///         "dev",
+///         "start",
+///         None,
+///         None,
+///         vec![]
+///     ).await?;
+///     Ok(())
+/// }
+/// ```
 pub async fn run_sandbox(
-    name: &str,
-    script: String,
-    args: Vec<String>,
+    sandbox: &str,
+    script: &str,
     project_dir: Option<PathBuf>,
     config_path: Option<PathBuf>,
+    args: Vec<String>,
 ) -> MonocoreResult<()> {
     // Get the target path, defaulting to current directory if none specified
     let project_dir = project_dir.unwrap_or_else(|| PathBuf::from("."));
@@ -56,14 +104,14 @@ pub async fn run_sandbox(
 
     // Read and parse the monocore.yaml config file
     let config_contents = fs::read_to_string(&full_config_path).await?;
-    let config: MonocoreConfig = serde_yaml::from_str(&config_contents)?;
+    let config: Monocore = serde_yaml::from_str(&config_contents)?;
 
     tracing::debug!("config: {:?}", config);
 
     // Get the sandbox config
-    let Some(sandbox_config) = config.get_sandbox(name) else {
+    let Some(sandbox_config) = config.get_sandbox(sandbox) else {
         return Err(MonocoreError::SandboxNotFoundInConfig(
-            name.to_string(),
+            sandbox.to_string(),
             full_config_path,
         ));
     };
@@ -75,10 +123,10 @@ pub async fn run_sandbox(
     let menv_path = canonical_project_dir.join(MONOCORE_ENV_DIR);
 
     let rootfs = match sandbox_config.get_image() {
-        ReferencePath::Path(root_path) => {
+        ReferenceOrPath::Path(root_path) => {
             setup_native_rootfs(&canonical_project_dir.join(root_path), sandbox_config).await?
         }
-        ReferencePath::Reference(reference) => {
+        ReferenceOrPath::Reference(reference) => {
             setup_image_rootfs(reference, sandbox_config, &menv_path, config_path.as_ref()).await?
         }
     };
@@ -90,19 +138,12 @@ pub async fn run_sandbox(
     // Sandbox database path
     let sandbox_db_path = menv_path.join(SANDBOX_DB_FILENAME);
 
-    // Get the workdir path
-    let workdir_path = sandbox_config
-        .get_workdir()
-        .clone()
-        .unwrap_or_else(|| Utf8UnixPathBuf::from(DEFAULT_WORKDIR));
-
     // Get the exec path
     let exec_path = format!("/{}/{}", SANDBOX_SCRIPT_DIR, script);
 
     tracing::info!("starting sandbox supervisor...");
 
     tracing::debug!("rootfs: {:?}", rootfs);
-    tracing::debug!("workdir_path: {}", workdir_path);
     tracing::debug!("exec_path: {}", exec_path);
 
     let mcrun_path =
@@ -114,18 +155,24 @@ pub async fn run_sandbox(
         .arg("--log-dir")
         .arg(&log_dir)
         .arg("--child-name")
-        .arg(name)
+        .arg(sandbox)
         .arg("--sandbox-db-path")
         .arg(&sandbox_db_path)
-        .arg("--num-vcpus")
-        .arg(sandbox_config.get_cpus().to_string())
-        .arg("--ram-mib")
-        .arg(sandbox_config.get_ram().to_string())
-        .arg("--workdir-path")
-        .arg(&workdir_path)
         .arg("--exec-path")
         .arg(&exec_path)
         .arg("--forward-output");
+
+    if let Some(cpus) = sandbox_config.get_cpus() {
+        command.arg("--num-vcpus").arg(cpus.to_string());
+    }
+
+    if let Some(ram) = sandbox_config.get_ram() {
+        command.arg("--ram-mib").arg(ram.to_string());
+    }
+
+    if let Some(workdir) = sandbox_config.get_workdir() {
+        command.arg("--workdir-path").arg(workdir);
+    }
 
     // Pass the rootfs
     match rootfs {
@@ -163,12 +210,152 @@ pub async fn run_sandbox(
     // Wait for the child process to complete
     let status = child.wait().await?;
     if !status.success() {
-        tracing::error!("child process exited with status: {}", status);
+        tracing::error!(
+            "child process — supervisor — exited with status: {}",
+            status
+        );
         return Err(MonocoreError::SupervisorError(format!(
-            "child process failed with exit status: {}",
+            "child process — supervisor — failed with exit status: {}",
             status
         )));
     }
+
+    Ok(())
+}
+
+/// Creates and runs a temporary sandbox from an OCI image.
+///
+/// This function creates a temporary sandbox environment from a container image without requiring
+/// a Monocore configuration file. It's useful for quick, one-off sandbox executions.
+/// The temporary sandbox and its associated files are automatically cleaned up after execution.
+///
+/// # Arguments
+///
+/// * `image` - The OCI image reference to use as the base for the sandbox
+/// * `script` - The name of the script to execute within the sandbox
+/// * `cpus` - Optional number of virtual CPUs to allocate to the sandbox
+/// * `ram` - Optional amount of RAM in MiB to allocate to the sandbox
+/// * `volumes` - List of volume mappings in the format "host_path:guest_path"
+/// * `ports` - List of port mappings in the format "host_port:guest_port"
+/// * `envs` - List of environment variables in the format "KEY=VALUE"
+/// * `workdir` - Optional working directory path inside the sandbox
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the temporary sandbox runs and exits successfully, or a `MonocoreError` if:
+/// - The image cannot be pulled or found
+/// - The sandbox configuration is invalid
+/// - The supervisor process fails to start or exits with an error
+/// - Any filesystem operations fail
+///
+/// # Example
+///
+/// ```no_run
+/// use monocore::oci::Reference;
+/// use typed_path::Utf8UnixPathBuf;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let image = "ubuntu:latest".parse::<Reference>()?;
+///
+///     // Run a temporary Ubuntu sandbox with custom resources
+///     sandbox::run_temp_sandbox(
+///         &image,
+///         "start",
+///         Some(2),           // 2 CPUs
+///         Some(1024),        // 1GB RAM
+///         vec![              // Mount host's /tmp to sandbox's /data
+///             "/tmp:/data".to_string()
+///         ],
+///         vec![              // Map host port 8080 to sandbox port 80
+///             "8080:80".to_string()
+///         ],
+///         vec![              // Set environment variables
+///             "DEBUG=1".to_string()
+///         ],
+///         Some("/app".into()) // Set working directory
+///     ).await?;
+///     Ok(())
+/// }
+/// ```
+pub async fn run_temp_sandbox(
+    image: &Reference,
+    script: &str,
+    cpus: Option<u8>,
+    ram: Option<u32>,
+    volumes: Vec<String>,
+    ports: Vec<String>,
+    envs: Vec<String>,
+    workdir: Option<Utf8UnixPathBuf>,
+) -> MonocoreResult<()> {
+    // Create a temporary directory without losing the TempDir guard for automatic cleanup
+    let temp_dir = tempfile::tempdir()?;
+    let temp_dir_path = temp_dir.path().to_path_buf();
+
+    // Initialize menv in the temporary directory
+    menv::init_menv(Some(temp_dir_path.clone())).await?;
+
+    // Parse the volume, port, and env strings into their respective types
+    let volumes: Vec<PathPair> = volumes.into_iter().filter_map(|v| v.parse().ok()).collect();
+    let ports: Vec<PortPair> = ports.into_iter().filter_map(|p| p.parse().ok()).collect();
+    let envs: Vec<EnvPair> = envs.into_iter().filter_map(|e| e.parse().ok()).collect();
+
+    // Build the temporary sandbox configuration.
+    let sandbox = {
+        let mut b = Sandbox::builder()
+            .name(TEMPORARY_SANDBOX_NAME)
+            .image(ReferenceOrPath::Reference(image.clone()));
+
+        if let Some(cpus) = cpus {
+            b = b.cpus(cpus);
+        }
+
+        if let Some(ram) = ram {
+            b = b.ram(ram);
+        }
+
+        if let Some(workdir) = workdir {
+            b = b.workdir(workdir);
+        }
+
+        if !volumes.is_empty() {
+            b = b.volumes(volumes);
+        }
+
+        if !ports.is_empty() {
+            b = b.ports(ports);
+        }
+
+        if !envs.is_empty() {
+            b = b.envs(envs);
+        }
+
+        b.build()
+    };
+
+    // Create the monocore config with the temporary sandbox
+    let config = Monocore::builder()
+        .sandboxes(vec![sandbox])
+        .build_unchecked();
+
+    // Write the config to the temporary directory
+    let config_path = temp_dir_path.join(DEFAULT_MONOCORE_CONFIG_FILENAME);
+    tokio::fs::write(&config_path, serde_yaml::to_string(&config)?).await?;
+
+    // Run the sandbox with the temporary configuration
+    run_sandbox(
+        TEMPORARY_SANDBOX_NAME,
+        script,
+        Some(temp_dir_path.clone()),
+        None,
+        vec![],
+    )
+    .await?;
+
+    tracing::info!("temporary sandbox exited successfully");
+
+    // Explicitly close the TempDir to clean up the temporary directory
+    temp_dir.close()?;
 
     Ok(())
 }

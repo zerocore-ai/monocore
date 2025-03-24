@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
                 }
             };
 
-            tracing::info!("rootfs: {:?}", rootfs);
+            tracing::info!("rootfs: {:#?}", rootfs);
 
             // Parse mapped directories
             let mapped_dir: Vec<PathPair> = mapped_dir
@@ -116,15 +116,17 @@ async fn main() -> Result<()> {
             let env: Vec<EnvPair> = env.iter().map(|s| s.parse()).collect::<Result<_, _>>()?;
 
             // Create and configure MicroVM
-            let mut builder = MicroVm::builder()
-                .rootfs(rootfs)
-                .num_vcpus(num_vcpus)
-                .ram_mib(ram_mib)
-                .mapped_dirs(mapped_dir)
-                .port_map(port_map)
-                .exec_path(exec_path)
-                .args(args.iter().map(|s| s.as_str()))
-                .env(env);
+            let mut builder = MicroVm::builder().rootfs(rootfs).exec_path(exec_path);
+
+            // Set num vcpus if provided
+            if let Some(num_vcpus) = num_vcpus {
+                builder = builder.num_vcpus(num_vcpus);
+            }
+
+            // Set ram mib if provided
+            if let Some(ram_mib) = ram_mib {
+                builder = builder.ram_mib(ram_mib);
+            }
 
             // Set log level if provided
             if let Some(log_level) = log_level {
@@ -134,6 +136,26 @@ async fn main() -> Result<()> {
             // Set working directory if provided
             if let Some(workdir_path) = workdir_path {
                 builder = builder.workdir_path(workdir_path);
+            }
+
+            // Set mapped dirs if provided
+            if !mapped_dir.is_empty() {
+                builder = builder.mapped_dirs(mapped_dir);
+            }
+
+            // Set port map if provided
+            if !port_map.is_empty() {
+                builder = builder.port_map(port_map);
+            }
+
+            // Set env if provided
+            if !env.is_empty() {
+                builder = builder.env(env);
+            }
+
+            // Set args if provided
+            if !args.is_empty() {
+                builder = builder.args(args.iter().map(|s| s.as_str()));
             }
 
             // Build and start the MicroVM
@@ -192,13 +214,22 @@ async fn main() -> Result<()> {
             .await?;
 
             // Compose child arguments
-            let mut child_args = vec![
-                "microvm".to_string(),
-                format!("--num-vcpus={}", num_vcpus),
-                format!("--ram-mib={}", ram_mib),
-                format!("--workdir-path={}", workdir_path.unwrap_or_default()),
-                format!("--exec-path={}", exec_path),
-            ];
+            let mut child_args = vec!["microvm".to_string(), format!("--exec-path={}", exec_path)];
+
+            // Set num vcpus if provided
+            if let Some(num_vcpus) = num_vcpus {
+                child_args.push(format!("--num-vcpus={}", num_vcpus));
+            }
+
+            // Set ram mib if provided
+            if let Some(ram_mib) = ram_mib {
+                child_args.push(format!("--ram-mib={}", ram_mib));
+            }
+
+            // Set workdir path if provided
+            if let Some(workdir_path) = workdir_path {
+                child_args.push(format!("--workdir-path={}", workdir_path));
+            }
 
             // Set native rootfs if provided
             if let Some(native_rootfs) = native_rootfs {

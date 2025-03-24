@@ -36,18 +36,18 @@ pub enum McrunSubcommand {
 
         /// Number of virtual CPUs
         #[arg(long)]
-        num_vcpus: u8,
+        num_vcpus: Option<u8>,
 
         /// RAM size in MiB
         #[arg(long)]
-        ram_mib: u32,
+        ram_mib: Option<u32>,
 
         /// Working directory path
         #[arg(long)]
         workdir_path: Option<String>,
 
         /// Executable path
-        #[arg(long)]
+        #[arg(long, required = true)]
         exec_path: String,
 
         /// Environment variables (KEY=VALUE format)
@@ -99,18 +99,18 @@ pub enum McrunSubcommand {
 
         /// Number of virtual CPUs
         #[arg(long)]
-        num_vcpus: u8,
+        num_vcpus: Option<u8>,
 
         /// RAM size in MiB
         #[arg(long)]
-        ram_mib: u32,
+        ram_mib: Option<u32>,
 
         /// Working directory path
         #[arg(long)]
         workdir_path: Option<String>,
 
         /// Executable path
-        #[arg(long)]
+        #[arg(long, required = true)]
         exec_path: String,
 
         /// Environment variables (KEY=VALUE format)

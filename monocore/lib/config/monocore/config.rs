@@ -10,12 +10,11 @@ use typed_builder::TypedBuilder;
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
-    config::{
-        EnvPair, PathPair, PortPair, ReferencePath, DEFAULT_NUM_VCPUS, DEFAULT_RAM_MIB,
-        DEFAULT_SHELL,
-    },
+    config::{EnvPair, PathPair, PortPair, ReferenceOrPath, DEFAULT_SHELL},
     MonocoreResult,
 };
+
+use super::{MonocoreBuilder, SandboxBuilder};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -24,7 +23,7 @@ use crate::{
 /// The monocore configuration.
 #[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Getters)]
 #[getset(get = "pub with_prefix")]
-pub struct MonocoreConfig {
+pub struct Monocore {
     /// The metadata about the configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub(super) meta: Option<Meta>,
@@ -52,22 +51,22 @@ pub struct MonocoreConfig {
 pub struct Meta {
     /// The authors of the configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) authors: Option<Vec<String>>,
 
     /// The description of the sandbox.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) description: Option<String>,
 
     /// The homepage of the configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) homepage: Option<String>,
 
     /// The repository of the configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) repository: Option<String>,
 
     /// The path to the readme file.
@@ -77,12 +76,12 @@ pub struct Meta {
         serialize_with = "serialize_optional_path",
         deserialize_with = "deserialize_optional_path"
     )]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) readme: Option<Utf8UnixPathBuf>,
 
     /// The tags for the configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) tags: Option<Vec<String>>,
 
     /// The icon for the configuration.
@@ -92,7 +91,7 @@ pub struct Meta {
         serialize_with = "serialize_optional_path",
         deserialize_with = "deserialize_optional_path"
     )]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) icon: Option<Utf8UnixPathBuf>,
 }
 
@@ -102,7 +101,7 @@ pub struct Meta {
 pub struct ComponentMapping {
     /// The alias for the component.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) as_: Option<String>,
 }
 
@@ -133,17 +132,17 @@ pub struct Build {
     pub(super) name: String,
 
     /// The image to use. This can be a path to a local rootfs or an OCI image reference.
-    pub(super) image: ReferencePath,
+    pub(super) image: ReferenceOrPath,
 
     /// The amount of RAM in MiB to use.
-    #[serde(default = "MonocoreConfig::default_ram_mib")]
-    #[builder(default = MonocoreConfig::default_ram_mib())]
-    pub(super) ram: u32,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default, setter(strip_option))]
+    pub(super) ram: Option<u32>,
 
     /// The number of vCPUs to use.
-    #[serde(default = "MonocoreConfig::default_num_vcpus")]
-    #[builder(default = MonocoreConfig::default_num_vcpus())]
-    pub(super) cpus: u8,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default, setter(strip_option))]
+    pub(super) cpus: Option<u8>,
 
     /// The volumes to mount.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -163,7 +162,7 @@ pub struct Build {
     /// The groups to run in.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
-    pub(super) groups: HashMap<String, GroupConfig>,
+    pub(super) groups: HashMap<String, SandboxGroup>,
 
     /// The builds to depend on.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -177,7 +176,7 @@ pub struct Build {
         serialize_with = "serialize_optional_path",
         deserialize_with = "deserialize_optional_path"
     )]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) workdir: Option<Utf8UnixPathBuf>,
 
     /// The shell to use.
@@ -234,23 +233,23 @@ pub enum SandboxNetworkReach {
 /// Network configuration for a sandbox.
 #[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
-pub struct SandboxNetworkConfig {
+pub struct SandboxNetwork {
     /// The network reach configuration.
     #[serde(
         skip_serializing_if = "Option::is_none",
-        default = "SandboxNetworkConfig::default_reach"
+        default = "SandboxNetwork::default_reach"
     )]
-    #[builder(default = SandboxNetworkConfig::default_reach())]
+    #[builder(default = SandboxNetwork::default_reach(), setter(strip_option))]
     pub(super) reach: Option<SandboxNetworkReach>,
 }
 
 /// Network configuration for a sandbox in a group.
 #[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
-pub struct SandboxGroupNetworkConfig {
+pub struct SandboxGroupNetwork {
     /// The IP address for the sandbox in this group
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) ip: Option<Ipv4Addr>,
 
     /// The domain names for this sandbox in the group
@@ -262,17 +261,17 @@ pub struct SandboxGroupNetworkConfig {
 /// Network configuration for a group.
 #[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
-pub struct GroupNetworkConfig {
+pub struct GroupNetwork {
     /// The subnet CIDR for the group. Must be an IPv4 network.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) subnet: Option<Ipv4Net>,
 }
 
 /// Proxy configuration for a sandbox.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
-pub enum ProxyConfig {
+pub enum Proxy {
     /// Legacy HTTP proxy configuration.
     #[serde(rename = "legacy")]
     Legacy {
@@ -317,49 +316,41 @@ pub enum ProxyConfig {
 }
 
 /// The sandbox to run.
-#[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Getters)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct Sandbox {
     /// The name of the sandbox.
-    #[builder(setter(transform = |name: impl AsRef<str>| name.as_ref().to_string()))]
     pub(super) name: String,
 
     /// The version of the sandbox.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
     pub(super) version: Option<Version>,
 
     /// The metadata about the sandbox.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
     pub(super) meta: Option<Meta>,
 
     /// The image to use. This can be a path to a local rootfs or an OCI image reference.
-    pub(super) image: ReferencePath,
+    pub(super) image: ReferenceOrPath,
 
     /// The amount of RAM in MiB to use.
-    #[serde(default = "MonocoreConfig::default_ram_mib")]
-    #[builder(default = MonocoreConfig::default_ram_mib())]
-    pub(super) ram: u32,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub(super) ram: Option<u32>,
 
     /// The number of vCPUs to use.
-    #[serde(default = "MonocoreConfig::default_num_vcpus")]
-    #[builder(default = MonocoreConfig::default_num_vcpus())]
-    pub(super) cpus: u8,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub(super) cpus: Option<u8>,
 
     /// The volumes to mount.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    #[builder(default)]
     pub(super) volumes: Vec<PathPair>,
 
     /// The ports to expose.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    #[builder(default)]
     pub(super) ports: Vec<PortPair>,
 
     /// The environment variables to use.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    #[builder(default)]
     pub(super) envs: Vec<EnvPair>,
 
     /// The environment file to use.
@@ -369,17 +360,14 @@ pub struct Sandbox {
         serialize_with = "serialize_optional_path",
         deserialize_with = "deserialize_optional_path"
     )]
-    #[builder(default)]
     pub(super) env_file: Option<Utf8UnixPathBuf>,
 
     /// The groups to run in.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    #[builder(default)]
-    pub(super) groups: HashMap<String, GroupConfig>,
+    pub(super) groups: HashMap<String, SandboxGroup>,
 
     /// The sandboxes to depend on.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    #[builder(default)]
     pub(super) depends_on: Vec<String>,
 
     /// The working directory to use.
@@ -389,17 +377,13 @@ pub struct Sandbox {
         serialize_with = "serialize_optional_path",
         deserialize_with = "deserialize_optional_path"
     )]
-    #[builder(default)]
     pub(super) workdir: Option<Utf8UnixPathBuf>,
 
     /// The shell to use.
-    #[serde(default = "Sandbox::default_shell")]
-    #[builder(default = Sandbox::default_shell())]
     pub(super) shell: String,
 
     /// The scripts that can be run.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    #[builder(default)]
     pub(super) scripts: HashMap<String, String>,
 
     /// The files to import.
@@ -409,7 +393,6 @@ pub struct Sandbox {
         serialize_with = "serialize_path_map",
         deserialize_with = "deserialize_path_map"
     )]
-    #[builder(default)]
     pub(super) imports: HashMap<String, Utf8UnixPathBuf>,
 
     /// The artifacts produced by the sandbox.
@@ -419,24 +402,21 @@ pub struct Sandbox {
         serialize_with = "serialize_path_map",
         deserialize_with = "deserialize_path_map"
     )]
-    #[builder(default)]
     pub(super) exports: HashMap<String, Utf8UnixPathBuf>,
 
     /// The network configuration for the sandbox.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
-    pub(super) network: Option<SandboxNetworkConfig>,
+    pub(super) network: Option<SandboxNetwork>,
 
     /// The proxy configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
-    pub(super) proxy: Option<ProxyConfig>,
+    pub(super) proxy: Option<Proxy>,
 }
 
 /// Configuration for a sandbox's group membership.
 #[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Getters)]
 #[getset(get = "pub with_prefix")]
-pub struct GroupConfig {
+pub struct SandboxGroup {
     /// The volumes to mount.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
@@ -449,8 +429,8 @@ pub struct GroupConfig {
 
     /// The network configuration for this sandbox in the group.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
-    pub(super) network: Option<SandboxGroupNetworkConfig>,
+    #[builder(default, setter(strip_option))]
+    pub(super) network: Option<SandboxGroupNetwork>,
 }
 
 /// The group to run the sandboxes in.
@@ -463,18 +443,18 @@ pub struct Group {
 
     /// The version of the group.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) version: Option<Version>,
 
     /// The metadata about the group.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
+    #[builder(default, setter(strip_option))]
     pub(super) meta: Option<Meta>,
 
     /// The network configuration for the group.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[builder(default)]
-    pub(super) network: Option<GroupNetworkConfig>,
+    #[builder(default, setter(strip_option))]
+    pub(super) network: Option<GroupNetwork>,
 
     /// The volumes to mount.
     #[serde(
@@ -493,36 +473,12 @@ pub struct Group {
 }
 
 //--------------------------------------------------------------------------------------------------
-// Types: Builders
-//--------------------------------------------------------------------------------------------------
-
-/// Builder for Monocore configuration.
-#[derive(Default)]
-pub struct MonocoreBuilder {
-    meta: Option<Meta>,
-    requires: Option<Vec<Require>>,
-    builds: Option<Vec<Build>>,
-    sandboxes: Option<Vec<Sandbox>>,
-    groups: Option<Vec<Group>>,
-}
-
-//--------------------------------------------------------------------------------------------------
 // Methods
 //--------------------------------------------------------------------------------------------------
 
-impl MonocoreConfig {
+impl Monocore {
     /// The maximum sandbox dependency chain length.
     pub const MAX_DEPENDENCY_DEPTH: usize = 32;
-
-    /// Returns the default number of vCPUs.
-    pub fn default_num_vcpus() -> u8 {
-        DEFAULT_NUM_VCPUS
-    }
-
-    /// Returns the default amount of RAM in MiB.
-    pub fn default_ram_mib() -> u32 {
-        DEFAULT_RAM_MIB
-    }
 
     /// Get a sandbox by name in this configuration
     pub fn get_sandbox(&self, sandbox_name: &str) -> Option<&Sandbox> {
@@ -550,6 +506,13 @@ impl MonocoreConfig {
         // TODO: Add validation logic here
         Ok(())
     }
+
+    /// Returns a builder for the Monocore configuration.
+    ///
+    /// See [`MonocoreBuilder`] for options.
+    pub fn builder() -> MonocoreBuilder {
+        MonocoreBuilder::default()
+    }
 }
 
 impl Build {
@@ -560,9 +523,11 @@ impl Build {
 }
 
 impl Sandbox {
-    /// Returns the default shell.
-    pub fn default_shell() -> String {
-        DEFAULT_SHELL.to_string()
+    /// Returns a builder for the sandbox.
+    ///
+    /// See [`SandboxBuilder`] for options.
+    pub fn builder() -> SandboxBuilder<(), (), String> {
+        SandboxBuilder::default()
     }
 
     /// Returns the start script for the sandbox.
@@ -586,72 +551,17 @@ impl Sandbox {
     }
 }
 
-impl SandboxNetworkConfig {
+impl SandboxNetwork {
     /// Returns the default network reach configuration.
     pub fn default_reach() -> Option<SandboxNetworkReach> {
         Some(SandboxNetworkReach::Local)
     }
 }
 
-impl GroupNetworkConfig {
+impl GroupNetwork {
     /// Returns the default network reach configuration.
     pub fn default_reach() -> Option<SandboxNetworkReach> {
         Some(SandboxNetworkReach::Local)
-    }
-}
-
-impl MonocoreBuilder {
-    /// Creates a new MonocoreBuilder instance
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Sets the metadata for the configuration
-    pub fn meta(mut self, meta: Meta) -> Self {
-        self.meta = Some(meta);
-        self
-    }
-
-    /// Sets the files to import
-    pub fn requires(mut self, requires: impl IntoIterator<Item = Require>) -> Self {
-        self.requires = Some(requires.into_iter().collect());
-        self
-    }
-
-    /// Sets the builds to run
-    pub fn builds(mut self, builds: impl IntoIterator<Item = Build>) -> Self {
-        self.builds = Some(builds.into_iter().collect());
-        self
-    }
-
-    /// Sets the sandboxes to run
-    pub fn sandboxes(mut self, sandboxes: impl IntoIterator<Item = Sandbox>) -> Self {
-        self.sandboxes = Some(sandboxes.into_iter().collect());
-        self
-    }
-
-    /// Sets the groups to run the sandboxes in
-    pub fn groups(mut self, groups: impl IntoIterator<Item = Group>) -> Self {
-        self.groups = Some(groups.into_iter().collect());
-        self
-    }
-
-    /// Builds the Monocore configuration with validation
-    pub fn build(self) -> MonocoreResult<MonocoreConfig> {
-        let monocore = self.build_unchecked();
-        monocore.validate()?;
-        Ok(monocore)
-    }
-
-    /// Builds the Monocore configuration without validation
-    pub fn build_unchecked(self) -> MonocoreConfig {
-        MonocoreConfig {
-            meta: self.meta,
-            requires: self.requires,
-            builds: self.builds,
-            sandboxes: self.sandboxes,
-            groups: self.groups,
-        }
     }
 }
 
