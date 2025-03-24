@@ -26,9 +26,13 @@ pub enum McrunSubcommand {
         #[arg(long)]
         log_level: Option<u8>,
 
-        /// Root filesystem path
+        /// Native root filesystem path
         #[arg(long)]
-        root_path: PathBuf,
+        native_rootfs: Option<PathBuf>,
+
+        /// Overlayfs root filesystem layers
+        #[arg(long)]
+        overlayfs_layer: Vec<PathBuf>,
 
         /// Number of virtual CPUs
         #[arg(long)]
@@ -47,15 +51,15 @@ pub enum McrunSubcommand {
         exec_path: String,
 
         /// Environment variables (KEY=VALUE format)
-        #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
+        #[arg(long)]
         env: Vec<String>,
 
         /// Directory mappings (host:guest format)
-        #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
-        mapped_dirs: Vec<String>,
+        #[arg(long)]
+        mapped_dir: Vec<String>,
 
         /// Port mappings (host:guest format)
-        #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
+        #[arg(long)]
         port_map: Vec<String>,
 
         /// Additional arguments after `--`
@@ -85,9 +89,13 @@ pub enum McrunSubcommand {
         forward_output: bool,
 
         // Sandbox specific arguments
-        /// Root filesystem path
+        /// Native root filesystem path
         #[arg(long)]
-        root_path: PathBuf,
+        native_rootfs: Option<PathBuf>,
+
+        /// Overlayfs root filesystem layers
+        #[arg(long)]
+        overlayfs_layer: Vec<PathBuf>,
 
         /// Number of virtual CPUs
         #[arg(long)]
@@ -106,15 +114,15 @@ pub enum McrunSubcommand {
         exec_path: String,
 
         /// Environment variables (KEY=VALUE format)
-        #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
+        #[arg(long)]
         env: Vec<String>,
 
         /// Directory mappings (host:guest format)
-        #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
-        mapped_dirs: Vec<String>,
+        #[arg(long)]
+        mapped_dir: Vec<String>,
 
         /// Port mappings (host:guest format)
-        #[arg(long, use_value_delimiter = true, value_delimiter = ',')]
+        #[arg(long)]
         port_map: Vec<String>,
 
         /// Additional arguments after `--`

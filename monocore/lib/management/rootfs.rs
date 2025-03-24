@@ -64,7 +64,6 @@ pub fn patch_rootfs_with_sandbox_scripts(
 
     // Get shell path as string for shebang
     let shell_path = shell_path.as_ref().to_string_lossy();
-
     for (script_name, script_content) in scripts.iter() {
         // Create script file path
         let script_path = scripts_dir.join(script_name);

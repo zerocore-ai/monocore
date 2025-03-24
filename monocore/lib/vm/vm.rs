@@ -29,7 +29,7 @@ pub const VIRTIOFS_TAG_PREFIX: &str = "virtiofs";
 ///
 /// ## Examples
 ///
-/// ```rust
+/// ```no_run
 /// use monocore::vm::MicroVm;
 /// use tempfile::TempDir;
 ///
@@ -42,8 +42,8 @@ pub const VIRTIOFS_TAG_PREFIX: &str = "virtiofs";
 ///     .args(["Hello, World!"])
 ///     .build()?;
 ///
-/// // // Start the MicroVm
-/// // vm.start()?;  // This would actually run the VM
+/// // Start the MicroVm
+/// vm.start()?;  // This would actually run the VM
 /// # Ok(())
 /// # }
 /// ```
@@ -55,6 +55,33 @@ pub struct MicroVm {
     /// The configuration for the MicroVm.
     #[get = "pub with_prefix"]
     config: MicroVmConfig,
+}
+
+/// The type of rootfs to use for the MicroVm.
+///
+/// This enum represents the different types of rootfss that can be used for the MicroVm.
+///
+/// ## Variants
+///
+/// * `Native(PathBuf)` - A native rootfs using a single path.
+/// * `Overlayfs(Vec<PathBuf>)` - An overlayfs rootfs using a list of paths.
+///
+/// ## Examples
+///
+/// ```rust
+/// use monocore::vm::Rootfs;
+/// use std::path::PathBuf;
+///
+/// let native_root = Rootfs::Native(PathBuf::from("/path/to/root"));
+/// let overlayfs_root = Rootfs::Overlayfs(vec![PathBuf::from("/path/to/root1"), PathBuf::from("/path/to/root2")]);
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Rootfs {
+    /// A rootfs using underlying native filesystem.
+    Native(PathBuf),
+
+    /// An overlayfs rootfs using a list of paths.
+    Overlayfs(Vec<PathBuf>),
 }
 
 /// Configuration for a MicroVm instance.
@@ -75,7 +102,7 @@ pub struct MicroVm {
 /// # fn main() -> anyhow::Result<()> {
 /// let temp_dir = TempDir::new()?;
 /// let config = MicroVmConfig::builder()
-///     .root_path(temp_dir.path())
+///     .rootfs(Root::Native(temp_dir.path()))
 ///     .ram_mib(1024)
 ///     .build();
 ///
@@ -88,8 +115,8 @@ pub struct MicroVmConfig {
     /// The log level to use for the MicroVm.
     pub log_level: LogLevel,
 
-    /// The path to the root directory for the MicroVm.
-    pub root_path: PathBuf,
+    /// The rootfs for the MicroVm.
+    pub rootfs: Rootfs,
 
     /// The number of vCPUs to use for the MicroVm.
     pub num_vcpus: u8,
@@ -277,11 +304,27 @@ impl MicroVm {
             assert!(status >= 0, "failed to set VM config: {}", status);
         }
 
-        // Set root path
-        let c_root_path = CString::new(config.root_path.to_str().unwrap().as_bytes()).unwrap();
-        unsafe {
-            let status = ffi::krun_set_root(ctx_id, c_root_path.as_ptr());
-            assert!(status >= 0, "failed to set root path: {}", status);
+        // Set rootfs.
+        match &config.rootfs {
+            Rootfs::Native(path) => {
+                let c_path = CString::new(path.to_str().unwrap().as_bytes()).unwrap();
+                unsafe {
+                    let status = ffi::krun_set_root(ctx_id, c_path.as_ptr());
+                    assert!(status >= 0, "failed to set rootfs: {}", status);
+                }
+            }
+            Rootfs::Overlayfs(paths) => {
+                tracing::debug!("setting overlayfs rootfs: {:?}", paths);
+                let c_paths: Vec<_> = paths
+                    .iter()
+                    .map(|p| CString::new(p.to_str().unwrap().as_bytes()).unwrap())
+                    .collect();
+                let c_paths_ptrs = utils::to_null_terminated_c_array(&c_paths);
+                unsafe {
+                    let status = ffi::krun_set_overlayfs_root(ctx_id, c_paths_ptrs.as_ptr());
+                    assert!(status >= 0, "failed to set rootfs: {}", status);
+                }
+            }
         }
 
         // Add mapped directories using virtio-fs
@@ -498,13 +541,28 @@ impl MicroVmConfig {
     /// # }
     /// ```
     pub fn validate(&self) -> MonocoreResult<()> {
-        // Check root path exists
-        if !self.root_path.exists() {
-            return Err(MonocoreError::InvalidMicroVMConfig(
-                InvalidMicroVMConfigError::RootPathDoesNotExist(
-                    self.root_path.to_str().unwrap().into(),
-                ),
-            ));
+        // Check that paths specified in rootfs exist
+        match &self.rootfs {
+            Rootfs::Native(path) => {
+                if !path.exists() {
+                    return Err(MonocoreError::InvalidMicroVMConfig(
+                        InvalidMicroVMConfigError::RootPathDoesNotExist(
+                            path.to_str().unwrap().into(),
+                        ),
+                    ));
+                }
+            }
+            Rootfs::Overlayfs(paths) => {
+                for path in paths {
+                    if !path.exists() {
+                        return Err(MonocoreError::InvalidMicroVMConfig(
+                            InvalidMicroVMConfigError::RootPathDoesNotExist(
+                                path.to_str().unwrap().into(),
+                            ),
+                        ));
+                    }
+                }
+            }
         }
 
         // Check all host paths in mapped_dirs exist
@@ -629,12 +687,12 @@ mod tests {
     fn test_microvm_config_builder() {
         let config = MicroVmConfig::builder()
             .log_level(LogLevel::Info)
-            .root_path(PathBuf::from("/tmp"))
+            .rootfs(Rootfs::Native(PathBuf::from("/tmp")))
             .ram_mib(512)
             .build();
 
         assert!(config.log_level == LogLevel::Info);
-        assert_eq!(config.root_path, PathBuf::from("/tmp"));
+        assert_eq!(config.rootfs, Rootfs::Native(PathBuf::from("/tmp")));
         assert_eq!(config.ram_mib, 512);
         assert_eq!(config.num_vcpus, DEFAULT_NUM_VCPUS);
     }
@@ -644,7 +702,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = MicroVmConfig::builder()
             .log_level(LogLevel::Info)
-            .root_path(temp_dir.path().to_path_buf())
+            .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
             .ram_mib(512)
             .build();
 
@@ -655,7 +713,7 @@ mod tests {
     fn test_microvm_config_validation_failure_root_path() {
         let config = MicroVmConfig::builder()
             .log_level(LogLevel::Info)
-            .root_path(PathBuf::from("/non/existent/path"))
+            .rootfs(Rootfs::Native(PathBuf::from("/non/existent/path")))
             .ram_mib(512)
             .build();
 
@@ -672,7 +730,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = MicroVmConfig::builder()
             .log_level(LogLevel::Info)
-            .root_path(temp_dir.path().to_path_buf())
+            .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
             .ram_mib(0)
             .build();
 
@@ -727,7 +785,7 @@ mod tests {
 
         // Test invalid executable path
         let config = MicroVmConfig::builder()
-            .root_path(temp_dir.path().to_path_buf())
+            .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
             .ram_mib(512)
             .exec_path("/bin/hello\nworld")
             .build();
@@ -740,7 +798,7 @@ mod tests {
 
         // Test invalid argument
         let config = MicroVmConfig::builder()
-            .root_path(temp_dir.path().to_path_buf())
+            .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
             .ram_mib(512)
             .exec_path("/bin/echo")
             .args(["hello\tworld"])
@@ -819,7 +877,7 @@ mod tests {
 
         // Test valid configuration
         let valid_config = MicroVmConfig::builder()
-            .root_path(temp_dir.path())
+            .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
             .ram_mib(1024)
             .mapped_dirs([
                 format!("{}:/app", host_dir1.display()).parse()?,
@@ -831,7 +889,7 @@ mod tests {
 
         // Test configuration with conflicting guest paths
         let invalid_config = MicroVmConfig::builder()
-            .root_path(temp_dir.path())
+            .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
             .ram_mib(1024)
             .mapped_dirs([
                 format!("{}:/app/data", host_dir1.display()).parse()?,

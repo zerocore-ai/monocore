@@ -17,7 +17,10 @@ pub static DEFAULT_MONOCORE_HOME: LazyLock<PathBuf> =
     LazyLock::new(|| dirs::home_dir().unwrap().join(MONOCORE_HOME_DIR));
 
 /// The default OCI registry domain.
-pub const DEFAULT_OCI_REGISTRY: &str = "docker.io";
+pub const DEFAULT_OCI_REGISTRY: &str = "sandboxes.io";
+
+/// The default monocore config file name.
+pub const DEFAULT_MONOCORE_CONFIG_FILENAME: &str = "Sandboxfile";
 
 /// The default OCI reference tag.
 pub const DEFAULT_OCI_REFERENCE_TAG: &str = "latest";
@@ -29,6 +32,9 @@ pub const DEFAULT_OCI_REFERENCE_REPO_NAMESPACE: &str = "library";
 pub(crate) const DEFAULT_CONFIG: &str = r#"# Sandbox configurations
 sandboxes: []
 "#;
+
+/// The default namespace for the menv patch and rootfs directories.
+pub const DEFAULT_MENV_NAMESPACE: &str = "default";
 
 /// The default shell to use for the sandbox.
 pub const DEFAULT_SHELL: &str = "/bin/sh";

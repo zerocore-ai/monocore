@@ -16,7 +16,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
-use crate::{management, utils::MCRUN_LOG_PREFIX, MonocoreResult};
+use crate::{management, utils::MCRUN_LOG_PREFIX, vm::Rootfs, MonocoreResult};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -36,8 +36,8 @@ pub struct MicroVmMonitor {
     /// The log directory
     log_dir: PathBuf,
 
-    /// The root filesystem path
-    root_path: PathBuf,
+    /// The root filesystem
+    rootfs: Rootfs,
 
     /// The retention duration for log files
     retention_duration: Duration,
@@ -59,7 +59,7 @@ impl MicroVmMonitor {
         supervisor_pid: u32,
         sandbox_db_path: impl AsRef<Path>,
         log_dir: impl Into<PathBuf>,
-        root_path: impl Into<PathBuf>,
+        rootfs: Rootfs,
         retention_duration: Duration,
         forward_output: bool,
     ) -> MonocoreResult<Self> {
@@ -68,7 +68,7 @@ impl MicroVmMonitor {
             sandbox_db: management::get_db_pool(sandbox_db_path.as_ref()).await?,
             log_path: None,
             log_dir: log_dir.into(),
-            root_path: root_path.into(),
+            rootfs,
             retention_duration,
             original_term: None,
             forward_output,
@@ -123,10 +123,23 @@ impl ProcessMonitor for MicroVmMonitor {
 
         self.log_path = Some(log_path);
 
+        // Get rootfs paths
+        let rootfs_paths = match &self.rootfs {
+            Rootfs::Native(path) => format!("native:{}", path.to_string_lossy().into_owned()),
+            Rootfs::Overlayfs(paths) => format!(
+                "overlayfs:{}",
+                paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect::<Vec<String>>()
+                    .join(":")
+            ),
+        };
+
         // Insert sandbox entry into database
         sqlx::query(
             r#"
-            INSERT INTO sandboxes (name, supervisor_pid, microvm_pid, status, root_path)
+            INSERT INTO sandboxes (name, supervisor_pid, microvm_pid, status, rootfs_paths)
             VALUES (?, ?, ?, ?, ?)
             "#,
         )
@@ -134,7 +147,7 @@ impl ProcessMonitor for MicroVmMonitor {
         .bind(self.supervisor_pid)
         .bind(microvm_pid)
         .bind("STARTING")
-        .bind(self.root_path.to_string_lossy().into_owned())
+        .bind(rootfs_paths)
         .execute(&self.sandbox_db)
         .await
         .map_err(MonoutilsError::custom)?;

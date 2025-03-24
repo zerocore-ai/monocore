@@ -25,8 +25,6 @@ HOME_BIN := $(HOME)/.local/bin
 # -----------------------------------------------------------------------------
 MONOCORE_RELEASE_BIN := target/release/monocore
 MCRUN_RELEASE_BIN := target/release/mcrun
-MONOFS_RELEASE_BIN := target/release/monofs
-MFSRUN_RELEASE_BIN := target/release/mfsrun
 EXAMPLES_DIR := target/release/examples
 BENCHES_DIR := target/release
 BUILD_DIR := build
@@ -45,7 +43,7 @@ endif
 # -----------------------------------------------------------------------------
 # Phony Targets Declaration
 # -----------------------------------------------------------------------------
-.PHONY: all build install clean build_libkrun example bench bin _run_example _run_bench _run_bin help uninstall monocore monofs
+.PHONY: all build install clean build_libkrun example bench bin _run_example _run_bench _run_bin help uninstall monocore
 
 # -----------------------------------------------------------------------------
 # Main Targets
@@ -54,17 +52,11 @@ all: build
 
 build: build_libkrun
 	@$(MAKE) _build_monocore
-	@$(MAKE) _build_monofs
 
 _build_monocore: $(MONOCORE_RELEASE_BIN) $(MCRUN_RELEASE_BIN)
 	@cp $(MONOCORE_RELEASE_BIN) $(BUILD_DIR)/
 	@cp $(MCRUN_RELEASE_BIN) $(BUILD_DIR)/
 	@echo "Monocore build artifacts copied to $(BUILD_DIR)/"
-
-_build_monofs: $(MONOFS_RELEASE_BIN) $(MFSRUN_RELEASE_BIN)
-	@cp $(MONOFS_RELEASE_BIN) $(BUILD_DIR)/
-	@cp $(MFSRUN_RELEASE_BIN) $(BUILD_DIR)/
-	@echo "Monofs build artifacts copied to $(BUILD_DIR)/"
 
 # -----------------------------------------------------------------------------
 # Binary Building
@@ -87,12 +79,6 @@ else
 	RUSTFLAGS="-C link-args=-Wl,-rpath,\$$ORIGIN/../lib,-rpath,\$$ORIGIN" cargo build --release --bin mcrun $(FEATURES)
 endif
 
-$(MONOFS_RELEASE_BIN):
-	cd monofs && cargo build --release --bin monofs $(FEATURES)
-
-$(MFSRUN_RELEASE_BIN):
-	cd monofs && cargo build --release --bin mfsrun $(FEATURES)
-
 # -----------------------------------------------------------------------------
 # Installation
 # -----------------------------------------------------------------------------
@@ -101,8 +87,6 @@ install: build
 	install -d $(HOME_LIB)
 	install -m 755 $(BUILD_DIR)/monocore $(HOME_BIN)/monocore
 	install -m 755 $(BUILD_DIR)/mcrun $(HOME_BIN)/mcrun
-	install -m 755 $(BUILD_DIR)/monofs $(HOME_BIN)/monofs
-	install -m 755 $(BUILD_DIR)/mfsrun $(HOME_BIN)/mfsrun
 	ln -sf $(HOME_BIN)/monocore $(HOME_BIN)/mc
 	@if [ -n "$(LIBKRUNFW_FILE)" ]; then \
 		install -m 755 $(LIBKRUNFW_FILE) $(HOME_LIB)/; \
@@ -155,8 +139,6 @@ clean:
 uninstall:
 	rm -f $(HOME_BIN)/monocore
 	rm -f $(HOME_BIN)/mcrun
-	rm -f $(HOME_BIN)/monofs
-	rm -f $(HOME_BIN)/mfsrun
 	rm -f $(HOME_BIN)/mc
 	rm -f $(HOME_LIB)/libkrunfw.dylib
 	rm -f $(HOME_LIB)/libkrun.dylib
@@ -182,7 +164,7 @@ help:
 	@echo "======================"
 	@echo
 	@echo "Main Targets:"
-	@echo "  make build                  - Build all components (monocore and monofs)"
+	@echo "  make build                  - Build monocore components"
 	@echo "  make install                - Install binaries and libraries to ~/.local/{bin,lib}"
 	@echo "  make uninstall              - Remove all installed components"
 	@echo "  make clean                  - Remove build artifacts"

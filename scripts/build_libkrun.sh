@@ -216,12 +216,13 @@ clone_repo() {
 
   local repo_url="$1"
   local repo_name="$2"
+  shift 2  # Remove the first two arguments, leaving any additional args
 
   if [ -d "$repo_name" ]; then
     info "$repo_name directory already exists. Skipping cloning..."
   else
     info "Cloning $repo_name repository..."
-    git clone "$repo_url"
+    git clone "$repo_url" "$@"  # Pass any remaining arguments to git clone
     check_success "Failed to clone $repo_name repository"
   fi
 }
@@ -350,7 +351,7 @@ fi
 check_existing_lib "libkrun"
 if [ $? -eq 0 ]; then
     create_build_directory
-    clone_repo "$LIBKRUN_REPO" "libkrun"
+    clone_repo "$LIBKRUN_REPO" "libkrun" -b appcypher/overlayfs-macos-api --single-branch
     build_libkrun
 fi
 

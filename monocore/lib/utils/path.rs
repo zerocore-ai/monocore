@@ -26,8 +26,8 @@ pub const LOG_SUBDIR: &str = "log";
 /// The directory where global image layers are stored
 pub const LAYERS_SUBDIR: &str = "layers";
 
-/// The directory where project scripts are stored
-pub const SCRIPTS_SUBDIR: &str = "scripts";
+/// The directory where the rootfs patches are stored
+pub const PATCH_SUBDIR: &str = "patch";
 
 /// The directory where monocore's installed binaries are stored
 pub const BIN_SUBDIR: &str = "bin";
@@ -40,9 +40,6 @@ pub const OCI_DB_FILENAME: &str = "oci.db";
 
 /// The filename for the monoimage database
 pub const MONOIMAGE_DB_FILENAME: &str = "monoimage.db";
-
-/// The filename for the monocore config file
-pub const MONOCORE_CONFIG_FILENAME: &str = "monocore.yaml";
 
 /// The prefix for mcrun log files
 pub const MCRUN_LOG_PREFIX: &str = "mcrun";

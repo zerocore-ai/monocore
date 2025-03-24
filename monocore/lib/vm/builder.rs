@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
@@ -7,7 +5,7 @@ use crate::{
     MonocoreResult,
 };
 
-use super::{LinuxRlimit, LogLevel, MicroVm, MicroVmConfig};
+use super::{LinuxRlimit, LogLevel, MicroVm, MicroVmConfig, Rootfs};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -15,11 +13,11 @@ use super::{LinuxRlimit, LogLevel, MicroVm, MicroVmConfig};
 
 /// The builder for a MicroVm configuration.
 #[derive(Debug)]
-pub struct MicroVmConfigBuilder<RootPath, RamMib> {
+pub struct MicroVmConfigBuilder<R, M> {
     log_level: LogLevel,
-    root_path: RootPath,
+    rootfs: R,
     num_vcpus: Option<u8>,
-    ram_mib: RamMib,
+    ram_mib: M,
     mapped_dirs: Vec<PathPair>,
     port_map: Vec<PortPair>,
     rlimits: Vec<LinuxRlimit>,
@@ -46,7 +44,7 @@ pub struct MicroVmConfigBuilder<RootPath, RamMib> {
 /// # fn main() -> anyhow::Result<()> {
 /// let vm = MicroVmBuilder::default()
 ///     .log_level(LogLevel::Debug)
-///     .root_path("/tmp")
+///     .rootfs(Rootfs::Native(PathBuf::from("/tmp")))
 ///     .num_vcpus(2)
 ///     .ram_mib(1024)
 ///     .mapped_dirs(["/home:/guest/mount".parse()?])
@@ -62,15 +60,15 @@ pub struct MicroVmConfigBuilder<RootPath, RamMib> {
 /// # }
 /// ```
 #[derive(Debug)]
-pub struct MicroVmBuilder<RootPath, RamMib> {
-    inner: MicroVmConfigBuilder<RootPath, RamMib>,
+pub struct MicroVmBuilder<R, M> {
+    inner: MicroVmConfigBuilder<R, M>,
 }
 
 //--------------------------------------------------------------------------------------------------
 // Methods
 //--------------------------------------------------------------------------------------------------
 
-impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
+impl<R, M> MicroVmConfigBuilder<R, M> {
     /// Sets the log level for the MicroVm.
     ///
     /// The log level controls the verbosity of the MicroVm's logging output.
@@ -96,28 +94,38 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
         self
     }
 
-    /// Sets the root filesystem path for the MicroVm.
+    /// Sets the root filesystem sharing mode for the MicroVm.
     ///
-    /// This path serves as the root directory for the MicroVm's filesystem. It should contain
-    /// all necessary files and directories for the guest system to operate.
+    /// This determines how the root filesystem is shared with the guest system, with two options:
+    /// - `Rootfs::Native`: Direct passthrough of a directory as the root filesystem
+    /// - `Rootfs::Overlayfs`: Use overlayfs with multiple layers as the root filesystem
     ///
     /// ## Examples
     ///
     /// ```rust
     /// use monocore::vm::MicroVmConfigBuilder;
+    /// use std::path::PathBuf;
     ///
     /// let config = MicroVmConfigBuilder::default()
-    ///     .root_path("/path/to/alpine-rootfs");  // Use Alpine Linux root filesystem
+    ///     // Option 1: Direct passthrough of a directory
+    ///     .rootfs(Rootfs::Native(PathBuf::from("/path/to/rootfs")));
+    ///
+    /// let config = MicroVmConfigBuilder::default()
+    ///     // Option 2: Overlayfs with multiple layers
+    ///     .rootfs(Rootfs::Overlayfs(vec![
+    ///         PathBuf::from("/path/to/layer1"),
+    ///         PathBuf::from("/path/to/layer2")
+    ///     ]));
     /// ```
     ///
     /// ## Notes
-    /// - The path must exist and be accessible
-    /// - The path should contain a valid root filesystem structure
+    /// - For Passthrough: The directory must exist and contain a valid root filesystem structure
+    /// - For Overlayfs: The layers are stacked in order, with later layers taking precedence
     /// - Common choices include Alpine Linux or Ubuntu root filesystems
-    pub fn root_path(self, root_path: impl Into<PathBuf>) -> MicroVmConfigBuilder<PathBuf, RamMib> {
+    pub fn rootfs(self, rootfs: Rootfs) -> MicroVmConfigBuilder<Rootfs, M> {
         MicroVmConfigBuilder {
             log_level: self.log_level,
-            root_path: root_path.into(),
+            rootfs,
             num_vcpus: self.num_vcpus,
             ram_mib: self.ram_mib,
             mapped_dirs: self.mapped_dirs,
@@ -170,10 +178,10 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     /// - The value is in MiB (1 GiB = 1024 MiB)
     /// - Consider the host's available memory when setting this value
     /// - Common values: 512 MiB for minimal systems, 1024-2048 MiB for typical workloads
-    pub fn ram_mib(self, ram_mib: u32) -> MicroVmConfigBuilder<RootPath, u32> {
+    pub fn ram_mib(self, ram_mib: u32) -> MicroVmConfigBuilder<R, u32> {
         MicroVmConfigBuilder {
             log_level: self.log_level,
-            root_path: self.root_path,
+            rootfs: self.rootfs,
             num_vcpus: self.num_vcpus,
             ram_mib,
             mapped_dirs: self.mapped_dirs,
@@ -435,7 +443,7 @@ impl<RootPath, RamMib> MicroVmConfigBuilder<RootPath, RamMib> {
     }
 }
 
-impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
+impl<R, M> MicroVmBuilder<R, M> {
     /// Sets the log level for the MicroVm.
     ///
     /// The log level controls the verbosity of the MicroVm's logging output.
@@ -469,21 +477,31 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
         self
     }
 
-    /// Sets the root filesystem path for the MicroVm.
+    /// Sets the root filesystem sharing mode for the MicroVm.
     ///
-    /// This path serves as the root directory for the MicroVm's filesystem. It should contain
-    /// all necessary files and directories for the guest system to operate.
+    /// This determines how the root filesystem is shared with the guest system, with two options:
+    /// - `Rootfs::Native`: Direct passthrough of a directory as the root filesystem
+    /// - `Rootfs::Overlayfs`: Use overlayfs with multiple layers as the root filesystem
     ///
     /// ## Examples
     ///
     /// ```rust
     /// use monocore::vm::MicroVmBuilder;
-    /// use tempfile::TempDir;
+    /// use std::path::PathBuf;
     ///
     /// # fn main() -> anyhow::Result<()> {
-    /// let temp_dir = TempDir::new()?;
+    /// // Option 1: Direct passthrough
     /// let vm = MicroVmBuilder::default()
-    ///     .root_path(temp_dir.path())  // Use temporary root filesystem
+    ///     .rootfs(Rootfs::Native(PathBuf::from("/path/to/rootfs")))
+    ///     .ram_mib(1024)
+    ///     .build()?;
+    ///
+    /// // Option 2: Overlayfs with layers
+    /// let vm = MicroVmBuilder::default()
+    ///     .rootfs(Rootfs::Overlayfs(vec![
+    ///         PathBuf::from("/path/to/layer1"),
+    ///         PathBuf::from("/path/to/layer2")
+    ///     ]))
     ///     .ram_mib(1024)
     ///     .build()?;
     /// # Ok(())
@@ -491,13 +509,13 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ```
     ///
     /// ## Notes
-    /// - The path must exist and be accessible
-    /// - The path should contain a valid root filesystem structure
+    /// - For Passthrough: The directory must exist and contain a valid root filesystem structure
+    /// - For Overlayfs: The layers are stacked in order, with later layers taking precedence
     /// - Common choices include Alpine Linux or Ubuntu root filesystems
     /// - This is a required field - the build will fail if not set
-    pub fn root_path(self, root_path: impl Into<PathBuf>) -> MicroVmBuilder<PathBuf, RamMib> {
+    pub fn rootfs(self, rootfs: Rootfs) -> MicroVmBuilder<Rootfs, M> {
         MicroVmBuilder {
-            inner: self.inner.root_path(root_path),
+            inner: self.inner.rootfs(rootfs),
         }
     }
 
@@ -514,7 +532,7 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVmBuilder::default()
-    ///     .root_path(temp_dir.path())
+    ///     .rootfs(Rootfs::Native(temp_dir.path()))
     ///     .ram_mib(1024)
     ///     .num_vcpus(2)  // Allocate 2 virtual CPU cores
     ///     .build()?;
@@ -524,7 +542,6 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     ///
     /// ## Notes
     /// - The default is 1 vCPU if not specified
-    /// - The number of vCPUs should not exceed the host's physical CPU cores
     /// - More vCPUs aren't always better - consider the workload's needs
     pub fn num_vcpus(mut self, num_vcpus: u8) -> Self {
         self.inner = self.inner.num_vcpus(num_vcpus);
@@ -544,7 +561,7 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVmBuilder::default()
-    ///     .root_path(temp_dir.path())
+    ///     .rootfs(Rootfs::Native(temp_dir.path()))
     ///     .ram_mib(1024)  // Allocate 1 GiB of RAM
     ///     .build()?;
     /// # Ok(())
@@ -554,9 +571,8 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     /// ## Notes
     /// - The value is in MiB (1 GiB = 1024 MiB)
     /// - Consider the host's available memory when setting this value
-    /// - Common values: 512 MiB for minimal systems, 1024-2048 MiB for typical workloads
     /// - This is a required field - the build will fail if not set
-    pub fn ram_mib(self, ram_mib: u32) -> MicroVmBuilder<RootPath, u32> {
+    pub fn ram_mib(self, ram_mib: u32) -> MicroVmBuilder<R, u32> {
         MicroVmBuilder {
             inner: self.inner.ram_mib(ram_mib),
         }
@@ -765,12 +781,12 @@ impl<RootPath, RamMib> MicroVmBuilder<RootPath, RamMib> {
     }
 }
 
-impl MicroVmConfigBuilder<PathBuf, u32> {
+impl MicroVmConfigBuilder<Rootfs, u32> {
     /// Builds the MicroVm configuration.
     pub fn build(self) -> MicroVmConfig {
         MicroVmConfig {
             log_level: self.log_level,
-            root_path: self.root_path,
+            rootfs: self.rootfs,
             num_vcpus: self.num_vcpus.unwrap_or(DEFAULT_NUM_VCPUS),
             ram_mib: self.ram_mib,
             mapped_dirs: self.mapped_dirs,
@@ -785,7 +801,7 @@ impl MicroVmConfigBuilder<PathBuf, u32> {
     }
 }
 
-impl MicroVmBuilder<PathBuf, u32> {
+impl MicroVmBuilder<Rootfs, u32> {
     /// Builds the MicroVm.
     ///
     /// This method creates a `MicroVm` instance based on the configuration set in the builder.
@@ -793,21 +809,21 @@ impl MicroVmBuilder<PathBuf, u32> {
     ///
     /// ## Examples
     ///
-    /// ```rust
+    /// ```no_run
     /// use monocore::vm::MicroVmBuilder;
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVmBuilder::default()
-    ///     .root_path(temp_dir.path())
+    ///     .rootfs(Rootfs::Native(temp_dir.path()))
     ///     .ram_mib(1024)
     ///     .exec_path("/usr/bin/python3")
     ///     .args(["-c", "print('Hello from MicroVm!')"])
     ///     .build()?;
     ///
-    /// // // Start the MicroVm
-    /// // vm.start()?;  // This would actually run the VM
+    /// // Start the MicroVm
+    /// vm.start()?;  // This would actually run the VM
     /// # Ok(())
     /// # }
     /// ```
@@ -824,7 +840,7 @@ impl MicroVmBuilder<PathBuf, u32> {
     pub fn build(self) -> MonocoreResult<MicroVm> {
         MicroVm::from_config(MicroVmConfig {
             log_level: self.inner.log_level,
-            root_path: self.inner.root_path,
+            rootfs: self.inner.rootfs,
             num_vcpus: self.inner.num_vcpus.unwrap_or(DEFAULT_NUM_VCPUS),
             ram_mib: self.inner.ram_mib,
             mapped_dirs: self.inner.mapped_dirs,
@@ -847,7 +863,7 @@ impl Default for MicroVmConfigBuilder<(), ()> {
     fn default() -> Self {
         Self {
             log_level: LogLevel::default(),
-            root_path: (),
+            rootfs: (),
             num_vcpus: Some(DEFAULT_NUM_VCPUS),
             ram_mib: (),
             mapped_dirs: vec![],
@@ -876,17 +892,19 @@ impl Default for MicroVmBuilder<(), ()> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[test]
     fn test_microvm_builder() -> anyhow::Result<()> {
-        let root_path = "/tmp";
+        let rootfs = Rootfs::Overlayfs(vec![PathBuf::from("/tmp")]);
         let workdir_path = "/workdir";
         let exec_path = "/bin/example";
 
         let builder = MicroVmBuilder::default()
             .log_level(LogLevel::Debug)
-            .root_path(root_path)
+            .rootfs(rootfs.clone())
             .num_vcpus(2)
             .ram_mib(1024)
             .mapped_dirs(["/guest/mount:/host/mount".parse()?])
@@ -899,7 +917,7 @@ mod tests {
             .console_output("/tmp/console.log");
 
         assert_eq!(builder.inner.log_level, LogLevel::Debug);
-        assert_eq!(builder.inner.root_path, PathBuf::from(root_path));
+        assert_eq!(builder.inner.rootfs, rootfs);
         assert_eq!(builder.inner.num_vcpus, Some(2));
         assert_eq!(builder.inner.ram_mib, 1024);
         assert_eq!(
@@ -930,14 +948,14 @@ mod tests {
 
     #[test]
     fn test_microvm_builder_minimal() -> anyhow::Result<()> {
-        let root_path = "/tmp";
+        let rootfs = Rootfs::Native(PathBuf::from("/tmp"));
         let ram_mib = 512;
 
         let builder = MicroVmBuilder::default()
-            .root_path(root_path)
+            .rootfs(rootfs.clone())
             .ram_mib(ram_mib);
 
-        assert_eq!(builder.inner.root_path, PathBuf::from(root_path));
+        assert_eq!(builder.inner.rootfs, rootfs);
         assert_eq!(builder.inner.ram_mib, ram_mib);
 
         // Check that other fields have default values
