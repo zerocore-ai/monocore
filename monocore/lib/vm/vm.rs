@@ -30,13 +30,13 @@ pub const VIRTIOFS_TAG_PREFIX: &str = "virtiofs";
 /// ## Examples
 ///
 /// ```no_run
-/// use monocore::vm::MicroVm;
+/// use monocore::vm::{MicroVm, Rootfs};
 /// use tempfile::TempDir;
 ///
 /// # fn main() -> anyhow::Result<()> {
 /// let temp_dir = TempDir::new()?;
 /// let vm = MicroVm::builder()
-///     .root_path(temp_dir.path())
+///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
 ///     .ram_mib(1024)
 ///     .exec_path("/bin/echo")
 ///     .args(["Hello, World!"])
@@ -96,13 +96,13 @@ pub enum Rootfs {
 /// ## Examples
 ///
 /// ```rust
-/// use monocore::vm::{MicroVm, MicroVmConfig};
+/// use monocore::vm::{MicroVm, MicroVmConfig, Rootfs};
 /// use tempfile::TempDir;
 ///
 /// # fn main() -> anyhow::Result<()> {
 /// let temp_dir = TempDir::new()?;
 /// let config = MicroVmConfig::builder()
-///     .rootfs(Rootfs::Native(temp_dir.path()))
+///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
 ///     .ram_mib(1024)
 ///     .exec_path("/bin/echo")
 ///     .build();
@@ -207,13 +207,13 @@ impl MicroVm {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::MicroVm;
+    /// use monocore::vm::{MicroVm, Rootfs};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVm::builder()
-    ///     .root_path(temp_dir.path())
+    ///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
     ///     .ram_mib(1024)
     ///     .exec_path("/bin/echo")
     ///     .build()?;
@@ -232,13 +232,13 @@ impl MicroVm {
     /// ## Examples
     ///
     /// ```rust,no_run
-    /// use monocore::vm::MicroVm;
+    /// use monocore::vm::{MicroVm, Rootfs};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVm::builder()
-    ///     .root_path(temp_dir.path())
+    ///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
     ///     .ram_mib(1024)
     ///     .exec_path("/usr/bin/python3")
     ///     .args(["-c", "print('Hello from MicroVm!')"])
@@ -427,13 +427,13 @@ impl MicroVmConfig {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::MicroVmConfig;
+    /// use monocore::vm::{MicroVmConfig, Rootfs};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let config = MicroVmConfig::builder()
-    ///     .root_path(temp_dir.path())
+    ///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
     ///     .ram_mib(1024)
     ///     .exec_path("/bin/echo")
     ///     .build();
@@ -510,13 +510,13 @@ impl MicroVmConfig {
     ///
     /// ## Examples
     /// ```rust
-    /// use monocore::vm::MicroVmConfig;
+    /// use monocore::vm::{MicroVmConfig, Rootfs};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let config = MicroVmConfig::builder()
-    ///     .root_path(temp_dir.path())
+    ///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
     ///     .ram_mib(1024)
     ///     .exec_path("/bin/echo")
     ///     .build();

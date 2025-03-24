@@ -61,6 +61,7 @@ const TEMPORARY_SANDBOX_NAME: &str = "tmp";
 ///
 /// ```no_run
 /// use std::path::PathBuf;
+/// use monocore::management::sandbox;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -252,6 +253,7 @@ pub async fn run_sandbox(
 ///
 /// ```no_run
 /// use monocore::oci::Reference;
+/// use monocore::management::sandbox;
 /// use typed_path::Utf8UnixPathBuf;
 ///
 /// #[tokio::main]

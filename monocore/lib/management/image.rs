@@ -56,6 +56,7 @@ const DOCKER_REGISTRY: &str = "docker.io";
 /// ```no_run
 /// use monocore::management::pull_image;
 /// use monocore::oci::Reference;
+/// use std::path::PathBuf;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {

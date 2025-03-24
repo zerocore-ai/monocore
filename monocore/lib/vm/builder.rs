@@ -68,7 +68,7 @@ pub struct MicroVmConfigBuilder<R, E> {
 /// ## Examples
 ///
 /// ```rust
-/// use monocore::vm::{MicroVmBuilder, LogLevel};
+/// use monocore::vm::{MicroVmBuilder, LogLevel, Rootfs};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> anyhow::Result<()> {
@@ -133,7 +133,7 @@ impl<R, M> MicroVmConfigBuilder<R, M> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::MicroVmConfigBuilder;
+    /// use monocore::vm::{MicroVmConfigBuilder, Rootfs};
     /// use std::path::PathBuf;
     ///
     /// let config = MicroVmConfigBuilder::default()
@@ -484,15 +484,16 @@ impl<R, M> MicroVmBuilder<R, M> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::{LogLevel, MicroVmBuilder};
+    /// use monocore::vm::{LogLevel, MicroVmBuilder, Rootfs};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVmBuilder::default()
     ///     .log_level(LogLevel::Debug)  // Enable debug logging
-    ///     .root_path(temp_dir.path())
+    ///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
     ///     .ram_mib(1024)
+    ///     .exec_path("/bin/echo")
     ///     .build()?;
     /// # Ok(())
     /// # }
@@ -519,24 +520,20 @@ impl<R, M> MicroVmBuilder<R, M> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::MicroVmBuilder;
+    /// use monocore::vm::{MicroVmBuilder, Rootfs};
     /// use std::path::PathBuf;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// // Option 1: Direct passthrough
     /// let vm = MicroVmBuilder::default()
-    ///     .rootfs(Rootfs::Native(PathBuf::from("/path/to/rootfs")))
-    ///     .ram_mib(1024)
-    ///     .build()?;
+    ///     .rootfs(Rootfs::Native(PathBuf::from("/path/to/rootfs")));
     ///
     /// // Option 2: Overlayfs with layers
     /// let vm = MicroVmBuilder::default()
     ///     .rootfs(Rootfs::Overlayfs(vec![
     ///         PathBuf::from("/path/to/layer1"),
     ///         PathBuf::from("/path/to/layer2")
-    ///     ]))
-    ///     .ram_mib(1024)
-    ///     .build()?;
+    ///     ]));
     /// # Ok(())
     /// # }
     /// ```
@@ -559,15 +556,16 @@ impl<R, M> MicroVmBuilder<R, M> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::MicroVmBuilder;
+    /// use monocore::vm::{MicroVmBuilder, Rootfs};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVmBuilder::default()
-    ///     .rootfs(Rootfs::Native(temp_dir.path()))
+    ///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
     ///     .ram_mib(1024)
     ///     .num_vcpus(2)  // Allocate 2 virtual CPU cores
+    ///     .exec_path("/bin/echo")
     ///     .build()?;
     /// # Ok(())
     /// # }
@@ -588,14 +586,15 @@ impl<R, M> MicroVmBuilder<R, M> {
     /// ## Examples
     ///
     /// ```rust
-    /// use monocore::vm::MicroVmBuilder;
+    /// use monocore::vm::{MicroVmBuilder, Rootfs};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVmBuilder::default()
-    ///     .rootfs(Rootfs::Native(temp_dir.path()))
+    ///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
     ///     .ram_mib(1024)  // Allocate 1 GiB of RAM
+    ///     .exec_path("/bin/echo")
     ///     .build()?;
     /// # Ok(())
     /// # }
@@ -846,13 +845,13 @@ impl MicroVmBuilder<Rootfs, Utf8UnixPathBuf> {
     /// ## Examples
     ///
     /// ```no_run
-    /// use monocore::vm::MicroVmBuilder;
+    /// use monocore::vm::{MicroVmBuilder, Rootfs};
     /// use tempfile::TempDir;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let temp_dir = TempDir::new()?;
     /// let vm = MicroVmBuilder::default()
-    ///     .rootfs(Rootfs::Native(temp_dir.path()))
+    ///     .rootfs(Rootfs::Native(temp_dir.path().to_path_buf()))
     ///     .ram_mib(1024)
     ///     .exec_path("/usr/bin/python3")
     ///     .args(["-c", "print('Hello from MicroVm!')"])
