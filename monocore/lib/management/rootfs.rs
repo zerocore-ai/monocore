@@ -36,11 +36,7 @@ pub const WHITEOUT_PREFIX: &str = ".wh.";
 /// * `root_path` - Path to the root of the filesystem to patch
 /// * `scripts` - HashMap containing script names and their contents
 /// * `shell_path` - Path to the shell binary within the rootfs (e.g. "/bin/sh")
-///
-/// ## Returns
-///
-/// Returns `MonocoreResult<()>` indicating success or failure
-pub fn patch_rootfs_with_sandbox_scripts(
+pub fn patch_with_sandbox_scripts(
     scripts_dir: &Path,
     scripts: Cow<HashMap<String, String>>,
     shell_path: impl AsRef<Path>,
@@ -109,10 +105,7 @@ pub fn patch_rootfs_with_sandbox_scripts(
 /// - Cannot create directories in the rootfs
 /// - Cannot read or write the fstab file
 /// - Cannot set permissions on the fstab file
-fn patch_rootfs_with_virtiofs_mounts(
-    root_path: &Path,
-    mapped_dirs: &[PathPair],
-) -> MonocoreResult<()> {
+fn patch_with_virtiofs_mounts(root_path: &Path, mapped_dirs: &[PathPair]) -> MonocoreResult<()> {
     let fstab_path = root_path.join("etc/fstab");
 
     // Create parent directories if they don't exist
@@ -203,7 +196,7 @@ mod tests {
         ];
 
         // Update fstab
-        patch_rootfs_with_virtiofs_mounts(root_path, &mapped_dirs)?;
+        patch_with_virtiofs_mounts(root_path, &mapped_dirs)?;
 
         // Verify fstab file was created with correct content
         let fstab_path = root_path.join("etc/fstab");
@@ -240,7 +233,7 @@ mod tests {
         ];
 
         // Update fstab again
-        patch_rootfs_with_virtiofs_mounts(root_path, &new_mapped_dirs)?;
+        patch_with_virtiofs_mounts(root_path, &new_mapped_dirs)?;
 
         // Verify updated content
         let updated_content = fs::read_to_string(&fstab_path)?;
@@ -285,7 +278,7 @@ mod tests {
             vec![format!("{}:/container/data", host_path.display()).parse::<PathPair>()?];
 
         // Function should detect it cannot write to /etc/fstab and return an error
-        let result = patch_rootfs_with_virtiofs_mounts(readonly_path, &mapped_dirs);
+        let result = patch_with_virtiofs_mounts(readonly_path, &mapped_dirs);
 
         // Detailed error reporting for debugging
         if result.is_ok() {

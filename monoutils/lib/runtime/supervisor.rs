@@ -34,9 +34,6 @@ where
     /// Arguments to pass to the child executable
     child_args: Vec<String>,
 
-    /// Name of the child process
-    child_name: String,
-
     /// The managed child process ID
     child_pid: Option<u32>,
 
@@ -64,7 +61,6 @@ where
     ///
     /// * `child_exe` - Path to the child executable
     /// * `child_args` - Arguments to pass to the child executable
-    /// * `child_name` - Name of the child process
     /// * `log_dir` - Path to the supervisor's log directory
     /// * `process_monitor` - The process monitor to use
     /// * `child_envs` - Environment variables for the child process
@@ -72,7 +68,6 @@ where
         child_exe: impl Into<PathBuf>,
         child_args: impl IntoIterator<Item = impl Into<String>>,
         child_envs: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
-        child_name: impl Into<String>,
         log_dir: impl Into<PathBuf>,
         process_monitor: M,
     ) -> Self {
@@ -83,7 +78,6 @@ where
                 .into_iter()
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
-            child_name: child_name.into(),
             child_pid: None,
             log_dir: log_dir.into(),
             process_monitor,
@@ -191,9 +185,7 @@ where
         self.child_pid = Some(child_pid);
 
         // Start monitoring
-        self.process_monitor
-            .start(child_pid, self.child_name.clone(), child_io)
-            .await?;
+        self.process_monitor.start(child_pid, child_io).await?;
 
         // Setup signal handlers
         let mut sigterm = signal(SignalKind::terminate())?;

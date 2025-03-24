@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS sandboxes (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
+    config_file TEXT NOT NULL,
     supervisor_pid INTEGER,
     microvm_pid INTEGER,
     status TEXT NOT NULL,
@@ -17,5 +18,5 @@ CREATE TABLE IF NOT EXISTS sandboxes (
 );
 
 -- Create indexes
-CREATE INDEX IF NOT EXISTS idx_sandboxes_name ON sandboxes(name);
+CREATE INDEX IF NOT EXISTS idx_sandboxes_name ON sandboxes(name, config_file);
 CREATE INDEX IF NOT EXISTS idx_sandboxes_group_id ON sandboxes(group_id);

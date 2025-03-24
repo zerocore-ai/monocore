@@ -33,9 +33,6 @@ pub(crate) const DEFAULT_CONFIG: &str = r#"# Sandbox configurations
 sandboxes: []
 "#;
 
-/// The default namespace for the menv patch and rootfs directories.
-pub const DEFAULT_MENV_NAMESPACE: &str = "default";
-
 /// The default shell to use for the sandbox.
 pub const DEFAULT_SHELL: &str = "/bin/sh";
 

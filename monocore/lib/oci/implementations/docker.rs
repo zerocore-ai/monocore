@@ -21,7 +21,7 @@ use tokio::{
 };
 
 use crate::{
-    management::{self, OCI_DB_MIGRATOR},
+    management::db,
     oci::{OciRegistryPull, ReferenceSelector},
     utils, MonocoreError, MonocoreResult,
 };
@@ -148,8 +148,7 @@ impl DockerRegistry {
         Ok(Self {
             client,
             layer_download_dir: layer_download_dir.into(),
-            oci_db: management::get_or_create_db_pool(oci_db_path.as_ref(), &OCI_DB_MIGRATOR)
-                .await?,
+            oci_db: db::get_or_create_pool(oci_db_path.as_ref(), &db::OCI_DB_MIGRATOR).await?,
         })
     }
 
@@ -284,13 +283,11 @@ impl OciRegistryPull for DockerRegistry {
             }
         };
 
-        let image_id =
-            management::save_or_update_image(&self.oci_db, &reference, total_size).await?;
+        let image_id = db::save_or_update_image(&self.oci_db, &reference, total_size).await?;
 
         // Save index
         let platform = Platform::default();
-        let index_id =
-            management::save_index(&self.oci_db, image_id, &index, Some(&platform)).await?;
+        let index_id = db::save_index(&self.oci_db, image_id, &index, Some(&platform)).await?;
 
         // Select the right manifest for the platform or choose first if not specified
         let manifest_desc = index
@@ -321,13 +318,13 @@ impl OciRegistryPull for DockerRegistry {
             .fetch_manifest(repository, manifest_desc.digest())
             .await?;
         let manifest_id =
-            management::save_manifest(&self.oci_db, image_id, Some(index_id), &manifest).await?;
+            db::save_manifest(&self.oci_db, image_id, Some(index_id), &manifest).await?;
 
         // Fetch and save config
         let config = self
             .fetch_config(repository, manifest.config().digest())
             .await?;
-        management::save_config(&self.oci_db, manifest_id, &config).await?;
+        db::save_config(&self.oci_db, manifest_id, &config).await?;
 
         // Download layers concurrently and save to database
         let layer_futures: Vec<_> = manifest
@@ -340,7 +337,7 @@ impl OciRegistryPull for DockerRegistry {
                     .await?;
 
                 // Save layer metadata to database
-                management::save_or_update_layer(
+                db::save_or_update_layer(
                     &self.oci_db,
                     manifest_id,
                     &layer_desc.media_type().to_string(),

@@ -230,7 +230,7 @@ pub enum MonocoreSubcommand {
 
         /// Config path
         #[arg(short, long)]
-        config: Option<PathBuf>,
+        config: Option<String>,
 
         /// Additional arguments after `--`
         #[arg(last = true)]
@@ -254,7 +254,7 @@ pub enum MonocoreSubcommand {
 
         /// Config path
         #[arg(short, long)]
-        config: Option<PathBuf>,
+        config: Option<String>,
 
         /// Additional arguments
         #[arg(last = true)]
@@ -278,7 +278,7 @@ pub enum MonocoreSubcommand {
 
         /// Config path
         #[arg(short, long)]
-        config: Option<PathBuf>,
+        config: Option<String>,
 
         /// Additional arguments
         #[arg(last = true)]

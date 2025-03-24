@@ -40,7 +40,7 @@ async fn main() -> MonocoreResult<()> {
                 }
                 (None, None) => None,
             };
-            menv::init_menv(path).await?;
+            menv::initialize(path).await?;
         }
         Some(MonocoreSubcommand::Pull {
             image,
@@ -48,7 +48,7 @@ async fn main() -> MonocoreResult<()> {
             name,
             layer_path,
         }) => {
-            image::pull_image(name, image, image_group, layer_path).await?;
+            image::pull(name, image, image_group, layer_path).await?;
         }
         Some(MonocoreSubcommand::Run {
             sandbox_script,
@@ -64,7 +64,7 @@ async fn main() -> MonocoreResult<()> {
             )?;
             let (sandbox, script) = parse_name_and_script(&sandbox_script);
 
-            sandbox::run_sandbox(&sandbox, script, path, config, args).await?;
+            sandbox::run(&sandbox, script, path, config.as_deref(), args).await?;
         }
         Some(MonocoreSubcommand::Start {
             sandbox,
@@ -75,7 +75,7 @@ async fn main() -> MonocoreResult<()> {
         }) => {
             let sandbox =
                 determine_name_from_positional_or_flag_args(sandbox, sandbox_with_flag, "sandbox")?;
-            sandbox::run_sandbox(&sandbox, START_SCRIPT, path, config, args).await?;
+            sandbox::run(&sandbox, START_SCRIPT, path, config.as_deref(), args).await?;
         }
         Some(MonocoreSubcommand::Shell {
             sandbox,
@@ -86,7 +86,7 @@ async fn main() -> MonocoreResult<()> {
         }) => {
             let sandbox =
                 determine_name_from_positional_or_flag_args(sandbox, sandbox_with_flag, "sandbox")?;
-            sandbox::run_sandbox(&sandbox, SHELL_SCRIPT, path, config, args).await?;
+            sandbox::run(&sandbox, SHELL_SCRIPT, path, config.as_deref(), args).await?;
         }
         Some(MonocoreSubcommand::Tmp {
             image_script,
@@ -105,8 +105,7 @@ async fn main() -> MonocoreResult<()> {
             )?;
             let (image, script) = parse_name_and_script(&image_script);
             let image = image.parse::<Reference>()?;
-            sandbox::run_temp_sandbox(&image, script, cpus, ram, volumes, ports, envs, workdir)
-                .await?;
+            sandbox::run_temp(&image, script, cpus, ram, volumes, ports, envs, workdir).await?;
         }
         Some(_) => (), // TODO: implement other subcommands
         None => {

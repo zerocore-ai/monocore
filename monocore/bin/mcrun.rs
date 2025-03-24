@@ -166,8 +166,9 @@ async fn main() -> Result<()> {
         }
         McrunSubcommand::Supervisor {
             log_dir,
-            child_name,
             sandbox_db_path,
+            sandbox_name,
+            config_file,
             log_level,
             forward_output,
             native_rootfs,
@@ -206,6 +207,8 @@ async fn main() -> Result<()> {
             let process_monitor = MicroVmMonitor::new(
                 supervisor_pid,
                 sandbox_db_path,
+                sandbox_name,
+                config_file,
                 log_dir.clone(),
                 rootfs.clone(),
                 Duration::days(1),
@@ -287,14 +290,8 @@ async fn main() -> Result<()> {
             }
 
             // Create and start supervisor
-            let mut supervisor = Supervisor::new(
-                child_exe,
-                child_args,
-                child_envs,
-                child_name,
-                log_dir,
-                process_monitor,
-            );
+            let mut supervisor =
+                Supervisor::new(child_exe, child_args, child_envs, log_dir, process_monitor);
 
             supervisor.start().await?;
         }
