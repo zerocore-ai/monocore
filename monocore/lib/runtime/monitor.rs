@@ -15,7 +15,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
-use crate::{management::db, utils::MCRUN_LOG_PREFIX, vm::Rootfs, MonocoreResult};
+use crate::{management::{db, models::Sandbox}, utils::MCRUN_LOG_PREFIX, vm::Rootfs, MonocoreResult};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
@@ -144,13 +144,17 @@ impl ProcessMonitor for MicroVmMonitor {
         // Insert sandbox entry into database
         db::upsert_sandbox(
             &self.sandbox_db,
-            &self.sandbox_name,
-            &self.config_file,
-            &self.config_last_modified,
-            SANDBOX_STATUS_RUNNING,
-            self.supervisor_pid,
-            microvm_pid,
-            &rootfs_paths,
+            &Sandbox {
+                name: self.sandbox_name.clone(),
+                config_file: self.config_file.clone(),
+                config_last_modified: self.config_last_modified,
+                status: SANDBOX_STATUS_RUNNING.to_string(),
+                supervisor_pid: self.supervisor_pid,
+                microvm_pid,
+                rootfs_paths,
+                group_id: None,
+                group_ip: None,
+            },
         )
         .await
         .map_err(MonoutilsError::custom)?;

@@ -479,7 +479,7 @@ impl OciRegistryPull for DockerRegistry {
             end.to_string()
         };
 
-        tracing::info!("fetching blob: {repository} {digest} {start}-{end}");
+        tracing::info!("fetching blob: {digest} {start}-{end}");
 
         let token = self
             .get_access_credentials(repository, DOCKER_AUTH_SERVICE, &["pull"])

@@ -12,6 +12,7 @@ use oci_spec::image::{ImageConfiguration, ImageIndex, ImageManifest, MediaType, 
 use sqlx::{migrate::Migrator, sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
 use tokio::fs;
 
+use crate::management::models::Sandbox;
 use crate::{runtime::SANDBOX_STATUS_RUNNING, MonocoreResult};
 
 //--------------------------------------------------------------------------------------------------
@@ -102,16 +103,7 @@ pub async fn get_or_create_pool(
 /// Upserts (updates or inserts) a sandbox in the database and returns its ID.
 /// If a sandbox with the same name and config_file exists, it will be updated.
 /// Otherwise, a new sandbox record will be created.
-pub(crate) async fn upsert_sandbox(
-    pool: &Pool<Sqlite>,
-    name: &str,
-    config_file: &str,
-    config_last_modified: &DateTime<Utc>,
-    status: &str,
-    supervisor_pid: u32,
-    microvm_pid: u32,
-    rootfs_paths: &str,
-) -> MonocoreResult<i64> {
+pub(crate) async fn upsert_sandbox(pool: &Pool<Sqlite>, sandbox: &Sandbox) -> MonocoreResult<i64> {
     // Try to update first
     let update_result = sqlx::query(
         r#"
@@ -121,18 +113,22 @@ pub(crate) async fn upsert_sandbox(
             supervisor_pid = ?,
             microvm_pid = ?,
             rootfs_paths = ?,
+            group_id = ?,
+            group_ip = ?,
             modified_at = CURRENT_TIMESTAMP
         WHERE name = ? AND config_file = ?
         RETURNING id
         "#,
     )
-    .bind(config_last_modified.to_rfc3339())
-    .bind(status)
-    .bind(supervisor_pid)
-    .bind(microvm_pid)
-    .bind(rootfs_paths)
-    .bind(name)
-    .bind(config_file)
+    .bind(sandbox.config_last_modified.to_rfc3339())
+    .bind(&sandbox.status)
+    .bind(sandbox.supervisor_pid)
+    .bind(sandbox.microvm_pid)
+    .bind(&sandbox.rootfs_paths)
+    .bind(sandbox.group_id)
+    .bind(&sandbox.group_ip)
+    .bind(&sandbox.name)
+    .bind(&sandbox.config_file)
     .fetch_optional(pool)
     .await?;
 
@@ -146,19 +142,22 @@ pub(crate) async fn upsert_sandbox(
             r#"
             INSERT INTO sandboxes (
                 name, config_file, config_last_modified,
-                status, supervisor_pid, microvm_pid, rootfs_paths
+                status, supervisor_pid, microvm_pid, rootfs_paths,
+                group_id, group_ip
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
             "#,
         )
-        .bind(name)
-        .bind(config_file)
-        .bind(config_last_modified.to_rfc3339())
-        .bind(status)
-        .bind(supervisor_pid)
-        .bind(microvm_pid)
-        .bind(rootfs_paths)
+        .bind(&sandbox.name)
+        .bind(&sandbox.config_file)
+        .bind(sandbox.config_last_modified.to_rfc3339())
+        .bind(&sandbox.status)
+        .bind(sandbox.supervisor_pid)
+        .bind(sandbox.microvm_pid)
+        .bind(&sandbox.rootfs_paths)
+        .bind(sandbox.group_id)
+        .bind(&sandbox.group_ip)
         .fetch_one(pool)
         .await?;
 
@@ -170,10 +169,12 @@ pub(crate) async fn get_sandbox(
     pool: &Pool<Sqlite>,
     name: &str,
     config_file: &str,
-) -> MonocoreResult<Option<(i64, u32, u32, String, DateTime<Utc>, String)>> {
+) -> MonocoreResult<Option<Sandbox>> {
     let record = sqlx::query(
         r#"
-        SELECT id, supervisor_pid, microvm_pid, rootfs_paths, config_last_modified, status
+        SELECT name, config_file, config_last_modified, status,
+               supervisor_pid, microvm_pid, rootfs_paths,
+               group_id, group_ip
         FROM sandboxes
         WHERE name = ? AND config_file = ?
         "#,
@@ -183,17 +184,19 @@ pub(crate) async fn get_sandbox(
     .fetch_optional(pool)
     .await?;
 
-    Ok(record.map(|row| {
-        (
-            row.get::<i64, _>("id"),
-            row.get::<u32, _>("supervisor_pid"),
-            row.get::<u32, _>("microvm_pid"),
-            row.get::<String, _>("rootfs_paths"),
-            row.get::<String, _>("config_last_modified")
-                .parse::<DateTime<Utc>>()
-                .unwrap(),
-            row.get::<String, _>("status"),
-        )
+    Ok(record.map(|row| Sandbox {
+        name: row.get("name"),
+        config_file: row.get("config_file"),
+        config_last_modified: row
+            .get::<String, _>("config_last_modified")
+            .parse::<DateTime<Utc>>()
+            .unwrap(),
+        status: row.get("status"),
+        supervisor_pid: row.get("supervisor_pid"),
+        microvm_pid: row.get("microvm_pid"),
+        rootfs_paths: row.get("rootfs_paths"),
+        group_id: row.get("group_id"),
+        group_ip: row.get("group_ip"),
     }))
 }
 
@@ -225,10 +228,12 @@ pub(crate) async fn update_sandbox_status(
 pub(crate) async fn get_running_config_sandboxes(
     pool: &Pool<Sqlite>,
     config_file: &str,
-) -> MonocoreResult<Vec<(i64, String, u32, u32, String, String)>> {
+) -> MonocoreResult<Vec<Sandbox>> {
     let records = sqlx::query(
         r#"
-        SELECT id, name, supervisor_pid, microvm_pid, rootfs_paths, status
+        SELECT name, config_file, config_last_modified, status,
+               supervisor_pid, microvm_pid, rootfs_paths,
+               group_id, group_ip
         FROM sandboxes
         WHERE config_file = ? AND status = ?
         ORDER BY created_at DESC
@@ -241,15 +246,19 @@ pub(crate) async fn get_running_config_sandboxes(
 
     Ok(records
         .into_iter()
-        .map(|row| {
-            (
-                row.get::<i64, _>("id"),
-                row.get::<String, _>("name"),
-                row.get::<i64, _>("supervisor_pid") as u32,
-                row.get::<i64, _>("microvm_pid") as u32,
-                row.get::<String, _>("rootfs_paths"),
-                row.get::<String, _>("status"),
-            )
+        .map(|row| Sandbox {
+            name: row.get("name"),
+            config_file: row.get("config_file"),
+            config_last_modified: row
+                .get::<String, _>("config_last_modified")
+                .parse::<DateTime<Utc>>()
+                .unwrap(),
+            status: row.get("status"),
+            supervisor_pid: row.get("supervisor_pid"),
+            microvm_pid: row.get("microvm_pid"),
+            rootfs_paths: row.get("rootfs_paths"),
+            group_id: row.get("group_id"),
+            group_ip: row.get("group_ip"),
         })
         .collect())
 }

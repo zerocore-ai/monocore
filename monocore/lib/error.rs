@@ -275,7 +275,7 @@ pub enum MonocoreError {
     CidError(#[from] ipld::cid::Error),
 
     /// An error that occurred when a sandbox was not found in the configuration
-    #[error("sandbox not found in configuration: '{0}' at '{1}'")]
+    #[error("cannot find sandbox: '{0}' at '{1}'")]
     SandboxNotFoundInConfig(String, PathBuf),
 
     /// An error that occurs when an invalid log level is used.

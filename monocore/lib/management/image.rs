@@ -231,6 +231,7 @@ async fn check_image_layers(
             // Image exists, check if all layers are present
             match db::get_image_layers(pool, &image.to_string()).await {
                 Ok(layers) => {
+                    let mut found_layers = 0;
                     for (digest, _, _) in layers {
                         // Check if layer exists in the layers directory
                         let layer_path =
@@ -239,7 +240,16 @@ async fn check_image_layers(
                             tracing::warn!("layer {} not found in layers directory", digest);
                             return Ok(false);
                         }
+
+                        tracing::info!("layer {} found in layers directory", digest);
+                        found_layers += 1;
                     }
+
+                    if found_layers < 1 {
+                        tracing::warn!("no layers found for image {}", image);
+                        return Ok(false);
+                    }
+
                     Ok(true)
                 }
                 Err(e) => {

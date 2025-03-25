@@ -16,9 +16,9 @@ use tokio::{fs, process::Command};
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
-    config,
     config::{
-        EnvPair, Monocore, PathPair, PortPair, ReferenceOrPath, Sandbox, DEFAULT_MCRUN_EXE_PATH,
+        self, EnvPair, Monocore, PathPair, PortPair, ReferenceOrPath, Sandbox,
+        DEFAULT_MCRUN_EXE_PATH, DEFAULT_SCRIPT,
     },
     management::{db, image, menv, rootfs},
     oci::Reference,
@@ -54,6 +54,7 @@ const TEMPORARY_SANDBOX_NAME: &str = "tmp";
 /// * `config_file` - Optional path to the Monocore config file. If None, uses default filename
 /// * `args` - Additional arguments to pass to the sandbox script
 /// * `detach` - Whether to run the sandbox in the background
+/// * `exec` - Optional command to execute within the sandbox. Overrides `script` if provided.
 ///
 /// ## Returns
 ///
@@ -84,12 +85,18 @@ const TEMPORARY_SANDBOX_NAME: &str = "tmp";
 /// ```
 pub async fn run(
     sandbox_name: &str,
-    script_name: &str,
+    script_name: Option<&str>,
     project_dir: Option<PathBuf>,
     config_file: Option<&str>,
     args: Vec<String>,
     detach: bool,
+    exec: Option<&str>,
 ) -> MonocoreResult<()> {
+    let script_name = match script_name {
+        Some(script_name) => script_name,
+        None => DEFAULT_SCRIPT,
+    };
+
     // Load the configuration
     let (config, canonical_project_dir, config_file) =
         config::load_config(project_dir, config_file).await?;
@@ -147,11 +154,14 @@ pub async fn run(
     let log_dir = menv_path.join(LOG_SUBDIR);
     fs::create_dir_all(&log_dir).await?;
 
-    // Get the exec path
-    let exec_path = format!("/{}/{}", SANDBOX_SCRIPT_DIR, script_name);
+    // Get the exec path. If exec is provided, use it as the exec path.
+    // Otherwise, use the script name.
+    let exec_path = match exec {
+        Some(exec) => exec.to_string(),
+        None => format!("/{}/{}", SANDBOX_SCRIPT_DIR, script_name),
+    };
 
     tracing::info!("starting sandbox supervisor...");
-
     tracing::debug!("rootfs: {:?}", rootfs);
     tracing::debug!("exec_path: {}", exec_path);
 
@@ -333,13 +343,14 @@ pub async fn run(
 /// ```
 pub async fn run_temp(
     image: &Reference,
-    script: &str,
+    script: Option<&str>,
     cpus: Option<u8>,
     ram: Option<u32>,
     volumes: Vec<String>,
     ports: Vec<String>,
     envs: Vec<String>,
     workdir: Option<Utf8UnixPathBuf>,
+    exec: Option<&str>,
 ) -> MonocoreResult<()> {
     // Create a temporary directory without losing the TempDir guard for automatic cleanup
     let temp_dir = tempfile::tempdir()?;
@@ -399,10 +410,11 @@ pub async fn run_temp(
     run(
         TEMPORARY_SANDBOX_NAME,
         script,
-        Some(temp_dir_path.clone()),
+        Some(temp_dir_path),
         None,
         vec![],
         false,
+        exec,
     )
     .await?;
 
@@ -475,6 +487,11 @@ async fn setup_image_rootfs(
         ));
     }
 
+    // Create the top root path
+    let top_rw_path = menv_path.join(RW_SUBDIR).join(&namespaced_name);
+    fs::create_dir_all(&top_rw_path).await?;
+    tracing::info!("top_rw_path: {}", top_rw_path.display());
+
     // Check if we need to patch scripts
     let should_patch_scripts = has_sandbox_config_changed(
         sandbox_pool,
@@ -487,15 +504,17 @@ async fn setup_image_rootfs(
     // Only patch scripts if sandbox doesn't exist or config has changed
     if should_patch_scripts {
         tracing::info!("patching sandbox scripts - config has changed");
-        rootfs::patch_with_sandbox_scripts(&script_dir, scripts, sandbox_config.get_shell())?;
+        // If `/.sandbox_scripts` exists at the top layer, delete it
+        let rw_scripts_dir = top_rw_path.join(SANDBOX_SCRIPT_DIR);
+        if rw_scripts_dir.exists() {
+            fs::remove_dir_all(&rw_scripts_dir).await?;
+        }
+
+        rootfs::patch_with_sandbox_scripts(&script_dir, scripts, sandbox_config.get_shell())
+            .await?;
     } else {
         tracing::info!("skipping sandbox scripts patch - config unchanged");
     }
-
-    // Create the top root path
-    let top_rw_path = menv_path.join(RW_SUBDIR).join(&namespaced_name);
-    fs::create_dir_all(&top_rw_path).await?;
-    tracing::info!("top_rw_path: {}", top_rw_path.display());
 
     // Add the scripts and rootfs directories to the layer paths
     layer_paths.push(patch_dir);
@@ -537,7 +556,8 @@ async fn setup_native_rootfs(
     // Only patch scripts if sandbox doesn't exist or config has changed
     if should_patch_scripts {
         tracing::info!("patching sandbox scripts - config has changed");
-        rootfs::patch_with_sandbox_scripts(&scripts_dir, scripts, sandbox_config.get_shell())?;
+        rootfs::patch_with_sandbox_scripts(&scripts_dir, scripts, sandbox_config.get_shell())
+            .await?;
     } else {
         tracing::info!("skipping sandbox scripts patch - config unchanged");
     }
@@ -557,9 +577,9 @@ async fn has_sandbox_config_changed(
     // Check if sandbox exists and config hasn't changed
     let sandbox = db::get_sandbox(sandbox_pool, sandbox_name, config_file).await?;
     Ok(match sandbox {
-        Some((_, _, _, _, stored_last_modified, _)) => {
+        Some(sandbox) => {
             // Compare timestamps to see if config has changed
-            stored_last_modified != *config_last_modified
+            sandbox.config_last_modified != *config_last_modified
         }
         None => true, // No existing sandbox, need to patch
     })
