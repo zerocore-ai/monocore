@@ -4,23 +4,28 @@
 //! environments for running applications. It handles sandbox creation, configuration,
 //! and execution based on the Monocore configuration file.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
+use chrono::{DateTime, Utc};
+use sqlx::{Pool, Sqlite};
 use tempfile;
 use tokio::{fs, process::Command};
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
+    config,
     config::{
-        EnvPair, Monocore, PathPair, PathSegment, PortPair, ReferenceOrPath, Sandbox,
-        DEFAULT_MCRUN_EXE_PATH, DEFAULT_MONOCORE_CONFIG_FILENAME,
+        EnvPair, Monocore, PathPair, PortPair, ReferenceOrPath, Sandbox, DEFAULT_MCRUN_EXE_PATH,
     },
     management::{db, image, menv, rootfs},
     oci::Reference,
     utils::{
         env, EXTRACTED_LAYER_SUFFIX, LAYERS_SUBDIR, LOG_SUBDIR, MCRUN_EXE_ENV_VAR,
-        MONOCORE_ENV_DIR, OCI_DB_FILENAME, PATCH_SUBDIR, ROOTFS_SUBDIR, SANDBOX_DB_FILENAME,
-        SANDBOX_SCRIPT_DIR,
+        MONOCORE_CONFIG_FILENAME, MONOCORE_ENV_DIR, OCI_DB_FILENAME, PATCH_SUBDIR, RW_SUBDIR,
+        SANDBOX_DB_FILENAME, SANDBOX_SCRIPT_DIR, SHELL_SCRIPT_NAME,
     },
     vm::Rootfs,
     MonocoreError, MonocoreResult,
@@ -46,8 +51,9 @@ const TEMPORARY_SANDBOX_NAME: &str = "tmp";
 /// * `sandbox` - The name of the sandbox to run as defined in the Monocore config file
 /// * `script` - The name of the script to execute within the sandbox (e.g., "start", "shell")
 /// * `project_dir` - Optional path to the project directory. If None, defaults to current directory
-/// * `config_path` - Optional path to the Monocore config file. If None, uses default filename
+/// * `config_file` - Optional path to the Monocore config file. If None, uses default filename
 /// * `args` - Additional arguments to pass to the sandbox script
+/// * `detach` - Whether to run the sandbox in the background
 ///
 /// ## Returns
 ///
@@ -82,50 +88,43 @@ pub async fn run(
     project_dir: Option<PathBuf>,
     config_file: Option<&str>,
     args: Vec<String>,
+    detach: bool,
 ) -> MonocoreResult<()> {
-    // Get the target path, defaulting to current directory if none specified
-    let project_dir = project_dir.unwrap_or_else(|| PathBuf::from("."));
-    let canonical_project_dir = fs::canonicalize(project_dir).await?;
+    // Load the configuration
+    let (config, canonical_project_dir, config_file) =
+        config::load_config(project_dir, config_file).await?;
 
-    // Validate the config file path
-    let config_file = config_file.unwrap_or_else(|| DEFAULT_MONOCORE_CONFIG_FILENAME);
-    let _ = PathSegment::try_from(config_file)?;
-    let full_config_path = canonical_project_dir.join(config_file);
-
-    tracing::debug!("full_config_path: {}", full_config_path.display());
-
-    // Check if config file exists
-    if !full_config_path.exists() {
-        return Err(MonocoreError::MonocoreConfigNotFound(
-            full_config_path.to_string_lossy().to_string(),
-        ));
-    }
-
-    // Read and parse the monocore.yaml config file
-    let config_contents = fs::read_to_string(&full_config_path).await?;
-    let config: Monocore = serde_yaml::from_str(&config_contents)?;
-
-    tracing::debug!("config: {:?}", config);
+    // Ensure the .menv files exist
+    let menv_path = canonical_project_dir.join(MONOCORE_ENV_DIR);
+    menv::ensure_menv_files(&menv_path).await?;
 
     // Get the sandbox config
     let Some(sandbox_config) = config.get_sandbox(sandbox_name) else {
         return Err(MonocoreError::SandboxNotFoundInConfig(
             sandbox_name.to_string(),
-            full_config_path,
+            canonical_project_dir.join(&config_file),
         ));
     };
 
     tracing::debug!("sandbox_config: {:?}", sandbox_config);
 
-    // Ensure the .menv files exist
-    menv::ensure_menv_files(&canonical_project_dir).await?;
-    let menv_path = canonical_project_dir.join(MONOCORE_ENV_DIR);
+    // Sandbox database path
+    let sandbox_db_path = menv_path.join(SANDBOX_DB_FILENAME);
+
+    // Get sandbox database connection pool
+    let sandbox_pool = db::get_or_create_pool(&sandbox_db_path, &db::SANDBOX_DB_MIGRATOR).await?;
+
+    // Get the config last modified timestamp
+    let config_last_modified: DateTime<Utc> = fs::metadata(&config_file).await?.modified()?.into();
 
     let rootfs = match sandbox_config.get_image() {
         ReferenceOrPath::Path(root_path) => {
             setup_native_rootfs(
                 &canonical_project_dir.join(root_path),
                 sandbox_config,
+                &config_file,
+                &config_last_modified,
+                &sandbox_pool,
                 script_name,
             )
             .await?
@@ -136,6 +135,8 @@ pub async fn run(
                 sandbox_config,
                 &menv_path,
                 &config_file,
+                &config_last_modified,
+                &sandbox_pool,
                 script_name,
             )
             .await?
@@ -145,9 +146,6 @@ pub async fn run(
     // Log directory
     let log_dir = menv_path.join(LOG_SUBDIR);
     fs::create_dir_all(&log_dir).await?;
-
-    // Sandbox database path
-    let sandbox_db_path = menv_path.join(SANDBOX_DB_FILENAME);
 
     // Get the exec path
     let exec_path = format!("/{}/{}", SANDBOX_SCRIPT_DIR, script_name);
@@ -168,12 +166,13 @@ pub async fn run(
         .arg("--sandbox-name")
         .arg(sandbox_name)
         .arg("--config-file")
-        .arg(config_file)
+        .arg(&config_file)
+        .arg("--config-last-modified")
+        .arg(&config_last_modified.to_rfc3339())
         .arg("--sandbox-db-path")
         .arg(&sandbox_db_path)
         .arg("--exec-path")
-        .arg(&exec_path)
-        .arg("--forward-output");
+        .arg(&exec_path);
 
     if let Some(cpus) = sandbox_config.get_cpus() {
         command.arg("--num-vcpus").arg(cpus.to_string());
@@ -213,12 +212,52 @@ pub async fn run(
         }
     }
 
+    // In detached mode, ignore the i/o of the supervisor process.
+    if detach {
+        // Safety:
+        // We call `libc::setsid()` to detach the child process from the parent's session and controlling terminal.
+        //
+        // This call is safe in our context because:
+        // - It only creates a new session and process group for the child, which is exactly what we intend.
+        // - We are not modifying any shared mutable state.
+        // - The call has no side-effects beyond detaching the process.
+        //
+        // ASCII diagram illustrating the detachment:
+        //
+        //      [ Main Process ]
+        //             │
+        //             ├── spawns ──► [ Supervisor ]
+        //                                 │
+        //                                 └─ calls setsid() ─► [ New Session & Process Group ]
+        //                                               (Detached)
+        //
+        // This ensures that the supervisor runs independently, even if the orchestrator exits.
+        unsafe {
+            command.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+
+        // Redirect the i/o to /dev/null
+        command.stdout(Stdio::null());
+        command.stderr(Stdio::null());
+        command.stdin(Stdio::null());
+    } else {
+        command.arg("--forward-output");
+    }
+
     let mut child = command.spawn()?;
 
     tracing::info!(
         "started supervisor process with PID: {}",
         child.id().unwrap_or(0)
     );
+
+    // If in detached mode, don't wait for the child process to complete
+    if detach {
+        return Ok(());
+    }
 
     // Wait for the child process to complete
     let status = child.wait().await?;
@@ -353,7 +392,7 @@ pub async fn run_temp(
         .build_unchecked();
 
     // Write the config to the temporary directory
-    let config_path = temp_dir_path.join(DEFAULT_MONOCORE_CONFIG_FILENAME);
+    let config_path = temp_dir_path.join(MONOCORE_CONFIG_FILENAME);
     tokio::fs::write(&config_path, serde_yaml::to_string(&config)?).await?;
 
     // Run the sandbox with the temporary configuration
@@ -363,6 +402,7 @@ pub async fn run_temp(
         Some(temp_dir_path.clone()),
         None,
         vec![],
+        false,
     )
     .await?;
 
@@ -382,6 +422,8 @@ async fn setup_image_rootfs(
     sandbox_config: &Sandbox,
     menv_path: &Path,
     config_file: &str,
+    config_last_modified: &DateTime<Utc>,
+    sandbox_pool: &Pool<Sqlite>,
     script_name: &str,
 ) -> MonocoreResult<Rootfs> {
     // Pull the image from the registry
@@ -426,24 +468,38 @@ async fn setup_image_rootfs(
 
     // Validate script exists
     let scripts = sandbox_config.get_full_scripts();
-    if !scripts.contains_key(script_name) {
+    if script_name != SHELL_SCRIPT_NAME && !scripts.contains_key(script_name) {
         return Err(MonocoreError::ScriptNotFoundInSandbox(
             script_name.to_string(),
             sandbox_config.get_name().to_string(),
         ));
     }
 
-    // Clear the patch directory and add the scripts
-    rootfs::patch_with_sandbox_scripts(&script_dir, scripts, sandbox_config.get_shell())?;
+    // Check if we need to patch scripts
+    let should_patch_scripts = has_sandbox_config_changed(
+        sandbox_pool,
+        sandbox_config.get_name(),
+        config_file,
+        config_last_modified,
+    )
+    .await?;
+
+    // Only patch scripts if sandbox doesn't exist or config has changed
+    if should_patch_scripts {
+        tracing::info!("patching sandbox scripts - config has changed");
+        rootfs::patch_with_sandbox_scripts(&script_dir, scripts, sandbox_config.get_shell())?;
+    } else {
+        tracing::info!("skipping sandbox scripts patch - config unchanged");
+    }
 
     // Create the top root path
-    let top_root_path = menv_path.join(ROOTFS_SUBDIR).join(&namespaced_name);
-    fs::create_dir_all(&top_root_path).await?;
-    tracing::info!("top_root_path: {}", top_root_path.display());
+    let top_rw_path = menv_path.join(RW_SUBDIR).join(&namespaced_name);
+    fs::create_dir_all(&top_rw_path).await?;
+    tracing::info!("top_rw_path: {}", top_rw_path.display());
 
     // Add the scripts and rootfs directories to the layer paths
     layer_paths.push(patch_dir);
-    layer_paths.push(top_root_path);
+    layer_paths.push(top_rw_path);
 
     Ok(Rootfs::Overlayfs(layer_paths))
 }
@@ -451,6 +507,9 @@ async fn setup_image_rootfs(
 async fn setup_native_rootfs(
     root_path: &Path,
     sandbox_config: &Sandbox,
+    config_file: &str,
+    config_last_modified: &DateTime<Utc>,
+    sandbox_pool: &Pool<Sqlite>,
     script_name: &str,
 ) -> MonocoreResult<Rootfs> {
     // Create the scripts directory
@@ -459,15 +518,49 @@ async fn setup_native_rootfs(
 
     // Validate script exists
     let scripts = sandbox_config.get_full_scripts();
-    if !scripts.contains_key(script_name) {
+    if script_name != SHELL_SCRIPT_NAME && !scripts.contains_key(script_name) {
         return Err(MonocoreError::ScriptNotFoundInSandbox(
             script_name.to_string(),
             sandbox_config.get_name().to_string(),
         ));
     }
 
-    // Clear the scripts directory and add the scripts
-    rootfs::patch_with_sandbox_scripts(&scripts_dir, scripts, sandbox_config.get_shell())?;
+    // Check if we need to patch scripts
+    let should_patch_scripts = has_sandbox_config_changed(
+        sandbox_pool,
+        sandbox_config.get_name(),
+        config_file,
+        config_last_modified,
+    )
+    .await?;
+
+    // Only patch scripts if sandbox doesn't exist or config has changed
+    if should_patch_scripts {
+        tracing::info!("patching sandbox scripts - config has changed");
+        rootfs::patch_with_sandbox_scripts(&scripts_dir, scripts, sandbox_config.get_shell())?;
+    } else {
+        tracing::info!("skipping sandbox scripts patch - config unchanged");
+    }
 
     Ok(Rootfs::Native(root_path.to_path_buf()))
+}
+
+/// Checks if a sandbox's configuration has changed by comparing the current config's last modified
+/// timestamp with the stored timestamp in the database. Returns true if the sandbox doesn't exist
+/// or if the config has been modified since the last run.
+async fn has_sandbox_config_changed(
+    sandbox_pool: &Pool<Sqlite>,
+    sandbox_name: &str,
+    config_file: &str,
+    config_last_modified: &DateTime<Utc>,
+) -> MonocoreResult<bool> {
+    // Check if sandbox exists and config hasn't changed
+    let sandbox = db::get_sandbox(sandbox_pool, sandbox_name, config_file).await?;
+    Ok(match sandbox {
+        Some((_, _, _, _, stored_last_modified, _)) => {
+            // Compare timestamps to see if config has changed
+            stored_last_modified != *config_last_modified
+        }
+        None => true, // No existing sandbox, need to patch
+    })
 }

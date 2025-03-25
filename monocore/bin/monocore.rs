@@ -2,7 +2,7 @@ use clap::{CommandFactory, Parser};
 use monocore::{
     cli::{MonocoreArgs, MonocoreSubcommand},
     config::DEFAULT_SCRIPT,
-    management::{image, menv, sandbox},
+    management::{image, menv, orchestra, sandbox},
     oci::Reference,
     MonocoreError, MonocoreResult,
 };
@@ -56,6 +56,7 @@ async fn main() -> MonocoreResult<()> {
             args,
             path,
             config,
+            detach,
         }) => {
             let sandbox_script = determine_name_from_positional_or_flag_args(
                 sandbox_script,
@@ -64,7 +65,7 @@ async fn main() -> MonocoreResult<()> {
             )?;
             let (sandbox, script) = parse_name_and_script(&sandbox_script);
 
-            sandbox::run(&sandbox, script, path, config.as_deref(), args).await?;
+            sandbox::run(&sandbox, script, path, config.as_deref(), args, detach).await?;
         }
         Some(MonocoreSubcommand::Start {
             sandbox,
@@ -72,10 +73,19 @@ async fn main() -> MonocoreResult<()> {
             args,
             path,
             config,
+            detach,
         }) => {
             let sandbox =
                 determine_name_from_positional_or_flag_args(sandbox, sandbox_with_flag, "sandbox")?;
-            sandbox::run(&sandbox, START_SCRIPT, path, config.as_deref(), args).await?;
+            sandbox::run(
+                &sandbox,
+                START_SCRIPT,
+                path,
+                config.as_deref(),
+                args,
+                detach,
+            )
+            .await?;
         }
         Some(MonocoreSubcommand::Shell {
             sandbox,
@@ -83,10 +93,19 @@ async fn main() -> MonocoreResult<()> {
             args,
             path,
             config,
+            detach,
         }) => {
             let sandbox =
                 determine_name_from_positional_or_flag_args(sandbox, sandbox_with_flag, "sandbox")?;
-            sandbox::run(&sandbox, SHELL_SCRIPT, path, config.as_deref(), args).await?;
+            sandbox::run(
+                &sandbox,
+                SHELL_SCRIPT,
+                path,
+                config.as_deref(),
+                args,
+                detach,
+            )
+            .await?;
         }
         Some(MonocoreSubcommand::Tmp {
             image_script,
@@ -106,6 +125,9 @@ async fn main() -> MonocoreResult<()> {
             let (image, script) = parse_name_and_script(&image_script);
             let image = image.parse::<Reference>()?;
             sandbox::run_temp(&image, script, cpus, ram, volumes, ports, envs, workdir).await?;
+        }
+        Some(MonocoreSubcommand::Apply { path, config }) => {
+            orchestra::apply(path, config.as_deref()).await?;
         }
         Some(_) => (), // TODO: implement other subcommands
         None => {

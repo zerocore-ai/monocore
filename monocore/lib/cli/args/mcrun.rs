@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
 
 use crate::cli::styles;
@@ -83,6 +84,10 @@ pub enum McrunSubcommand {
         /// Path to the sandbox config file
         #[arg(long)]
         config_file: String,
+
+        /// Last modified timestamp of the sandbox config file
+        #[arg(long)]
+        config_last_modified: DateTime<Utc>,
 
         /// Log level
         #[arg(long)]

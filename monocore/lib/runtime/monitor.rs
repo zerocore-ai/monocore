@@ -2,7 +2,6 @@ use std::{
     io::{Read, Write},
     os::fd::BorrowedFd,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use async_trait::async_trait;
@@ -19,6 +18,16 @@ use tokio::{
 use crate::{management::db, utils::MCRUN_LOG_PREFIX, vm::Rootfs, MonocoreResult};
 
 //--------------------------------------------------------------------------------------------------
+// Constants
+//--------------------------------------------------------------------------------------------------
+
+/// The status of a sandbox when it is running
+pub const SANDBOX_STATUS_RUNNING: &str = "RUNNING";
+
+/// The status of a sandbox when it is stopped
+pub const SANDBOX_STATUS_STOPPED: &str = "STOPPED";
+
+//--------------------------------------------------------------------------------------------------
 // Types
 //--------------------------------------------------------------------------------------------------
 
@@ -32,6 +41,9 @@ pub struct MicroVmMonitor {
 
     /// The config file for the sandbox
     config_file: String,
+
+    /// The last modified timestamp of the config file
+    config_last_modified: DateTime<Utc>,
 
     /// The supervisor PID
     supervisor_pid: u32,
@@ -66,6 +78,7 @@ impl MicroVmMonitor {
         sandbox_db_path: impl AsRef<Path>,
         sandbox_name: String,
         config_file: String,
+        config_last_modified: DateTime<Utc>,
         log_dir: impl Into<PathBuf>,
         rootfs: Rootfs,
         retention_duration: Duration,
@@ -76,6 +89,7 @@ impl MicroVmMonitor {
             sandbox_db: db::get_pool(sandbox_db_path.as_ref()).await?,
             sandbox_name,
             config_file,
+            config_last_modified,
             log_path: None,
             log_dir: log_dir.into(),
             rootfs,
@@ -83,21 +97,6 @@ impl MicroVmMonitor {
             original_term: None,
             forward_output,
         })
-    }
-
-    /// Generates a unique log name using name, process ID, and current timestamp.
-    ///
-    /// The ID format is: "mcrun-{name}-{timestamp}-{child_pid}.log"
-    fn generate_log_name(&self, child_pid: u32) -> String {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        format!(
-            "{}-{}-{}-{}-{}.{}",
-            MCRUN_LOG_PREFIX, self.config_file, self.sandbox_name, timestamp, child_pid, LOG_SUFFIX
-        )
     }
 
     fn restore_terminal_settings(&mut self) {
@@ -120,7 +119,7 @@ impl MicroVmMonitor {
 #[async_trait]
 impl ProcessMonitor for MicroVmMonitor {
     async fn start(&mut self, pid: u32, child_io: ChildIo) -> MonoutilsResult<()> {
-        let log_name = self.generate_log_name(pid);
+        let log_name = format!("{}-{}.{}", self.config_file, self.sandbox_name, LOG_SUFFIX);
         let log_path = self.log_dir.join(&log_name);
 
         let microvm_log =
@@ -143,13 +142,14 @@ impl ProcessMonitor for MicroVmMonitor {
         };
 
         // Insert sandbox entry into database
-        db::save_sandbox(
+        db::upsert_sandbox(
             &self.sandbox_db,
             &self.sandbox_name,
             &self.config_file,
+            &self.config_last_modified,
+            SANDBOX_STATUS_RUNNING,
             self.supervisor_pid,
             microvm_pid,
-            "STARTING",
             &rootfs_paths,
         )
         .await
@@ -160,14 +160,13 @@ impl ProcessMonitor for MicroVmMonitor {
                 stdin,
                 stdout,
                 stderr,
-                ..
             } => {
                 // Handle stdout logging
                 if let Some(mut stdout) = stdout {
                     let log = microvm_log.clone();
                     let forward_output = self.forward_output;
                     tokio::spawn(async move {
-                        let mut buf = [0u8; 1024];
+                        let mut buf = [0u8; 8192]; // NOTE(appcypher): Using 8192 as buffer size because ChatGPT recommended it lol
                         while let Ok(n) = stdout.read(&mut buf).await {
                             if n == 0 {
                                 break;
@@ -198,7 +197,7 @@ impl ProcessMonitor for MicroVmMonitor {
                     let log = microvm_log.clone();
                     let forward_output = self.forward_output;
                     tokio::spawn(async move {
-                        let mut buf = [0u8; 1024];
+                        let mut buf = [0u8; 8192]; // NOTE(appcypher): Using 8192 as buffer size because ChatGPT recommended it lol
                         while let Ok(n) = stderr.read(&mut buf).await {
                             if n == 0 {
                                 break;
@@ -311,15 +310,13 @@ impl ProcessMonitor for MicroVmMonitor {
         // Restore terminal settings if they were modified
         self.restore_terminal_settings();
 
-        // Remove sandbox entry from database
-        sqlx::query(
-            r#"
-            DELETE FROM sandboxes
-            WHERE supervisor_pid = ?
-            "#,
+        // Update sandbox status to stopped
+        db::update_sandbox_status(
+            &self.sandbox_db,
+            &self.sandbox_name,
+            &self.config_file,
+            SANDBOX_STATUS_STOPPED,
         )
-        .bind(self.supervisor_pid)
-        .execute(&self.sandbox_db)
         .await
         .map_err(MonoutilsError::custom)?;
 

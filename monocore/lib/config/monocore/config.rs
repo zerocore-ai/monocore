@@ -10,7 +10,7 @@ use typed_builder::TypedBuilder;
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
-    config::{EnvPair, PathPair, PortPair, ReferenceOrPath, DEFAULT_SHELL},
+    config::{EnvPair, PathPair, PortPair, ReferenceOrPath, DEFAULT_SCRIPT, DEFAULT_SHELL},
     MonocoreResult,
 };
 
@@ -532,7 +532,7 @@ impl Sandbox {
 
     /// Returns the start script for the sandbox.
     pub fn get_start_script(&self) -> &str {
-        if let Some(script) = self.scripts.get("start") {
+        if let Some(script) = self.scripts.get(DEFAULT_SCRIPT) {
             script
         } else {
             &self.shell
@@ -541,11 +541,11 @@ impl Sandbox {
 
     /// Returns the full scripts for the sandbox.
     pub fn get_full_scripts(&self) -> Cow<HashMap<String, String>> {
-        if self.scripts.contains_key("start") {
+        if self.scripts.contains_key(DEFAULT_SCRIPT) {
             Cow::Borrowed(&self.scripts)
         } else {
             let mut scripts = self.scripts.clone();
-            scripts.insert("start".to_string(), self.shell.clone());
+            scripts.insert(DEFAULT_SCRIPT.to_string(), self.shell.clone());
             Cow::Owned(scripts)
         }
     }

@@ -6,8 +6,8 @@
 //! databases, and log directories.
 
 use crate::{
-    config::{DEFAULT_CONFIG, DEFAULT_MONOCORE_CONFIG_FILENAME},
-    utils::ROOTFS_SUBDIR,
+    config::DEFAULT_CONFIG,
+    utils::{MONOCORE_CONFIG_FILENAME, ORCHESTRA_LOCK_FILE, RW_SUBDIR},
     MonocoreResult,
 };
 use std::path::{Path, PathBuf};
@@ -42,15 +42,17 @@ use super::db;
 pub async fn initialize(project_dir: Option<PathBuf>) -> MonocoreResult<()> {
     // Get the target path, defaulting to current directory if none specified
     let project_dir = project_dir.unwrap_or_else(|| PathBuf::from("."));
+    let menv_path = project_dir.join(MONOCORE_ENV_DIR);
+    fs::create_dir_all(&menv_path).await?;
 
     // Create the required files for the monocore environment
-    ensure_menv_files(&project_dir).await?;
+    ensure_menv_files(&menv_path).await?;
 
     // Create default config file if it doesn't exist
     create_default_config(&project_dir).await?;
     tracing::info!(
         "config file at {}",
-        project_dir.join(DEFAULT_MONOCORE_CONFIG_FILENAME).display()
+        project_dir.join(MONOCORE_CONFIG_FILENAME).display()
     );
 
     // Update .gitignore to include .menv directory
@@ -64,19 +66,19 @@ pub async fn initialize(project_dir: Option<PathBuf>) -> MonocoreResult<()> {
 //--------------------------------------------------------------------------------------------------
 
 /// Create the required directories and files for a monocore environment
-pub(crate) async fn ensure_menv_files(project_dir: &Path) -> MonocoreResult<()> {
-    // Get the .menv directory path
-    let menv_path = project_dir.join(MONOCORE_ENV_DIR);
-    fs::create_dir_all(&menv_path).await?;
-
+pub(crate) async fn ensure_menv_files(menv_path: &PathBuf) -> MonocoreResult<()> {
     // Create log directory if it doesn't exist
     fs::create_dir_all(menv_path.join(LOG_SUBDIR)).await?;
 
     // We'll create rootfs directory later when monofs is ready
-    fs::create_dir_all(menv_path.join(ROOTFS_SUBDIR)).await?;
+    fs::create_dir_all(menv_path.join(RW_SUBDIR)).await?;
 
     // Get the sandbox database path
     let db_path = menv_path.join(SANDBOX_DB_FILENAME);
+
+    // Create the orchestra lock file
+    let lock_path = menv_path.join(ORCHESTRA_LOCK_FILE);
+    fs::File::create(&lock_path).await?;
 
     // Initialize sandbox database
     let _ = db::initialize(&db_path, &db::SANDBOX_DB_MIGRATOR).await?;
@@ -87,7 +89,7 @@ pub(crate) async fn ensure_menv_files(project_dir: &Path) -> MonocoreResult<()> 
 
 /// Create a default monocore configuration file
 pub(crate) async fn create_default_config(project_dir: &Path) -> MonocoreResult<()> {
-    let config_path = project_dir.join(DEFAULT_MONOCORE_CONFIG_FILENAME);
+    let config_path = project_dir.join(MONOCORE_CONFIG_FILENAME);
 
     // Only create if it doesn't exist
     if !config_path.exists() {

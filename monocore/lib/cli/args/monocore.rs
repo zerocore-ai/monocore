@@ -8,7 +8,7 @@ use typed_path::Utf8UnixPathBuf;
 // Types
 //-------------------------------------------------------------------------------------------------
 
-/// monocore is a tool for managing lightweight distributed sandboxes
+/// `monocore` is a tool for managing lightweight virtual machines and images
 #[derive(Debug, Parser)]
 #[command(name = "monocore", author, styles=styles::styles())]
 pub struct MonocoreArgs {
@@ -235,6 +235,10 @@ pub enum MonocoreSubcommand {
         /// Additional arguments after `--`
         #[arg(last = true)]
         args: Vec<String>,
+
+        /// Run sandbox in the background
+        #[arg(long)]
+        detach: bool,
     },
 
     /// Start a sandbox
@@ -259,6 +263,10 @@ pub enum MonocoreSubcommand {
         /// Additional arguments
         #[arg(last = true)]
         args: Vec<String>,
+
+        /// Run sandbox in the background
+        #[arg(long)]
+        detach: bool,
     },
 
     /// Open a shell in a sandbox
@@ -283,6 +291,10 @@ pub enum MonocoreSubcommand {
         /// Additional arguments
         #[arg(last = true)]
         args: Vec<String>,
+
+        /// Run sandbox in the background
+        #[arg(long)]
+        detach: bool,
     },
 
     /// Create a temporary sandbox
@@ -367,7 +379,15 @@ pub enum MonocoreSubcommand {
 
     /// Start or stop project sandboxes based on configuration
     #[command(name = "apply")]
-    Apply,
+    Apply {
+        /// Project path
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Config path
+        #[arg(short, long)]
+        config: Option<String>,
+    },
 
     /// Start project sandboxes
     #[command(name = "up")]
@@ -492,9 +512,9 @@ pub enum MonocoreSubcommand {
         name: Option<String>,
     },
 
-    /// Start a monocore proxy server for orchestrating sandboxes
-    #[command(name = "serve")]
-    Serve {
+    /// Start a server for orchestrating sandboxes
+    #[command(name = "server")]
+    Server {
         /// Port to listen on
         #[arg(long)]
         port: Option<u16>,
