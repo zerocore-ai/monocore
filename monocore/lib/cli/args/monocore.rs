@@ -237,8 +237,12 @@ pub enum MonocoreSubcommand {
         args: Vec<String>,
 
         /// Run sandbox in the background
-        #[arg(long)]
+        #[arg(short, long)]
         detach: bool,
+
+        /// Execute a command within the sandbox
+        #[arg(short, long)]
+        exec: Option<String>,
     },
 
     /// Start a sandbox
@@ -265,7 +269,7 @@ pub enum MonocoreSubcommand {
         args: Vec<String>,
 
         /// Run sandbox in the background
-        #[arg(long)]
+        #[arg(short, long)]
         detach: bool,
     },
 
@@ -293,7 +297,7 @@ pub enum MonocoreSubcommand {
         args: Vec<String>,
 
         /// Run sandbox in the background
-        #[arg(long)]
+        #[arg(short, long)]
         detach: bool,
     },
 
@@ -336,6 +340,10 @@ pub enum MonocoreSubcommand {
         /// Working directory
         #[arg(long)]
         workdir: Option<Utf8UnixPathBuf>,
+
+        /// Execute a command within the sandbox
+        #[arg(short, long)]
+        exec: Option<String>,
     },
 
     /// Install a script from an image
@@ -392,13 +400,13 @@ pub enum MonocoreSubcommand {
     /// Start project sandboxes
     #[command(name = "up")]
     Up {
-        /// Target sandboxes
-        #[arg(short, long, default_value_t = true)]
-        sandbox: bool,
-
-        /// Target group
+        /// Project path
         #[arg(short, long)]
-        group: bool,
+        path: Option<PathBuf>,
+
+        /// Config path
+        #[arg(short, long)]
+        config: Option<String>,
 
         /// Names of components to start
         names: Vec<String>,
@@ -407,13 +415,13 @@ pub enum MonocoreSubcommand {
     /// Stop project sandboxes
     #[command(name = "down")]
     Down {
-        /// Target sandboxes
-        #[arg(short, long, default_value_t = true)]
-        sandbox: bool,
-
-        /// Target group
+        /// Project path
         #[arg(short, long)]
-        group: bool,
+        path: Option<PathBuf>,
+
+        /// Config path
+        #[arg(short, long)]
+        config: Option<String>,
 
         /// Names of components to stop
         names: Vec<String>,
@@ -497,20 +505,9 @@ pub enum MonocoreSubcommand {
         action: SelfAction,
     },
 
-    /// Deploy to cloud
-    #[command(name = "deploy")]
-    Deploy {
-        /// Deploy sandbox
-        #[arg(short, long)]
-        sandbox: bool,
-
-        /// Deploy group
-        #[arg(short, long)]
-        group: bool,
-
-        /// Name of component to deploy
-        name: Option<String>,
-    },
+    /// Manage remote sandboxes
+    #[command(name = "remote")]
+    Remote,
 
     /// Start a server for orchestrating sandboxes
     #[command(name = "server")]
@@ -519,14 +516,27 @@ pub enum MonocoreSubcommand {
         #[arg(long)]
         port: Option<u16>,
 
-        /// Daemon control
-        #[arg(long)]
-        daemon: Option<String>,
+        /// The subcommand to run
+        #[command(subcommand)]
+        subcommand: Option<ServerSubcommand>,
     },
 
     /// Version of monocore
     #[command(name = "version")]
     Version,
+}
+
+/// Subcommands for the server subcommand
+#[derive(Debug, Parser)]
+pub enum ServerSubcommand {
+    /// Start a remote sandbox
+    Up,
+
+    /// Stop a remote sandbox
+    Down,
+
+    /// List remote sandboxes
+    List,
 }
 
 /// Actions for the self subcommand

@@ -1,7 +1,6 @@
 use clap::{CommandFactory, Parser};
 use monocore::{
     cli::{MonocoreArgs, MonocoreSubcommand},
-    config::DEFAULT_SCRIPT,
     management::{image, menv, orchestra, sandbox},
     oci::Reference,
     MonocoreError, MonocoreResult,
@@ -57,6 +56,7 @@ async fn main() -> MonocoreResult<()> {
             path,
             config,
             detach,
+            exec,
         }) => {
             let sandbox_script = determine_name_from_positional_or_flag_args(
                 sandbox_script,
@@ -64,8 +64,22 @@ async fn main() -> MonocoreResult<()> {
                 "sandbox",
             )?;
             let (sandbox, script) = parse_name_and_script(&sandbox_script);
+            if matches!((script, &exec), (Some(_), Some(_))) {
+                return Err(MonocoreError::InvalidArgument(
+                    "Cannot specify both a script and an exec command".to_string(),
+                ));
+            }
 
-            sandbox::run(&sandbox, script, path, config.as_deref(), args, detach).await?;
+            sandbox::run(
+                &sandbox,
+                script,
+                path,
+                config.as_deref(),
+                args,
+                detach,
+                exec.as_deref(),
+            )
+            .await?;
         }
         Some(MonocoreSubcommand::Start {
             sandbox,
@@ -79,11 +93,12 @@ async fn main() -> MonocoreResult<()> {
                 determine_name_from_positional_or_flag_args(sandbox, sandbox_with_flag, "sandbox")?;
             sandbox::run(
                 &sandbox,
-                START_SCRIPT,
+                Some(START_SCRIPT),
                 path,
                 config.as_deref(),
                 args,
                 detach,
+                None,
             )
             .await?;
         }
@@ -99,11 +114,12 @@ async fn main() -> MonocoreResult<()> {
                 determine_name_from_positional_or_flag_args(sandbox, sandbox_with_flag, "sandbox")?;
             sandbox::run(
                 &sandbox,
-                SHELL_SCRIPT,
+                Some(SHELL_SCRIPT),
                 path,
                 config.as_deref(),
                 args,
                 detach,
+                None,
             )
             .await?;
         }
@@ -116,6 +132,7 @@ async fn main() -> MonocoreResult<()> {
             ports,
             envs,
             workdir,
+            exec,
         }) => {
             let image_script = determine_name_from_positional_or_flag_args(
                 image_script,
@@ -124,7 +141,25 @@ async fn main() -> MonocoreResult<()> {
             )?;
             let (image, script) = parse_name_and_script(&image_script);
             let image = image.parse::<Reference>()?;
-            sandbox::run_temp(&image, script, cpus, ram, volumes, ports, envs, workdir).await?;
+
+            if matches!((script, &exec), (Some(_), Some(_))) {
+                return Err(MonocoreError::InvalidArgument(
+                    "Cannot specify both a script and an exec command".to_string(),
+                ));
+            }
+
+            sandbox::run_temp(
+                &image,
+                script,
+                cpus,
+                ram,
+                volumes,
+                ports,
+                envs,
+                workdir,
+                exec.as_deref(),
+            )
+            .await?;
         }
         Some(MonocoreSubcommand::Apply { path, config }) => {
             orchestra::apply(path, config.as_deref()).await?;
@@ -163,10 +198,10 @@ fn determine_name_from_positional_or_flag_args(
     }
 }
 
-fn parse_name_and_script(name_and_script: &str) -> (&str, &str) {
+fn parse_name_and_script(name_and_script: &str) -> (&str, Option<&str>) {
     let (name, script) = match name_and_script.split_once(SANDBOX_SCRIPT_SEPARATOR) {
-        Some((name, script)) => (name, script),
-        None => (name_and_script, DEFAULT_SCRIPT),
+        Some((name, script)) => (name, Some(script)),
+        None => (name_and_script, None),
     };
 
     (name, script)

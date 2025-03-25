@@ -99,10 +99,8 @@ pub async fn apply(project_dir: Option<PathBuf>, config_file: Option<&str>) -> M
 
     // Get all running sandboxes from database
     let running_sandboxes = db::get_running_config_sandboxes(&pool, &config_file).await?;
-    let running_sandbox_names: Vec<String> = running_sandboxes
-        .iter()
-        .map(|(_, name, _, _, _, _)| name.clone())
-        .collect();
+    let running_sandbox_names: Vec<String> =
+        running_sandboxes.iter().map(|s| s.name.clone()).collect();
 
     // Start sandboxes that are in config but not active
     for sandbox_config in config_sandboxes {
@@ -111,21 +109,25 @@ pub async fn apply(project_dir: Option<PathBuf>, config_file: Option<&str>) -> M
             tracing::info!("Starting sandbox: {}", sandbox_config.get_name());
             sandbox::run(
                 sandbox_config.get_name(),
-                DEFAULT_SCRIPT,
+                Some(DEFAULT_SCRIPT),
                 Some(canonical_project_dir.clone()),
                 Some(&config_file),
                 vec![],
                 true,
+                None,
             )
             .await?;
         }
     }
 
     // Stop sandboxes that are active but not in config
-    for (_, name, supervisor_pid, _, _, _) in running_sandboxes {
-        if !config_sandbox_names.contains(&name) {
-            tracing::info!("Stopping sandbox: {}", name);
-            signal::kill(Pid::from_raw(supervisor_pid as i32), Signal::SIGTERM)?;
+    for sandbox in running_sandboxes {
+        if !config_sandbox_names.contains(&sandbox.name) {
+            tracing::info!("Stopping sandbox: {}", sandbox.name);
+            signal::kill(
+                Pid::from_raw(sandbox.supervisor_pid as i32),
+                Signal::SIGTERM,
+            )?;
         }
     }
 

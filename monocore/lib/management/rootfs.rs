@@ -4,7 +4,11 @@
 //! It handles the creation, extraction, and merging of filesystem layers following OCI (Open
 //! Container Initiative) specifications.
 
-use std::{borrow::Cow, collections::HashMap, fs, os::unix::fs::PermissionsExt, path::Path};
+use std::{
+    borrow::Cow, collections::HashMap, fs::Permissions, os::unix::fs::PermissionsExt, path::Path,
+};
+
+use tokio::fs;
 
 use crate::{config::PathPair, vm::VIRTIOFS_TAG_PREFIX, MonocoreResult};
 
@@ -36,27 +40,18 @@ pub const WHITEOUT_PREFIX: &str = ".wh.";
 /// * `root_path` - Path to the root of the filesystem to patch
 /// * `scripts` - HashMap containing script names and their contents
 /// * `shell_path` - Path to the shell binary within the rootfs (e.g. "/bin/sh")
-pub fn patch_with_sandbox_scripts(
+pub async fn patch_with_sandbox_scripts(
     scripts_dir: &Path,
-    scripts: Cow<HashMap<String, String>>,
+    scripts: Cow<'_, HashMap<String, String>>,
     shell_path: impl AsRef<Path>,
 ) -> MonocoreResult<()> {
-    // Clear or create the scripts directory
+    // Remove the scripts directory if it exists
     if scripts_dir.exists() {
-        // Remove all contents of the directory
-        for entry in fs::read_dir(&scripts_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() {
-                fs::remove_file(path)?;
-            } else if path.is_dir() {
-                fs::remove_dir_all(path)?;
-            }
-        }
-    } else {
-        // Create the directory if it doesn't exist
-        fs::create_dir_all(&scripts_dir)?;
+        fs::remove_dir_all(&scripts_dir).await?;
     }
+
+    // Create the directory if it doesn't exist
+    fs::create_dir_all(&scripts_dir).await?;
 
     // Get shell path as string for shebang
     let shell_path = shell_path.as_ref().to_string_lossy();
@@ -66,16 +61,16 @@ pub fn patch_with_sandbox_scripts(
 
         // Write shebang and content
         let full_content = format!("#!{}\n{}\n", shell_path, script_content);
-        fs::write(&script_path, full_content)?;
+        fs::write(&script_path, full_content).await?;
 
         // Make executable for user and group (rwxr-x---)
-        fs::set_permissions(&script_path, fs::Permissions::from_mode(0o750))?;
+        fs::set_permissions(&script_path, Permissions::from_mode(0o750)).await?;
     }
 
     // Create shell script containing just the shell path
     let shell_script_path = scripts_dir.join("shell");
-    fs::write(&shell_script_path, format!("#!{}\n", shell_path))?;
-    fs::set_permissions(&shell_script_path, fs::Permissions::from_mode(0o750))?;
+    fs::write(&shell_script_path, format!("#!{}\n", shell_path)).await?;
+    fs::set_permissions(&shell_script_path, Permissions::from_mode(0o750)).await?;
 
     Ok(())
 }
@@ -105,17 +100,20 @@ pub fn patch_with_sandbox_scripts(
 /// - Cannot create directories in the rootfs
 /// - Cannot read or write the fstab file
 /// - Cannot set permissions on the fstab file
-fn patch_with_virtiofs_mounts(root_path: &Path, mapped_dirs: &[PathPair]) -> MonocoreResult<()> {
+async fn patch_with_virtiofs_mounts(
+    root_path: &Path,
+    mapped_dirs: &[PathPair],
+) -> MonocoreResult<()> {
     let fstab_path = root_path.join("etc/fstab");
 
     // Create parent directories if they don't exist
     if let Some(parent) = fstab_path.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).await?;
     }
 
     // Read existing fstab content if it exists
     let mut fstab_content = if fstab_path.exists() {
-        fs::read_to_string(&fstab_path)?
+        fs::read_to_string(&fstab_path).await?
     } else {
         String::new()
     };
@@ -144,17 +142,17 @@ fn patch_with_virtiofs_mounts(root_path: &Path, mapped_dirs: &[PathPair]) -> Mon
         let guest_path_str = guest_path.as_str();
         let relative_path = guest_path_str.strip_prefix('/').unwrap_or(guest_path_str);
         let mount_point = root_path.join(relative_path);
-        fs::create_dir_all(mount_point)?;
+        fs::create_dir_all(mount_point).await?;
     }
 
     // Write updated fstab content
-    fs::write(&fstab_path, fstab_content)?;
+    fs::write(&fstab_path, fstab_content).await?;
 
     // Set proper permissions (644 - rw-r--r--)
-    let perms = fs::metadata(&fstab_path)?.permissions();
+    let perms = fs::metadata(&fstab_path).await?.permissions();
     let mut new_perms = perms;
     new_perms.set_mode(0o644);
-    fs::set_permissions(&fstab_path, new_perms)?;
+    fs::set_permissions(&fstab_path, new_perms).await?;
 
     Ok(())
 }
@@ -171,8 +169,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_patch_rootfs_with_virtiofs_mounts() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_patch_rootfs_with_virtiofs_mounts() -> anyhow::Result<()> {
         // Create a temporary directory to act as our rootfs
         let root_dir = TempDir::new()?;
         let root_path = root_dir.path();
@@ -184,9 +182,9 @@ mod tests {
         let host_app = host_dir.path().join("app");
 
         // Create the host directories
-        fs::create_dir_all(&host_data)?;
-        fs::create_dir_all(&host_config)?;
-        fs::create_dir_all(&host_app)?;
+        fs::create_dir_all(&host_data).await?;
+        fs::create_dir_all(&host_config).await?;
+        fs::create_dir_all(&host_app).await?;
 
         // Create test directory mappings using our temporary paths
         let mapped_dirs = vec![
@@ -196,13 +194,13 @@ mod tests {
         ];
 
         // Update fstab
-        patch_with_virtiofs_mounts(root_path, &mapped_dirs)?;
+        patch_with_virtiofs_mounts(root_path, &mapped_dirs).await?;
 
         // Verify fstab file was created with correct content
         let fstab_path = root_path.join("etc/fstab");
         assert!(fstab_path.exists());
 
-        let fstab_content = fs::read_to_string(&fstab_path)?;
+        let fstab_content = fs::read_to_string(&fstab_path).await?;
 
         // Check header
         assert!(fstab_content.contains("# /etc/fstab: static file system information"));
@@ -220,12 +218,12 @@ mod tests {
         assert!(root_path.join("app").exists());
 
         // Verify file permissions
-        let perms = fs::metadata(&fstab_path)?.permissions();
+        let perms = fs::metadata(&fstab_path).await?.permissions();
         assert_eq!(perms.mode() & 0o777, 0o644);
 
         // Test updating existing fstab
         let host_logs = host_dir.path().join("logs");
-        fs::create_dir_all(&host_logs)?;
+        fs::create_dir_all(&host_logs).await?;
 
         let new_mapped_dirs = vec![
             format!("{}:/container/data", host_data.display()).parse::<PathPair>()?, // Keep one existing
@@ -233,10 +231,10 @@ mod tests {
         ];
 
         // Update fstab again
-        patch_with_virtiofs_mounts(root_path, &new_mapped_dirs)?;
+        patch_with_virtiofs_mounts(root_path, &new_mapped_dirs).await?;
 
         // Verify updated content
-        let updated_content = fs::read_to_string(&fstab_path)?;
+        let updated_content = fs::read_to_string(&fstab_path).await?;
         assert!(updated_content.contains("virtiofs_0\t/container/data\tvirtiofs\tdefaults\t0\t0"));
         assert!(updated_content.contains("virtiofs_1\t/var/log\tvirtiofs\tdefaults\t0\t0"));
 
@@ -246,8 +244,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_patch_rootfs_with_virtiofs_mounts_permission_errors() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_patch_rootfs_with_virtiofs_mounts_permission_errors() -> anyhow::Result<()> {
         // Skip this test in CI environments
         if std::env::var("CI").is_ok() {
             println!("Skipping permission test in CI environment");
@@ -258,39 +256,42 @@ mod tests {
         let readonly_dir = TempDir::new()?;
         let readonly_path = readonly_dir.path();
         let etc_path = readonly_path.join("etc");
-        fs::create_dir_all(&etc_path)?;
+        fs::create_dir_all(&etc_path).await?;
 
         // Make /etc directory read-only to simulate permission issues
-        let mut perms = fs::metadata(&etc_path)?.permissions();
+        let mut perms = fs::metadata(&etc_path).await?.permissions();
         perms.set_mode(0o400); // read-only
-        fs::set_permissions(&etc_path, perms)?;
+        fs::set_permissions(&etc_path, perms).await?;
 
         // Verify permissions were actually set (helpful for debugging)
-        let actual_perms = fs::metadata(&etc_path)?.permissions();
+        let actual_perms = fs::metadata(&etc_path).await?.permissions();
         println!("Set /etc permissions to: {:o}", actual_perms.mode());
 
         // Try to update fstab in a read-only /etc directory
         let host_dir = TempDir::new()?;
         let host_path = host_dir.path().join("test");
-        fs::create_dir_all(&host_path)?;
+        fs::create_dir_all(&host_path).await?;
 
         let mapped_dirs =
             vec![format!("{}:/container/data", host_path.display()).parse::<PathPair>()?];
 
         // Function should detect it cannot write to /etc/fstab and return an error
-        let result = patch_with_virtiofs_mounts(readonly_path, &mapped_dirs);
+        let result = patch_with_virtiofs_mounts(readonly_path, &mapped_dirs).await;
 
         // Detailed error reporting for debugging
         if result.is_ok() {
             println!("Warning: Write succeeded despite read-only permissions");
             println!(
                 "Current /etc permissions: {:o}",
-                fs::metadata(&etc_path)?.permissions().mode()
+                fs::metadata(&etc_path).await?.permissions().mode()
             );
             if etc_path.join("fstab").exists() {
                 println!(
                     "fstab file was created with permissions: {:o}",
-                    fs::metadata(etc_path.join("fstab"))?.permissions().mode()
+                    fs::metadata(etc_path.join("fstab"))
+                        .await?
+                        .permissions()
+                        .mode()
                 );
             }
         }
@@ -299,7 +300,7 @@ mod tests {
             result.is_err(),
             "Expected error when writing fstab to read-only /etc directory. \
              Current /etc permissions: {:o}",
-            fs::metadata(&etc_path)?.permissions().mode()
+            fs::metadata(&etc_path).await?.permissions().mode()
         );
         assert!(matches!(result.unwrap_err(), MonocoreError::Io(_)));
 
