@@ -1,12 +1,12 @@
 //! Utility functions for working with environment variables.
 
-//--------------------------------------------------------------------------------------------------
-// Constants
-//--------------------------------------------------------------------------------------------------
-
 use std::path::PathBuf;
 
 use crate::config::{DEFAULT_MONOCORE_HOME, DEFAULT_OCI_REGISTRY};
+
+//--------------------------------------------------------------------------------------------------
+// Constants
+//--------------------------------------------------------------------------------------------------
 
 /// Environment variable for the monocore home directory
 pub const MONOCORE_HOME_ENV_VAR: &str = "MONOCORE_HOME";

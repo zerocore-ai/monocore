@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::LazyLock};
+use std::{fs, path::PathBuf, sync::LazyLock};
 
 use crate::utils::MONOCORE_HOME_DIR;
 
@@ -18,9 +18,6 @@ pub static DEFAULT_MONOCORE_HOME: LazyLock<PathBuf> =
 
 /// The default OCI registry domain.
 pub const DEFAULT_OCI_REGISTRY: &str = "sandboxes.io";
-
-/// The default monocore config file name.
-pub const DEFAULT_MONOCORE_CONFIG_FILENAME: &str = "Sandboxfile";
 
 /// The default OCI reference tag.
 pub const DEFAULT_OCI_REFERENCE_TAG: &str = "latest";
@@ -42,7 +39,8 @@ pub const DEFAULT_SCRIPT: &str = "start";
 /// The default path to the mcrun binary.
 pub static DEFAULT_MCRUN_EXE_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
     let current_exe = std::env::current_exe().unwrap();
-    current_exe.parent().unwrap().join("mcrun")
+    let actual_exe = fs::canonicalize(current_exe).unwrap();
+    actual_exe.parent().unwrap().join("mcrun")
 });
 
 /// The default working directory for the sandbox.

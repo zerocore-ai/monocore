@@ -7,11 +7,12 @@
 
 use std::path::Path;
 
+use chrono::{DateTime, Utc};
 use oci_spec::image::{ImageConfiguration, ImageIndex, ImageManifest, MediaType, Platform};
 use sqlx::{migrate::Migrator, sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
 use tokio::fs;
 
-use crate::MonocoreResult;
+use crate::{runtime::SANDBOX_STATUS_RUNNING, MonocoreResult};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
@@ -98,34 +99,161 @@ pub async fn get_or_create_pool(
 // Functions: Sandboxes
 //--------------------------------------------------------------------------------------------------
 
-/// Saves a sandbox to the database and returns its ID
-pub(crate) async fn save_sandbox(
+/// Upserts (updates or inserts) a sandbox in the database and returns its ID.
+/// If a sandbox with the same name and config_file exists, it will be updated.
+/// Otherwise, a new sandbox record will be created.
+pub(crate) async fn upsert_sandbox(
     pool: &Pool<Sqlite>,
     name: &str,
     config_file: &str,
+    config_last_modified: &DateTime<Utc>,
+    status: &str,
     supervisor_pid: u32,
     microvm_pid: u32,
-    status: &str,
     rootfs_paths: &str,
 ) -> MonocoreResult<i64> {
+    // Try to update first
+    let update_result = sqlx::query(
+        r#"
+        UPDATE sandboxes
+        SET config_last_modified = ?,
+            status = ?,
+            supervisor_pid = ?,
+            microvm_pid = ?,
+            rootfs_paths = ?,
+            modified_at = CURRENT_TIMESTAMP
+        WHERE name = ? AND config_file = ?
+        RETURNING id
+        "#,
+    )
+    .bind(config_last_modified.to_rfc3339())
+    .bind(status)
+    .bind(supervisor_pid)
+    .bind(microvm_pid)
+    .bind(rootfs_paths)
+    .bind(name)
+    .bind(config_file)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(record) = update_result {
+        tracing::debug!("Updated existing sandbox record");
+        Ok(record.get::<i64, _>("id"))
+    } else {
+        // If no record was updated, insert a new one
+        tracing::debug!("Creating new sandbox record");
+        let record = sqlx::query(
+            r#"
+            INSERT INTO sandboxes (
+                name, config_file, config_last_modified,
+                status, supervisor_pid, microvm_pid, rootfs_paths
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+            "#,
+        )
+        .bind(name)
+        .bind(config_file)
+        .bind(config_last_modified.to_rfc3339())
+        .bind(status)
+        .bind(supervisor_pid)
+        .bind(microvm_pid)
+        .bind(rootfs_paths)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(record.get::<i64, _>("id"))
+    }
+}
+
+pub(crate) async fn get_sandbox(
+    pool: &Pool<Sqlite>,
+    name: &str,
+    config_file: &str,
+) -> MonocoreResult<Option<(i64, u32, u32, String, DateTime<Utc>, String)>> {
     let record = sqlx::query(
         r#"
-        INSERT INTO sandboxes (name, config_file, supervisor_pid, microvm_pid, status, rootfs_paths)
-        VALUES (?, ?, ?, ?, ?, ?)
-        RETURNING id
+        SELECT id, supervisor_pid, microvm_pid, rootfs_paths, config_last_modified, status
+        FROM sandboxes
+        WHERE name = ? AND config_file = ?
         "#,
     )
     .bind(name)
     .bind(config_file)
-    .bind(supervisor_pid)
-    .bind(microvm_pid)
-    .bind(status)
-    .bind(rootfs_paths)
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await?;
 
-    Ok(record.get::<i64, _>("id"))
+    Ok(record.map(|row| {
+        (
+            row.get::<i64, _>("id"),
+            row.get::<u32, _>("supervisor_pid"),
+            row.get::<u32, _>("microvm_pid"),
+            row.get::<String, _>("rootfs_paths"),
+            row.get::<String, _>("config_last_modified")
+                .parse::<DateTime<Utc>>()
+                .unwrap(),
+            row.get::<String, _>("status"),
+        )
+    }))
 }
+
+/// Updates the status of a sandbox identified by name and config file
+pub(crate) async fn update_sandbox_status(
+    pool: &Pool<Sqlite>,
+    name: &str,
+    config_file: &str,
+    status: &str,
+) -> MonocoreResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE sandboxes
+        SET status = ?,
+            modified_at = CURRENT_TIMESTAMP
+        WHERE name = ? AND config_file = ?
+        "#,
+    )
+    .bind(status)
+    .bind(name)
+    .bind(config_file)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Gets all sandboxes associated with a specific config file
+pub(crate) async fn get_running_config_sandboxes(
+    pool: &Pool<Sqlite>,
+    config_file: &str,
+) -> MonocoreResult<Vec<(i64, String, u32, u32, String, String)>> {
+    let records = sqlx::query(
+        r#"
+        SELECT id, name, supervisor_pid, microvm_pid, rootfs_paths, status
+        FROM sandboxes
+        WHERE config_file = ? AND status = ?
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(config_file)
+    .bind(SANDBOX_STATUS_RUNNING)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(records
+        .into_iter()
+        .map(|row| {
+            (
+                row.get::<i64, _>("id"),
+                row.get::<String, _>("name"),
+                row.get::<i64, _>("supervisor_pid") as u32,
+                row.get::<i64, _>("microvm_pid") as u32,
+                row.get::<String, _>("rootfs_paths"),
+                row.get::<String, _>("status"),
+            )
+        })
+        .collect())
+}
+
 //--------------------------------------------------------------------------------------------------
 // Functions: Images
 //--------------------------------------------------------------------------------------------------

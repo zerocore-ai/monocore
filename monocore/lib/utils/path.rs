@@ -14,8 +14,11 @@ pub const MONOCORE_ENV_DIR: &str = ".menv";
 /// The directory name for monocore's global data
 pub const MONOCORE_HOME_DIR: &str = ".monocore";
 
-/// The directory where project root filesystems are stored
-pub const ROOTFS_SUBDIR: &str = "rootfs";
+/// The directory where project read-write layers are stored
+pub const RW_SUBDIR: &str = "rw";
+
+/// The directory where project patch layers are stored
+pub const PATCH_SUBDIR: &str = "patch";
 
 /// The directory where base store blocks are stored
 pub const BLOCKS_SUBDIR: &str = "blocks";
@@ -25,9 +28,6 @@ pub const LOG_SUBDIR: &str = "log";
 
 /// The directory where global image layers are stored
 pub const LAYERS_SUBDIR: &str = "layers";
-
-/// The directory where the rootfs patches are stored
-pub const PATCH_SUBDIR: &str = "patch";
 
 /// The directory where monocore's installed binaries are stored
 pub const BIN_SUBDIR: &str = "bin";
@@ -49,6 +49,15 @@ pub const SANDBOX_SCRIPT_DIR: &str = ".sandbox_scripts";
 
 /// The suffix added to extracted layer directories
 pub const EXTRACTED_LAYER_SUFFIX: &str = "extracted";
+
+/// The monocore config file name.
+pub const MONOCORE_CONFIG_FILENAME: &str = "Sandboxfile";
+
+/// The shell script name.
+pub const SHELL_SCRIPT_NAME: &str = "shell";
+
+/// The file lock for the orchestra
+pub const ORCHESTRA_LOCK_FILE: &str = "orchestra.lock";
 
 //--------------------------------------------------------------------------------------------------
 // Functions
