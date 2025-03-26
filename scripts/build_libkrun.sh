@@ -344,14 +344,14 @@ build_libkrun() {
 check_existing_lib "libkrunfw"
 if [ $? -eq 0 ]; then
     create_build_directory
-    clone_repo "$LIBKRUNFW_REPO" "libkrunfw"
+    clone_repo "$LIBKRUNFW_REPO" "libkrunfw" --single-branch
     build_libkrunfw
 fi
 
 check_existing_lib "libkrun"
 if [ $? -eq 0 ]; then
     create_build_directory
-    clone_repo "$LIBKRUN_REPO" "libkrun" -b appcypher/overlayfs-macos-api --single-branch
+    clone_repo "$LIBKRUN_REPO" "libkrun" --single-branch
     build_libkrun
 fi
 

@@ -32,15 +32,11 @@ pub enum MonocoreSubcommand {
     #[command(name = "init")]
     Init {
         /// Specifies the directory to initialize the project in
-        ///
-        /// This argument is mutually exclusive with the `--path` flag
-        #[arg(required = false, conflicts_with = "path_with_flag", name = "PATH")]
+        #[arg(required = false, name = "PATH")]
         path: Option<PathBuf>,
 
         /// Specifies the directory to initialize the project in
-        ///
-        /// This flag is mutually exclusive with the positional argument
-        #[arg(short, long = "path", conflicts_with = "path", name = "PATH")]
+        #[arg(short, long = "path", name = "PATH\0")]
         path_with_flag: Option<PathBuf>,
     },
 
@@ -212,16 +208,11 @@ pub enum MonocoreSubcommand {
     #[command(name = "run")]
     Run {
         /// Specifies the sandbox and script to run
-        #[arg(conflicts_with = "sandbox_script_with_flag", name = "SANDBOX~SCRIPT")]
+        #[arg(name = "SANDBOX[~SCRIPT]")]
         sandbox_script: Option<String>,
 
         /// Specifies the sandbox and script to run
-        #[arg(
-            short,
-            long = "sandbox",
-            conflicts_with = "sandbox_script",
-            name = "SANDBOX~SCRIPT"
-        )]
+        #[arg(short, long = "sandbox", name = "SANDBOX[~SCRIPT]\0")]
         sandbox_script_with_flag: Option<String>,
 
         /// Project path
@@ -249,11 +240,11 @@ pub enum MonocoreSubcommand {
     #[command(name = "start")]
     Start {
         /// Specifies the sandbox
-        #[arg(conflicts_with = "sandbox_with_flag", name = "SANDBOX")]
+        #[arg(name = "SANDBOX")]
         sandbox: Option<String>,
 
         /// Specifies the sandbox
-        #[arg(short, long = "sandbox", conflicts_with = "sandbox", name = "SANDBOX")]
+        #[arg(short, long = "sandbox", name = "SANDBOX\0")]
         sandbox_with_flag: Option<String>,
 
         /// Project path
@@ -277,11 +268,11 @@ pub enum MonocoreSubcommand {
     #[command(name = "shell")]
     Shell {
         /// Specifies the sandbox
-        #[arg(conflicts_with = "sandbox_with_flag", name = "SANDBOX")]
+        #[arg(name = "SANDBOX")]
         sandbox: Option<String>,
 
         /// Specifies the sandbox
-        #[arg(short, long = "sandbox", conflicts_with = "sandbox", name = "SANDBOX")]
+        #[arg(short, long = "sandbox", name = "SANDBOX\0")]
         sandbox_with_flag: Option<String>,
 
         /// Project path
@@ -305,16 +296,11 @@ pub enum MonocoreSubcommand {
     #[command(name = "tmp")]
     Tmp {
         /// Specifies the image and script to run
-        #[arg(conflicts_with = "image_script_with_flag", name = "IMAGE~SCRIPT")]
+        #[arg(name = "IMAGE[~SCRIPT]")]
         image_script: Option<String>,
 
         /// Specifies the image and script to run
-        #[arg(
-            short,
-            long = "image",
-            conflicts_with = "image_script",
-            name = "IMAGE~SCRIPT"
-        )]
+        #[arg(short, long = "image", name = "IMAGE[~SCRIPT]\0")]
         image_script_with_flag: Option<String>,
 
         /// Number of CPUs
@@ -344,6 +330,10 @@ pub enum MonocoreSubcommand {
         /// Execute a command within the sandbox
         #[arg(short, long)]
         exec: Option<String>,
+
+        /// Additional arguments after `--`
+        #[arg(last = true)]
+        args: Vec<String>,
     },
 
     /// Install a script from an image
@@ -400,6 +390,20 @@ pub enum MonocoreSubcommand {
     /// Start project sandboxes
     #[command(name = "up")]
     Up {
+        /// Names of components to start
+        #[arg(
+            short,
+            long = "sandbox",
+            name = "SANDBOXES\0",
+            value_delimiter = ' ',
+            num_args = 1..
+        )]
+        sandboxes_with_flag: Option<Vec<String>>,
+
+        /// Names of components to start
+        #[arg(name = "SANDBOXES")]
+        sandboxes: Option<Vec<String>>,
+
         /// Project path
         #[arg(short, long)]
         path: Option<PathBuf>,
@@ -407,14 +411,25 @@ pub enum MonocoreSubcommand {
         /// Config path
         #[arg(short, long)]
         config: Option<String>,
-
-        /// Names of components to start
-        names: Vec<String>,
     },
 
     /// Stop project sandboxes
     #[command(name = "down")]
     Down {
+        /// Names of components to start
+        #[arg(
+            short,
+            long = "sandbox",
+            name = "SANDBOXES\0",
+            value_delimiter = ' ',
+            num_args = 1..
+        )]
+        sandboxes_with_flag: Option<Vec<String>>,
+
+        /// Names of components to start
+        #[arg(name = "SANDBOXES")]
+        sandboxes: Option<Vec<String>>,
+
         /// Project path
         #[arg(short, long)]
         path: Option<PathBuf>,
@@ -422,24 +437,32 @@ pub enum MonocoreSubcommand {
         /// Config path
         #[arg(short, long)]
         config: Option<String>,
-
-        /// Names of components to stop
-        names: Vec<String>,
     },
 
     /// Show running status
     #[command(name = "status")]
     Status {
-        /// Target sandboxes
-        #[arg(short, long, default_value_t = true)]
-        sandbox: bool,
+        /// Names of components to start
+        #[arg(
+            short,
+            long = "sandbox",
+            name = "SANDBOXES\0",
+            value_delimiter = ' ',
+            num_args = 1..
+        )]
+        sandboxes_with_flag: Option<Vec<String>>,
 
-        /// Target group
+        /// Names of components to start
+        #[arg(name = "SANDBOXES")]
+        sandboxes: Option<Vec<String>>,
+
+        /// Project path
         #[arg(short, long)]
-        group: bool,
+        path: Option<PathBuf>,
 
-        /// Names of components to check
-        names: Vec<String>,
+        /// Config path
+        #[arg(short, long)]
+        config: Option<String>,
     },
 
     /// Clean project data

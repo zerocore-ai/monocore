@@ -133,3 +133,180 @@ pub async fn apply(project_dir: Option<PathBuf>, config_file: Option<&str>) -> M
 
     Ok(())
 }
+
+/// Starts specified sandboxes from the configuration if they are not already running.
+///
+/// This function ensures that the specified sandboxes are running by:
+/// - Starting any specified sandboxes that are in the config but not running
+/// - Ignoring sandboxes that are not specified or already running
+///
+/// ## Arguments
+///
+/// * `sandbox_names` - List of sandbox names to start
+/// * `project_dir` - Optional path to the project directory. If None, defaults to current directory
+/// * `config_file` - Optional path to the Monocore config file. If None, uses default filename
+///
+/// ## Returns
+///
+/// Returns `MonocoreResult<()>` indicating success or failure. Possible failures include:
+/// - Config file not found or invalid
+/// - Database errors
+/// - Sandbox start failures
+///
+/// ## Example
+///
+/// ```no_run
+/// use std::path::PathBuf;
+/// use monocore::management::orchestra;
+///
+/// #[tokio::main]
+/// async fn main() -> anyhow::Result<()> {
+///     // Start specific sandboxes from the default monocore.yaml
+///     orchestra::up(vec!["sandbox1".to_string(), "sandbox2".to_string()], None, None).await?;
+///
+///     // Or specify a custom project directory and config file
+///     orchestra::up(
+///         vec!["sandbox1".to_string()],
+///         Some(PathBuf::from("/path/to/project")),
+///         Some("custom-config.yaml"),
+///     ).await?;
+///     Ok(())
+/// }
+/// ```
+pub async fn up(
+    sandbox_names: Vec<String>,
+    project_dir: Option<PathBuf>,
+    config_file: Option<&str>,
+) -> MonocoreResult<()> {
+    // Load the configuration first to validate it exists before acquiring lock
+    let (config, canonical_project_dir, config_file) =
+        config::load_config(project_dir, config_file).await?;
+
+    // Ensure menv files exist
+    let menv_path = canonical_project_dir.join(MONOCORE_ENV_DIR);
+    menv::ensure_menv_files(&menv_path).await?;
+
+    // Get database connection pool
+    let db_path = menv_path.join(SANDBOX_DB_FILENAME);
+    let pool = db::get_or_create_pool(&db_path, &db::SANDBOX_DB_MIGRATOR).await?;
+
+    // Get all sandboxes defined in config
+    let config_sandboxes = config
+        .get_sandboxes()
+        .as_ref()
+        .map(|s| s.as_slice())
+        .unwrap_or_default();
+
+    // Get all running sandboxes from database
+    let running_sandboxes = db::get_running_config_sandboxes(&pool, &config_file).await?;
+    let running_sandbox_names: Vec<String> =
+        running_sandboxes.iter().map(|s| s.name.clone()).collect();
+
+    // Start specified sandboxes that are in config but not active
+    for sandbox_config in config_sandboxes {
+        let sandbox_name = sandbox_config.get_name();
+        // Only start if sandbox is in the specified list and not already running
+        if sandbox_names.contains(&sandbox_name.to_string())
+            && !running_sandbox_names.contains(sandbox_name)
+        {
+            tracing::info!("Starting sandbox: {}", sandbox_name);
+            sandbox::run(
+                sandbox_name,
+                Some(DEFAULT_SCRIPT),
+                Some(canonical_project_dir.clone()),
+                Some(&config_file),
+                vec![],
+                true,
+                None,
+            )
+            .await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Stops specified sandboxes that are both in the configuration and currently running.
+///
+/// This function ensures that the specified sandboxes are stopped by:
+/// - Stopping any specified sandboxes that are both in the config and currently running
+/// - Ignoring sandboxes that are not specified, not in config, or not running
+///
+/// ## Arguments
+///
+/// * `sandbox_names` - List of sandbox names to stop
+/// * `project_dir` - Optional path to the project directory. If None, defaults to current directory
+/// * `config_file` - Optional path to the Monocore config file. If None, uses default filename
+///
+/// ## Returns
+///
+/// Returns `MonocoreResult<()>` indicating success or failure. Possible failures include:
+/// - Config file not found or invalid
+/// - Database errors
+/// - Sandbox stop failures
+///
+/// ## Example
+///
+/// ```no_run
+/// use std::path::PathBuf;
+/// use monocore::management::orchestra;
+///
+/// #[tokio::main]
+/// async fn main() -> anyhow::Result<()> {
+///     // Stop specific sandboxes from the default monocore.yaml
+///     orchestra::down(vec!["sandbox1".to_string(), "sandbox2".to_string()], None, None).await?;
+///
+///     // Or specify a custom project directory and config file
+///     orchestra::down(
+///         vec!["sandbox1".to_string()],
+///         Some(PathBuf::from("/path/to/project")),
+///         Some("custom-config.yaml"),
+///     ).await?;
+///     Ok(())
+/// }
+/// ```
+pub async fn down(
+    sandbox_names: Vec<String>,
+    project_dir: Option<PathBuf>,
+    config_file: Option<&str>,
+) -> MonocoreResult<()> {
+    // Load the configuration first to validate it exists before acquiring lock
+    let (config, canonical_project_dir, config_file) =
+        config::load_config(project_dir, config_file).await?;
+
+    // Ensure menv files exist
+    let menv_path = canonical_project_dir.join(MONOCORE_ENV_DIR);
+    menv::ensure_menv_files(&menv_path).await?;
+
+    // Get database connection pool
+    let db_path = menv_path.join(SANDBOX_DB_FILENAME);
+    let pool = db::get_or_create_pool(&db_path, &db::SANDBOX_DB_MIGRATOR).await?;
+
+    // Get all sandboxes defined in config
+    let config_sandboxes = config
+        .get_sandboxes()
+        .as_ref()
+        .map(|s| s.as_slice())
+        .unwrap_or_default();
+
+    let config_sandbox_names: Vec<String> = config_sandboxes
+        .iter()
+        .map(|s| s.get_name().to_string())
+        .collect();
+
+    // Get all running sandboxes from database
+    let running_sandboxes = db::get_running_config_sandboxes(&pool, &config_file).await?;
+
+    // Stop specified sandboxes that are both in config and running
+    for sandbox in running_sandboxes {
+        if sandbox_names.contains(&sandbox.name) && config_sandbox_names.contains(&sandbox.name) {
+            tracing::info!("Stopping sandbox: {}", sandbox.name);
+            signal::kill(
+                Pid::from_raw(sandbox.supervisor_pid as i32),
+                Signal::SIGTERM,
+            )?;
+        }
+    }
+
+    Ok(())
+}

@@ -86,6 +86,7 @@ file-lock = "2.1.11"
 test-log.workspace = true
 criterion.workspace = true
 rand.workspace = true
+serial_test = "3.2.0"
 
 [features]
 default = []

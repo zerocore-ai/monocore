@@ -69,7 +69,7 @@ pub async fn patch_with_sandbox_scripts(
 
     // Create shell script containing just the shell path
     let shell_script_path = scripts_dir.join("shell");
-    fs::write(&shell_script_path, format!("#!{}\n", shell_path)).await?;
+    fs::write(&shell_script_path, shell_path.to_string()).await?;
     fs::set_permissions(&shell_script_path, Permissions::from_mode(0o750)).await?;
 
     Ok(())
