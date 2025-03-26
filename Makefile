@@ -102,34 +102,6 @@ install: build
 	fi
 
 # -----------------------------------------------------------------------------
-# Development Tools
-# -----------------------------------------------------------------------------
-# Development binary target without RUSTFLAGS
-$(MONOKRUN_RELEASE_BIN).dev: build_libkrun
-	cd monocore && cargo build --release --bin monokrun $(FEATURES)
-ifeq ($(OS),Darwin)
-	codesign --entitlements monocore.entitlements --force -s - $(MONOKRUN_RELEASE_BIN)
-endif
-
-# Run examples
-example: $(MONOKRUN_RELEASE_BIN).dev
-	@if [ -z "$(word 2,$(MAKECMDGOALS))" ]; then \
-		echo "Usage: make example <example_name> [-- <args>]"; \
-			exit 1; \
-	fi
-	@$(eval EXAMPLE_ARGS := $(filter-out example $(word 2,$(MAKECMDGOALS)) --, $(MAKECMDGOALS)))
-	@$(MAKE) _run_example EXAMPLE_NAME=$(word 2,$(MAKECMDGOALS)) ARGS="$(EXAMPLE_ARGS)"
-
-_run_example:
-ifeq ($(OS),Darwin)
-	cargo build --example $(EXAMPLE_NAME) --release
-	codesign --entitlements monocore.entitlements --force -s - $(EXAMPLES_DIR)/$(EXAMPLE_NAME)
-	DYLD_LIBRARY_PATH=$(BUILD_DIR):$$DYLD_LIBRARY_PATH $(EXAMPLES_DIR)/$(EXAMPLE_NAME) $(ARGS) || exit $$?
-else
-	cargo run --example $(EXAMPLE_NAME) --release -- $(ARGS) || exit $$?
-endif
-
-# -----------------------------------------------------------------------------
 # Maintenance
 # -----------------------------------------------------------------------------
 clean:
@@ -169,10 +141,6 @@ help:
 	@echo "  make uninstall              - Remove all installed components"
 	@echo "  make clean                  - Remove build artifacts"
 	@echo "  make build_libkrun          - Build libkrun dependency"
-	@echo
-	@echo "Development Tools:"
-	@echo "  make example <n> [-- <args>] - Build and run an example"
-	@echo "    Example: make example microvm_shell -- arg1 arg2"
 	@echo
 	@echo "Note: For commands that accept arguments, use -- to separate them"
 	@echo "      from the make target name."
