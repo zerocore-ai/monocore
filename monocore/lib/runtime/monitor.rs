@@ -15,7 +15,12 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
-use crate::{management::{db, models::Sandbox}, utils::MCRUN_LOG_PREFIX, vm::Rootfs, MonocoreResult};
+use crate::{
+    management::{db, models::Sandbox},
+    utils::MCRUN_LOG_PREFIX,
+    vm::Rootfs,
+    MonocoreResult,
+};
 
 //--------------------------------------------------------------------------------------------------
 // Constants

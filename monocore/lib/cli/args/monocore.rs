@@ -151,33 +151,29 @@ pub enum MonocoreSubcommand {
     /// Show logs of a running build, sandbox, or group
     #[command(name = "log")]
     Log {
-        /// Show sandbox logs
-        #[arg(short, long)]
-        sandbox: bool,
+        /// Specifies the sandbox
+        #[arg(name = "SANDBOX")]
+        sandbox: Option<String>,
 
-        /// Name of the component
-        #[arg(required = true)]
-        name: String,
+        /// Specifies the sandbox
+        #[arg(short, long = "sandbox", name = "SANDBOX\0")]
+        sandbox_with_flag: Option<String>,
+
+        /// Project path
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Config path
+        #[arg(short, long)]
+        config: Option<String>,
 
         /// Follow the logs
-        #[arg(long)]
+        #[arg(short, long)]
         follow: bool,
 
-        /// Don't use a pager
-        #[arg(long)]
-        no_pager: bool,
-
         /// Number of lines to show from the end
-        #[arg(long)]
+        #[arg(short = 'n', long)]
         tail: Option<usize>,
-
-        /// Number of lines to show
-        #[arg(long)]
-        count: Option<usize>,
-
-        /// Log level
-        #[arg(short = 'L')]
-        level: Option<String>,
     },
 
     /// Show tree of layers that make up a build, sandbox, or group component
