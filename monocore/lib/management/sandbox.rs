@@ -351,6 +351,7 @@ pub async fn run_temp(
     envs: Vec<String>,
     workdir: Option<Utf8UnixPathBuf>,
     exec: Option<&str>,
+    args: Vec<String>,
 ) -> MonocoreResult<()> {
     // Create a temporary directory without losing the TempDir guard for automatic cleanup
     let temp_dir = tempfile::tempdir()?;
@@ -412,7 +413,7 @@ pub async fn run_temp(
         script,
         Some(temp_dir_path),
         None,
-        vec![],
+        args,
         false,
         exec,
     )

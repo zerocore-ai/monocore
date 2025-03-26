@@ -24,3 +24,8 @@ pub fn is_interactive_terminal() -> bool {
     // Return true if we have TTYs, regardless of TERM
     is_tty
 }
+
+/// Determines if the process is running in an ANSI terminal environment
+pub fn is_ansi_interactive_terminal() -> bool {
+    is_interactive_terminal() && !std::env::var("TERM").unwrap_or_default().contains("dumb")
+}
