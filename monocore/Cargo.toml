@@ -81,6 +81,7 @@ ipldstore.workspace = true
 monofs.workspace = true
 async-recursion.workspace = true
 file-lock = "2.1.11"
+which = "7.0"
 
 [dev-dependencies]
 test-log.workspace = true

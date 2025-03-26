@@ -20,7 +20,7 @@
 pub mod db;
 pub mod image;
 pub mod menv;
+pub mod models;
 pub mod orchestra;
 pub mod rootfs;
 pub mod sandbox;
-pub mod models;
