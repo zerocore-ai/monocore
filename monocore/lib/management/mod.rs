@@ -23,3 +23,4 @@ pub mod menv;
 pub mod orchestra;
 pub mod rootfs;
 pub mod sandbox;
+pub mod server;

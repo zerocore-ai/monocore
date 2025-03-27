@@ -249,6 +249,7 @@ pub async fn run(
             });
         }
 
+        // TODO: Redirect to log file
         // Redirect the i/o to /dev/null
         command.stdout(Stdio::null());
         command.stderr(Stdio::null());

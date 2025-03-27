@@ -15,54 +15,71 @@ pub const MONOCORE_ENV_DIR: &str = ".menv";
 pub const MONOCORE_HOME_DIR: &str = ".monocore";
 
 /// The directory where project read-write layers are stored
+///
+/// Example: <PROJECT_ROOT>/<MONOCORE_ENV_DIR>/<RW_SUBDIR>
 pub const RW_SUBDIR: &str = "rw";
 
 /// The directory where project patch layers are stored
+///
+/// Example: <PROJECT_ROOT>/<MONOCORE_ENV_DIR>/<PATCH_SUBDIR>
 pub const PATCH_SUBDIR: &str = "patch";
 
 /// The directory where base store blocks are stored
+///
+/// Example: <PROJECT_ROOT>/<MONOCORE_ENV_DIR>/<BLOCKS_SUBDIR>
 pub const BLOCKS_SUBDIR: &str = "blocks";
 
 /// The directory where project logs are stored
+///
+/// Example: <PROJECT_ROOT>/<MONOCORE_ENV_DIR>/<LOG_SUBDIR>
 pub const LOG_SUBDIR: &str = "log";
 
 /// The directory where global image layers are stored
+///
+/// Example: <MONOCORE_HOME_DIR>/<LAYERS_SUBDIR>
 pub const LAYERS_SUBDIR: &str = "layers";
 
 /// The directory where monocore's installed binaries are stored
+///
+/// Example: <MONOCORE_HOME_DIR>/<BIN_SUBDIR>
 pub const BIN_SUBDIR: &str = "bin";
 
 /// The filename for the project active sandbox database
+///
+/// Example: <PROJECT_ROOT>/<MONOCORE_ENV_DIR>/<SANDBOX_DB_FILENAME>
 pub const SANDBOX_DB_FILENAME: &str = "sandbox.db";
 
 /// The filename for the global OCI database
+///
+/// Example: <MONOCORE_HOME_DIR>/<OCI_DB_FILENAME>
 pub const OCI_DB_FILENAME: &str = "oci.db";
-
-/// The filename for the monoimage database
-pub const MONOIMAGE_DB_FILENAME: &str = "monoimage.db";
-
-/// The prefix for mcrun log files
-pub const MCRUN_LOG_PREFIX: &str = "mcrun";
 
 /// The directory on the microvm where sandbox scripts are stored
 pub const SANDBOX_SCRIPT_DIR: &str = ".sandbox_scripts";
 
 /// The suffix added to extracted layer directories
+///
+/// Example: <MONOCORE_HOME_DIR>/<LAYERS_SUBDIR>/<LAYER_ID>.<EXTRACTED_LAYER_SUFFIX>
 pub const EXTRACTED_LAYER_SUFFIX: &str = "extracted";
 
 /// The monocore config file name.
+///
+/// Example: <PROJECT_ROOT>/<MONOCORE_ENV_DIR>/<SANDBOX_DB_FILENAME>
 pub const MONOCORE_CONFIG_FILENAME: &str = "Sandboxfile";
 
 /// The shell script name.
+///
+/// Example: <PROJECT_ROOT>/<MONOCORE_ENV_DIR>/<PATCH_SUBDIR>/<CONFIG_NAME>/<SHELL_SCRIPT_NAME>
 pub const SHELL_SCRIPT_NAME: &str = "shell";
 
-/// The file lock for the orchestra
-pub const ORCHESTRA_LOCK_FILE: &str = "orchestra.lock";
-
 /// The directory for server namespaces
+///
+/// Example: <MONOCORE_HOME_DIR>/<NAMESPACES_SUBDIR>
 pub const NAMESPACES_SUBDIR: &str = "namespaces";
 
 /// The PID file for the server
+///
+/// Example: <MONOCORE_HOME_DIR>/<SERVER_PID_FILE>
 pub const SERVER_PID_FILE: &str = "server.pid";
 
 //--------------------------------------------------------------------------------------------------

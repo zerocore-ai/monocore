@@ -152,7 +152,7 @@ pub enum MonocoreError {
     #[error("process wait error: {0}")]
     ProcessWaitError(String),
 
-    /// An error that occurred when the supervisor task failed
+    /// An error that occurred running the supervisor.
     #[error("supervisor error: {0}")]
     SupervisorError(String),
 
@@ -293,6 +293,10 @@ pub enum MonocoreError {
     /// Script not found in sandbox configuration
     #[error("script '{0}' not found in sandbox configuration '{1}'")]
     ScriptNotFoundInSandbox(String, String),
+
+    /// An error that occurred running the sandbox server.
+    #[error("sandbox server error: {0}")]
+    SandboxServerError(String),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

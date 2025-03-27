@@ -545,7 +545,7 @@ pub enum MonocoreSubcommand {
 #[derive(Debug, Parser)]
 pub enum ServerSubcommand {
     /// Start the sandbox server
-    Up {
+    Start {
         /// Port to listen on
         #[arg(long)]
         port: Option<u16>,
@@ -560,7 +560,7 @@ pub enum ServerSubcommand {
     },
 
     /// Stop the sandbox server
-    Down,
+    Stop,
 }
 
 /// Actions for the self subcommand

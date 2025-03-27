@@ -5,17 +5,14 @@ use std::{
 };
 
 use async_trait::async_trait;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use monoutils::{
     ChildIo, MonoutilsError, MonoutilsResult, ProcessMonitor, RotatingLog, LOG_SUFFIX,
 };
 use sqlx::{Pool, Sqlite};
-use tokio::{
-    fs,
-    io::{AsyncReadExt, AsyncWriteExt},
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::{management::db, utils::MCRUN_LOG_PREFIX, vm::Rootfs, MonocoreResult};
+use crate::{management::db, vm::Rootfs, MonocoreResult};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
@@ -57,9 +54,6 @@ pub struct MicroVmMonitor {
     /// The root filesystem
     rootfs: Rootfs,
 
-    /// The retention duration for log files
-    retention_duration: Duration,
-
     /// original terminal settings for STDIN (set in TTY mode)
     original_term: Option<nix::sys::termios::Termios>,
 
@@ -81,7 +75,6 @@ impl MicroVmMonitor {
         config_last_modified: DateTime<Utc>,
         log_dir: impl Into<PathBuf>,
         rootfs: Rootfs,
-        retention_duration: Duration,
         forward_output: bool,
     ) -> MonocoreResult<Self> {
         Ok(Self {
@@ -93,7 +86,6 @@ impl MicroVmMonitor {
             log_path: None,
             log_dir: log_dir.into(),
             rootfs,
-            retention_duration,
             original_term: None,
             forward_output,
         })
@@ -321,37 +313,6 @@ impl ProcessMonitor for MicroVmMonitor {
         )
         .await
         .map_err(MonoutilsError::custom)?;
-
-        // Batch delete old log files in the log directory
-        let now: DateTime<Utc> = Utc::now();
-        match fs::read_dir(&self.log_dir).await {
-            Ok(mut dir) => {
-                while let Some(entry) = dir.next_entry().await? {
-                    let path = entry.path();
-                    if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
-                        if file_name.starts_with(MCRUN_LOG_PREFIX)
-                            && file_name.ends_with(LOG_SUFFIX)
-                        {
-                            let metadata = fs::metadata(&path).await?;
-                            if let Ok(modified) =
-                                metadata.modified().map(|t| DateTime::<Utc>::from(t))
-                            {
-                                if now - modified > self.retention_duration {
-                                    if let Err(e) = fs::remove_file(&path).await {
-                                        tracing::warn!(error = %e, "failed to delete old log file: {:?}", &path);
-                                    } else {
-                                        tracing::info!("deleted old log file: {:?}", path);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to read log directory");
-            }
-        }
 
         // Reset the log path
         self.log_path = None;
