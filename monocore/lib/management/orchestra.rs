@@ -182,7 +182,12 @@ pub async fn up(
         config::load_config(project_dir, config_file).await?;
 
     // Validate all sandbox names exist in config before proceeding
-    validate_sandbox_names(&sandbox_names, &config, &canonical_project_dir, &config_file)?;
+    validate_sandbox_names(
+        &sandbox_names,
+        &config,
+        &canonical_project_dir,
+        &config_file,
+    )?;
 
     // Ensure menv files exist
     let menv_path = canonical_project_dir.join(MONOCORE_ENV_DIR);
@@ -277,7 +282,12 @@ pub async fn down(
         config::load_config(project_dir, config_file).await?;
 
     // Validate all sandbox names exist in config before proceeding
-    validate_sandbox_names(&sandbox_names, &config, &canonical_project_dir, &config_file)?;
+    validate_sandbox_names(
+        &sandbox_names,
+        &config,
+        &canonical_project_dir,
+        &config_file,
+    )?;
 
     // Ensure menv files exist
     let menv_path = canonical_project_dir.join(MONOCORE_ENV_DIR);
