@@ -59,6 +59,12 @@ pub const SHELL_SCRIPT_NAME: &str = "shell";
 /// The file lock for the orchestra
 pub const ORCHESTRA_LOCK_FILE: &str = "orchestra.lock";
 
+/// The directory for server namespaces
+pub const NAMESPACES_SUBDIR: &str = "namespaces";
+
+/// The PID file for the server
+pub const SERVER_PID_FILE: &str = "server.pid";
+
 //--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------

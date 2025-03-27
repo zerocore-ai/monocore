@@ -531,13 +531,9 @@ pub enum MonocoreSubcommand {
     /// Start a server for orchestrating sandboxes
     #[command(name = "server")]
     Server {
-        /// Port to listen on
-        #[arg(long)]
-        port: Option<u16>,
-
         /// The subcommand to run
         #[command(subcommand)]
-        subcommand: Option<ServerSubcommand>,
+        subcommand: ServerSubcommand,
     },
 
     /// Version of monocore
@@ -548,14 +544,23 @@ pub enum MonocoreSubcommand {
 /// Subcommands for the server subcommand
 #[derive(Debug, Parser)]
 pub enum ServerSubcommand {
-    /// Start a remote sandbox
-    Up,
+    /// Start the sandbox server
+    Up {
+        /// Port to listen on
+        #[arg(long)]
+        port: Option<u16>,
 
-    /// Stop a remote sandbox
+        /// Path to the namespace directory
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Disable default namespace
+        #[arg(long, default_value_t = false)]
+        disable_default: bool,
+    },
+
+    /// Stop the sandbox server
     Down,
-
-    /// List remote sandboxes
-    List,
 }
 
 /// Actions for the self subcommand

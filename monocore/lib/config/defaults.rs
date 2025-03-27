@@ -45,3 +45,9 @@ pub static DEFAULT_MCRUN_EXE_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
 
 /// The default working directory for the sandbox.
 pub const DEFAULT_WORKDIR: &str = "/";
+
+/// The default namespace for the sandbox server.
+pub const DEFAULT_SERVER_NAMESPACE: &str = "default";
+
+/// The default port for the sandbox server.
+pub const DEFAULT_SERVER_PORT: u16 = 5050;

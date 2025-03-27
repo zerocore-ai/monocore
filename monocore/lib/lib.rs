@@ -70,6 +70,7 @@ mod error;
 pub mod cli;
 pub mod config;
 pub mod management;
+pub mod models;
 pub mod oci;
 pub mod runtime;
 pub mod server;
