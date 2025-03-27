@@ -7,22 +7,26 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use oci_spec::image::{ImageConfiguration, ImageIndex, ImageManifest, MediaType, Platform};
 use sqlx::{migrate::Migrator, sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
 use tokio::fs;
 
-use crate::{management::models::Sandbox, runtime::SANDBOX_STATUS_RUNNING, MonocoreResult};
+use crate::{
+    models::{Config, Image, Index, Layer, Manifest, Sandbox},
+    runtime::SANDBOX_STATUS_RUNNING,
+    MonocoreResult,
+};
 
 //--------------------------------------------------------------------------------------------------
 // Constants
 //--------------------------------------------------------------------------------------------------
 
 /// Migrator for the sandbox database
-pub static SANDBOX_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrations/sandbox");
+pub static SANDBOX_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/migrations/sandbox");
 
 /// Migrator for the OCI database
-pub static OCI_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/management/migrations/oci");
+pub static OCI_DB_MIGRATOR: Migrator = sqlx::migrate!("lib/migrations/oci");
 
 //--------------------------------------------------------------------------------------------------
 // Functions
@@ -99,10 +103,36 @@ pub async fn get_or_create_pool(
 // Functions: Sandboxes
 //--------------------------------------------------------------------------------------------------
 
-/// Upserts (updates or inserts) a sandbox in the database and returns its ID.
+/// Saves or updates a sandbox in the database and returns its ID.
 /// If a sandbox with the same name and config_file exists, it will be updated.
 /// Otherwise, a new sandbox record will be created.
-pub(crate) async fn upsert_sandbox(pool: &Pool<Sqlite>, sandbox: &Sandbox) -> MonocoreResult<i64> {
+pub(crate) async fn save_or_update_sandbox(
+    pool: &Pool<Sqlite>,
+    name: &str,
+    config_file: &str,
+    config_last_modified: &DateTime<Utc>,
+    status: &str,
+    supervisor_pid: u32,
+    microvm_pid: u32,
+    rootfs_paths: &str,
+    group_id: Option<u32>,
+    group_ip: Option<String>,
+) -> MonocoreResult<i64> {
+    let sandbox = Sandbox {
+        id: 0,
+        name: name.to_string(),
+        config_file: config_file.to_string(),
+        config_last_modified: config_last_modified.clone(),
+        status: status.to_string(),
+        supervisor_pid,
+        microvm_pid,
+        rootfs_paths: rootfs_paths.to_string(),
+        group_id,
+        group_ip,
+        created_at: Utc::now(),
+        modified_at: Utc::now(),
+    };
+
     // Try to update first
     let update_result = sqlx::query(
         r#"
@@ -119,12 +149,12 @@ pub(crate) async fn upsert_sandbox(pool: &Pool<Sqlite>, sandbox: &Sandbox) -> Mo
         RETURNING id
         "#,
     )
-    .bind(sandbox.config_last_modified.to_rfc3339())
+    .bind(&sandbox.config_last_modified.to_rfc3339())
     .bind(&sandbox.status)
-    .bind(sandbox.supervisor_pid)
-    .bind(sandbox.microvm_pid)
+    .bind(&sandbox.supervisor_pid)
+    .bind(&sandbox.microvm_pid)
     .bind(&sandbox.rootfs_paths)
-    .bind(sandbox.group_id)
+    .bind(&sandbox.group_id)
     .bind(&sandbox.group_ip)
     .bind(&sandbox.name)
     .bind(&sandbox.config_file)
@@ -148,15 +178,15 @@ pub(crate) async fn upsert_sandbox(pool: &Pool<Sqlite>, sandbox: &Sandbox) -> Mo
             RETURNING id
             "#,
         )
-        .bind(&sandbox.name)
-        .bind(&sandbox.config_file)
+        .bind(sandbox.name)
+        .bind(sandbox.config_file)
         .bind(sandbox.config_last_modified.to_rfc3339())
-        .bind(&sandbox.status)
+        .bind(sandbox.status)
         .bind(sandbox.supervisor_pid)
         .bind(sandbox.microvm_pid)
-        .bind(&sandbox.rootfs_paths)
+        .bind(sandbox.rootfs_paths)
         .bind(sandbox.group_id)
-        .bind(&sandbox.group_ip)
+        .bind(sandbox.group_ip)
         .fetch_one(pool)
         .await?;
 
@@ -171,9 +201,9 @@ pub(crate) async fn get_sandbox(
 ) -> MonocoreResult<Option<Sandbox>> {
     let record = sqlx::query(
         r#"
-        SELECT name, config_file, config_last_modified, status,
+        SELECT id, name, config_file, config_last_modified, status,
                supervisor_pid, microvm_pid, rootfs_paths,
-               group_id, group_ip
+               group_id, group_ip, created_at, modified_at
         FROM sandboxes
         WHERE name = ? AND config_file = ?
         "#,
@@ -184,6 +214,7 @@ pub(crate) async fn get_sandbox(
     .await?;
 
     Ok(record.map(|row| Sandbox {
+        id: row.get("id"),
         name: row.get("name"),
         config_file: row.get("config_file"),
         config_last_modified: row
@@ -196,6 +227,8 @@ pub(crate) async fn get_sandbox(
         rootfs_paths: row.get("rootfs_paths"),
         group_id: row.get("group_id"),
         group_ip: row.get("group_ip"),
+        created_at: parse_sqlite_datetime(&row.get::<String, _>("created_at")),
+        modified_at: parse_sqlite_datetime(&row.get::<String, _>("modified_at")),
     }))
 }
 
@@ -230,9 +263,9 @@ pub(crate) async fn get_running_config_sandboxes(
 ) -> MonocoreResult<Vec<Sandbox>> {
     let records = sqlx::query(
         r#"
-        SELECT name, config_file, config_last_modified, status,
+        SELECT id, name, config_file, config_last_modified, status,
                supervisor_pid, microvm_pid, rootfs_paths,
-               group_id, group_ip
+               group_id, group_ip, created_at, modified_at
         FROM sandboxes
         WHERE config_file = ? AND status = ?
         ORDER BY created_at DESC
@@ -246,6 +279,7 @@ pub(crate) async fn get_running_config_sandboxes(
     Ok(records
         .into_iter()
         .map(|row| Sandbox {
+            id: row.get("id"),
             name: row.get("name"),
             config_file: row.get("config_file"),
             config_last_modified: row
@@ -258,6 +292,8 @@ pub(crate) async fn get_running_config_sandboxes(
             rootfs_paths: row.get("rootfs_paths"),
             group_id: row.get("group_id"),
             group_ip: row.get("group_ip"),
+            created_at: parse_sqlite_datetime(&row.get::<String, _>("created_at")),
+            modified_at: parse_sqlite_datetime(&row.get::<String, _>("modified_at")),
         })
         .collect())
 }
@@ -272,6 +308,15 @@ pub(crate) async fn save_image(
     reference: &str,
     size_bytes: i64,
 ) -> MonocoreResult<i64> {
+    let image = Image {
+        id: 0, // Will be set by the database
+        reference: reference.to_string(),
+        size_bytes,
+        last_used_at: Some(Utc::now()),
+        created_at: Utc::now(),
+        modified_at: Utc::now(),
+    };
+
     let record = sqlx::query(
         r#"
         INSERT INTO images (reference, size_bytes, last_used_at)
@@ -279,8 +324,8 @@ pub(crate) async fn save_image(
         RETURNING id
         "#,
     )
-    .bind(reference)
-    .bind(size_bytes)
+    .bind(&image.reference)
+    .bind(image.size_bytes)
     .fetch_one(pool)
     .await?;
 
@@ -294,18 +339,25 @@ pub(crate) async fn save_index(
     index: &ImageIndex,
     platform: Option<&Platform>,
 ) -> MonocoreResult<i64> {
-    let platform_os = platform.map(|p| p.os().to_string());
-    let platform_arch = platform.map(|p| p.architecture().to_string());
-    let platform_variant = platform.and_then(|p| p.variant().as_ref().map(|v| v.to_string()));
-    let annotations = index
-        .annotations()
-        .as_ref()
-        .map(|a| serde_json::to_string(a).unwrap_or_default());
-    let media_type = index
-        .media_type()
-        .as_ref()
-        .map(|mt| mt.to_string())
-        .unwrap_or_else(|| MediaType::ImageIndex.to_string());
+    let index_model = Index {
+        id: 0, // Will be set by the database
+        image_id,
+        schema_version: index.schema_version() as i64,
+        media_type: index
+            .media_type()
+            .as_ref()
+            .map(|mt| mt.to_string())
+            .unwrap_or_else(|| MediaType::ImageIndex.to_string()),
+        platform_os: platform.map(|p| p.os().to_string()),
+        platform_arch: platform.map(|p| p.architecture().to_string()),
+        platform_variant: platform.and_then(|p| p.variant().as_ref().map(|v| v.to_string())),
+        annotations_json: index
+            .annotations()
+            .as_ref()
+            .map(|a| serde_json::to_string(a).unwrap_or_default()),
+        created_at: Utc::now(),
+        modified_at: Utc::now(),
+    };
 
     let record = sqlx::query(
         r#"
@@ -318,13 +370,13 @@ pub(crate) async fn save_index(
         RETURNING id
         "#,
     )
-    .bind(image_id)
-    .bind(index.schema_version() as i64)
-    .bind(media_type)
-    .bind(platform_os)
-    .bind(platform_arch)
-    .bind(platform_variant)
-    .bind(annotations)
+    .bind(index_model.image_id)
+    .bind(index_model.schema_version)
+    .bind(&index_model.media_type)
+    .bind(&index_model.platform_os)
+    .bind(&index_model.platform_arch)
+    .bind(&index_model.platform_variant)
+    .bind(&index_model.annotations_json)
     .fetch_one(pool)
     .await?;
 
@@ -338,15 +390,23 @@ pub(crate) async fn save_manifest(
     index_id: Option<i64>,
     manifest: &ImageManifest,
 ) -> MonocoreResult<i64> {
-    let annotations = manifest
-        .annotations()
-        .as_ref()
-        .map(|a| serde_json::to_string(a).unwrap_or_default());
-    let media_type = manifest
-        .media_type()
-        .as_ref()
-        .map(|mt| mt.to_string())
-        .unwrap_or_else(|| MediaType::ImageManifest.to_string());
+    let manifest_model = Manifest {
+        id: 0, // Will be set by the database
+        index_id,
+        image_id,
+        schema_version: manifest.schema_version() as i64,
+        media_type: manifest
+            .media_type()
+            .as_ref()
+            .map(|mt| mt.to_string())
+            .unwrap_or_else(|| MediaType::ImageManifest.to_string()),
+        annotations_json: manifest
+            .annotations()
+            .as_ref()
+            .map(|a| serde_json::to_string(a).unwrap_or_default()),
+        created_at: Utc::now(),
+        modified_at: Utc::now(),
+    };
 
     let record = sqlx::query(
         r#"
@@ -358,11 +418,11 @@ pub(crate) async fn save_manifest(
         RETURNING id
         "#,
     )
-    .bind(index_id)
-    .bind(image_id)
-    .bind(manifest.schema_version() as i64)
-    .bind(media_type)
-    .bind(annotations)
+    .bind(manifest_model.index_id)
+    .bind(manifest_model.image_id)
+    .bind(manifest_model.schema_version)
+    .bind(&manifest_model.media_type)
+    .bind(&manifest_model.annotations_json)
     .fetch_one(pool)
     .await?;
 
@@ -375,70 +435,84 @@ pub(crate) async fn save_config(
     manifest_id: i64,
     config: &ImageConfiguration,
 ) -> MonocoreResult<i64> {
-    // Convert config fields to JSON strings where needed
-    let env_json = config
-        .config()
-        .as_ref()
-        .and_then(|c| Some(serde_json::to_string(c.env()).unwrap_or_default()));
-    let cmd_json = config
-        .config()
-        .as_ref()
-        .and_then(|c| Some(serde_json::to_string(c.cmd()).unwrap_or_default()));
-    let entrypoint_json = config
-        .config()
-        .as_ref()
-        .and_then(|c| Some(serde_json::to_string(c.entrypoint()).unwrap_or_default()));
-    let volumes_json = config
-        .config()
-        .as_ref()
-        .and_then(|c| Some(serde_json::to_string(c.volumes()).unwrap_or_default()));
-    let exposed_ports_json = config
-        .config()
-        .as_ref()
-        .and_then(|c| Some(serde_json::to_string(c.exposed_ports()).unwrap_or_default()));
-    let history_json = Some(serde_json::to_string(config.history()).unwrap_or_default());
-    let diff_ids = Some(config.rootfs().diff_ids().join(","));
-    let media_type = MediaType::ImageConfig.to_string();
+    let config_model = Config {
+        id: 0, // Will be set by the database
+        manifest_id,
+        media_type: MediaType::ImageConfig.to_string(),
+        created: config
+            .created()
+            .as_ref()
+            .map(|dt| dt.parse::<DateTime<Utc>>().unwrap()),
+        architecture: config.architecture().to_string(),
+        os: config.os().to_string(),
+        os_variant: config.os_version().as_ref().map(|s| s.to_string()),
+        config_env_json: config
+            .config()
+            .as_ref()
+            .map(|c| serde_json::to_string(c.env()).unwrap_or_default()),
+        config_cmd_json: config
+            .config()
+            .as_ref()
+            .map(|c| serde_json::to_string(c.cmd()).unwrap_or_default()),
+        config_working_dir: config
+            .config()
+            .as_ref()
+            .and_then(|c| c.working_dir().as_ref().map(String::from)),
+        config_entrypoint_json: config
+            .config()
+            .as_ref()
+            .map(|c| serde_json::to_string(c.entrypoint()).unwrap_or_default()),
+        config_volumes_json: config
+            .config()
+            .as_ref()
+            .map(|c| serde_json::to_string(c.volumes()).unwrap_or_default()),
+        config_exposed_ports_json: config
+            .config()
+            .as_ref()
+            .map(|c| serde_json::to_string(c.exposed_ports()).unwrap_or_default()),
+        config_user: config
+            .config()
+            .as_ref()
+            .and_then(|c| c.user().as_ref().map(String::from)),
+        rootfs_type: config.rootfs().typ().to_string(),
+        rootfs_diff_ids_json: Some(
+            serde_json::to_string(&config.rootfs().diff_ids()).unwrap_or_default(),
+        ),
+        history_json: Some(serde_json::to_string(config.history()).unwrap_or_default()),
+        created_at: Utc::now(),
+        modified_at: Utc::now(),
+    };
 
     let record = sqlx::query(
         r#"
         INSERT INTO configs (
-            manifest_id, media_type, created, architecture, os,
-            os_variant, config_env_json, config_cmd_json,
+            manifest_id, media_type, created, architecture,
+            os, os_variant, config_env_json, config_cmd_json,
             config_working_dir, config_entrypoint_json,
-            config_volumes_json, config_exposed_ports_json, config_user,
-            rootfs_type, rootfs_diff_ids_json, history_json
+            config_volumes_json, config_exposed_ports_json,
+            config_user, rootfs_type, rootfs_diff_ids_json,
+            history_json
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING id
         "#,
     )
-    .bind(manifest_id)
-    .bind(media_type)
-    .bind(config.created().as_ref().map(|t| t.to_string()))
-    .bind(config.architecture().to_string())
-    .bind(config.os().to_string())
-    .bind(config.os_version())
-    .bind(env_json)
-    .bind(cmd_json)
-    .bind(
-        config
-            .config()
-            .as_ref()
-            .and_then(|c| c.working_dir().as_ref().map(String::from)),
-    )
-    .bind(entrypoint_json)
-    .bind(volumes_json)
-    .bind(exposed_ports_json)
-    .bind(
-        config
-            .config()
-            .as_ref()
-            .and_then(|c| c.user().as_ref().map(String::from)),
-    )
-    .bind(config.rootfs().typ())
-    .bind(diff_ids)
-    .bind(history_json)
+    .bind(config_model.manifest_id)
+    .bind(&config_model.media_type)
+    .bind(config_model.created.map(|dt| dt.to_rfc3339()))
+    .bind(&config_model.architecture)
+    .bind(&config_model.os)
+    .bind(&config_model.os_variant)
+    .bind(&config_model.config_env_json)
+    .bind(&config_model.config_cmd_json)
+    .bind(&config_model.config_working_dir)
+    .bind(&config_model.config_entrypoint_json)
+    .bind(&config_model.config_volumes_json)
+    .bind(&config_model.config_exposed_ports_json)
+    .bind(&config_model.config_user)
+    .bind(&config_model.rootfs_type)
+    .bind(&config_model.rootfs_diff_ids_json)
+    .bind(&config_model.history_json)
     .fetch_one(pool)
     .await?;
 
@@ -454,6 +528,17 @@ pub(crate) async fn save_layer(
     size_bytes: i64,
     diff_id: &str,
 ) -> MonocoreResult<i64> {
+    let layer_model = Layer {
+        id: 0, // Will be set by the database
+        manifest_id,
+        media_type: media_type.to_string(),
+        digest: digest.to_string(),
+        diff_id: diff_id.to_string(),
+        size_bytes,
+        created_at: Utc::now(),
+        modified_at: Utc::now(),
+    };
+
     let record = sqlx::query(
         r#"
         INSERT INTO layers (
@@ -464,11 +549,11 @@ pub(crate) async fn save_layer(
         RETURNING id
         "#,
     )
-    .bind(manifest_id)
-    .bind(media_type)
-    .bind(digest)
-    .bind(size_bytes)
-    .bind(diff_id)
+    .bind(layer_model.manifest_id)
+    .bind(&layer_model.media_type)
+    .bind(&layer_model.digest)
+    .bind(layer_model.size_bytes)
+    .bind(&layer_model.diff_id)
     .fetch_one(pool)
     .await?;
 
@@ -478,12 +563,6 @@ pub(crate) async fn save_layer(
 /// Saves or updates an image in the database.
 /// If the image exists, it updates the size_bytes and last_used_at.
 /// If it doesn't exist, creates a new record.
-///
-/// ## Arguments
-///
-/// * `pool` - The database connection pool
-/// * `reference` - The reference string of the image
-/// * `size_bytes` - The size of the image in bytes
 pub(crate) async fn save_or_update_image(
     pool: &Pool<Sqlite>,
     reference: &str,
@@ -495,7 +574,7 @@ pub(crate) async fn save_or_update_image(
         UPDATE images
         SET size_bytes = ?, last_used_at = CURRENT_TIMESTAMP, modified_at = CURRENT_TIMESTAMP
         WHERE reference = ?
-        RETURNING id
+        RETURNING id, reference, size_bytes, last_used_at, created_at, modified_at
         "#,
     )
     .bind(size_bytes)
@@ -514,15 +593,6 @@ pub(crate) async fn save_or_update_image(
 /// Saves or updates a layer in the database.
 /// If the layer exists, it updates the size_bytes and other fields.
 /// If it doesn't exist, creates a new record.
-///
-/// ## Arguments
-///
-/// * `pool` - The database connection pool
-/// * `manifest_id` - The ID of the manifest this layer belongs to
-/// * `media_type` - The media type of the layer
-/// * `digest` - The digest of the layer
-/// * `size_bytes` - The size of the layer in bytes
-/// * `diff_id` - The diff ID of the layer
 pub(crate) async fn save_or_update_layer(
     pool: &Pool<Sqlite>,
     manifest_id: i64,
@@ -531,6 +601,17 @@ pub(crate) async fn save_or_update_layer(
     size_bytes: i64,
     diff_id: &str,
 ) -> MonocoreResult<i64> {
+    let layer_model = Layer {
+        id: 0, // Will be set by the database
+        manifest_id,
+        media_type: media_type.to_string(),
+        digest: digest.to_string(),
+        diff_id: diff_id.to_string(),
+        size_bytes,
+        created_at: Utc::now(),
+        modified_at: Utc::now(),
+    };
+
     // Try to update first
     let update_result = sqlx::query(
         r#"
@@ -544,11 +625,11 @@ pub(crate) async fn save_or_update_layer(
         RETURNING id
         "#,
     )
-    .bind(manifest_id)
-    .bind(media_type)
-    .bind(size_bytes)
-    .bind(diff_id)
-    .bind(digest)
+    .bind(layer_model.manifest_id)
+    .bind(&layer_model.media_type)
+    .bind(layer_model.size_bytes)
+    .bind(&layer_model.diff_id)
+    .bind(&layer_model.digest)
     .fetch_optional(pool)
     .await?;
 
@@ -561,11 +642,6 @@ pub(crate) async fn save_or_update_layer(
 }
 
 /// Checks if an image exists in the database.
-///
-/// ## Arguments
-///
-/// * `pool` - The database connection pool
-/// * `reference` - The reference string of the image to check
 pub(crate) async fn image_exists(pool: &Pool<Sqlite>, reference: &str) -> MonocoreResult<bool> {
     let record = sqlx::query(
         r#"
@@ -582,22 +658,14 @@ pub(crate) async fn image_exists(pool: &Pool<Sqlite>, reference: &str) -> Monoco
 }
 
 /// Gets all layers for an image from the database.
-///
-/// ## Arguments
-///
-/// * `pool` - The database connection pool
-/// * `reference` - The reference string of the image to get layers for
-///
-/// ## Returns
-///
-/// A vector of tuples containing (digest, diff_id, size_bytes) for each layer
 pub(crate) async fn get_image_layers(
     pool: &Pool<Sqlite>,
     reference: &str,
-) -> MonocoreResult<Vec<(String, String, i64)>> {
+) -> MonocoreResult<Vec<Layer>> {
     let records = sqlx::query(
         r#"
-        SELECT l.digest, l.diff_id, l.size_bytes
+        SELECT l.id, l.manifest_id, l.media_type, l.digest,
+               l.diff_id, l.size_bytes, l.created_at, l.modified_at
         FROM layers l
         JOIN manifests m ON l.manifest_id = m.id
         JOIN images i ON m.image_id = i.id
@@ -611,12 +679,15 @@ pub(crate) async fn get_image_layers(
 
     Ok(records
         .into_iter()
-        .map(|row| {
-            (
-                row.get::<String, _>("digest"),
-                row.get::<String, _>("diff_id"),
-                row.get::<i64, _>("size_bytes"),
-            )
+        .map(|row| Layer {
+            id: row.get("id"),
+            manifest_id: row.get("manifest_id"),
+            media_type: row.get("media_type"),
+            digest: row.get("digest"),
+            diff_id: row.get("diff_id"),
+            size_bytes: row.get("size_bytes"),
+            created_at: parse_sqlite_datetime(&row.get::<String, _>("created_at")),
+            modified_at: parse_sqlite_datetime(&row.get::<String, _>("modified_at")),
         })
         .collect())
 }
@@ -714,4 +785,14 @@ mod tests {
 
         Ok(())
     }
+}
+//--------------------------------------------------------------------------------------------------
+// Functions: Helpers
+//--------------------------------------------------------------------------------------------------
+
+/// Parses a SQLite datetime string (in "YYYY-MM-DD HH:MM:SS" format) to a DateTime<Utc>.
+fn parse_sqlite_datetime(s: &str) -> DateTime<Utc> {
+    let naive_dt = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+        .unwrap_or_else(|e| panic!("Failed to parse datetime string '{}': {:?}", s, e));
+    DateTime::from_naive_utc_and_offset(naive_dt, Utc)
 }

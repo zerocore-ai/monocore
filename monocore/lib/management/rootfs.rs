@@ -100,7 +100,7 @@ pub async fn patch_with_sandbox_scripts(
 /// - Cannot create directories in the rootfs
 /// - Cannot read or write the fstab file
 /// - Cannot set permissions on the fstab file
-async fn patch_with_virtiofs_mounts(
+async fn _patch_with_virtiofs_mounts(
     root_path: &Path,
     mapped_dirs: &[PathPair],
 ) -> MonocoreResult<()> {
@@ -157,6 +157,79 @@ async fn patch_with_virtiofs_mounts(
     Ok(())
 }
 
+/// Updates the /etc/hosts file in the guest rootfs to add hostname mappings.
+/// Creates the file if it doesn't exist.
+///
+/// This method:
+/// 1. Creates or updates the /etc/hosts file in the guest rootfs
+/// 2. Adds entries for each IP address and hostname pair
+/// 3. Sets appropriate permissions on the hosts file
+///
+/// ## Format
+/// Each hostname mapping follows the standard hosts file format:
+/// ```text
+/// 192.168.1.100  hostname1
+/// 192.168.1.101  hostname2
+/// ```
+///
+/// ## Arguments
+/// * `root_path` - Path to the guest rootfs
+/// * `hostname_mappings` - List of (IPv4 address, hostname) pairs to add
+///
+/// ## Errors
+/// Returns an error if:
+/// - Cannot create directories in the rootfs
+/// - Cannot read or write the hosts file
+/// - Cannot set permissions on the hosts file
+async fn _patch_with_hostnames(
+    root_path: &Path,
+    hostname_mappings: &[(std::net::Ipv4Addr, String)],
+) -> MonocoreResult<()> {
+    let hosts_path = root_path.join("etc/hosts");
+
+    // Create parent directories if they don't exist
+    if let Some(parent) = hosts_path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
+
+    // Read existing hosts content if it exists
+    let mut hosts_content = if hosts_path.exists() {
+        fs::read_to_string(&hosts_path).await?
+    } else {
+        String::new()
+    };
+
+    // Add header comment if file is empty
+    if hosts_content.is_empty() {
+        hosts_content.push_str(
+            "# /etc/hosts: static table lookup for hostnames.\n\
+             # <ip-address>\t<hostname>\n\n\
+             127.0.0.1\tlocalhost\n\
+             ::1\tlocalhost ip6-localhost ip6-loopback\n",
+        );
+    }
+
+    // Add entries for hostname mappings
+    for (ip_addr, hostname) in hostname_mappings {
+        // Check if this mapping already exists
+        let entry = format!("{}\t{}", ip_addr, hostname);
+        if !hosts_content.contains(&entry) {
+            hosts_content.push_str(&format!("{}\n", entry));
+        }
+    }
+
+    // Write updated hosts content
+    fs::write(&hosts_path, hosts_content).await?;
+
+    // Set proper permissions (644 - rw-r--r--)
+    let perms = fs::metadata(&hosts_path).await?.permissions();
+    let mut new_perms = perms;
+    new_perms.set_mode(0o644);
+    fs::set_permissions(&hosts_path, new_perms).await?;
+
+    Ok(())
+}
+
 //--------------------------------------------------------------------------------------------------
 // Tests
 //--------------------------------------------------------------------------------------------------
@@ -194,7 +267,7 @@ mod tests {
         ];
 
         // Update fstab
-        patch_with_virtiofs_mounts(root_path, &mapped_dirs).await?;
+        _patch_with_virtiofs_mounts(root_path, &mapped_dirs).await?;
 
         // Verify fstab file was created with correct content
         let fstab_path = root_path.join("etc/fstab");
@@ -231,7 +304,7 @@ mod tests {
         ];
 
         // Update fstab again
-        patch_with_virtiofs_mounts(root_path, &new_mapped_dirs).await?;
+        _patch_with_virtiofs_mounts(root_path, &new_mapped_dirs).await?;
 
         // Verify updated content
         let updated_content = fs::read_to_string(&fstab_path).await?;
@@ -276,7 +349,7 @@ mod tests {
             vec![format!("{}:/container/data", host_path.display()).parse::<PathPair>()?];
 
         // Function should detect it cannot write to /etc/fstab and return an error
-        let result = patch_with_virtiofs_mounts(readonly_path, &mapped_dirs).await;
+        let result = _patch_with_virtiofs_mounts(readonly_path, &mapped_dirs).await;
 
         // Detailed error reporting for debugging
         if result.is_ok() {
@@ -303,6 +376,72 @@ mod tests {
             fs::metadata(&etc_path).await?.permissions().mode()
         );
         assert!(matches!(result.unwrap_err(), MonocoreError::Io(_)));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_patch_with_hostnames() -> anyhow::Result<()> {
+        use std::net::Ipv4Addr;
+
+        // Create a temporary directory to act as our rootfs
+        let root_dir = TempDir::new()?;
+        let root_path = root_dir.path();
+
+        // Create test hostname mappings
+        let hostname_mappings = vec![
+            (Ipv4Addr::new(192, 168, 1, 100), "host1.local".to_string()),
+            (Ipv4Addr::new(192, 168, 1, 101), "host2.local".to_string()),
+        ];
+
+        // Update hosts file
+        _patch_with_hostnames(root_path, &hostname_mappings).await?;
+
+        // Verify hosts file was created with correct content
+        let hosts_path = root_path.join("etc/hosts");
+        assert!(hosts_path.exists());
+
+        let hosts_content = fs::read_to_string(&hosts_path).await?;
+
+        // Check header
+        assert!(hosts_content.contains("# /etc/hosts: static table lookup for hostnames"));
+        assert!(hosts_content.contains("127.0.0.1\tlocalhost"));
+        assert!(hosts_content.contains("::1\tlocalhost ip6-localhost ip6-loopback"));
+
+        // Check entries
+        assert!(hosts_content.contains("192.168.1.100\thost1.local"));
+        assert!(hosts_content.contains("192.168.1.101\thost2.local"));
+
+        // Verify file permissions
+        let perms = fs::metadata(&hosts_path).await?.permissions();
+        assert_eq!(perms.mode() & 0o777, 0o644);
+
+        // Test updating existing hosts file with new entries
+        let new_mappings = vec![
+            (Ipv4Addr::new(192, 168, 1, 100), "host1.local".to_string()), // Existing entry
+            (Ipv4Addr::new(192, 168, 1, 102), "host3.local".to_string()), // New entry
+        ];
+
+        // Update hosts file again
+        _patch_with_hostnames(root_path, &new_mappings).await?;
+
+        // Verify updated content
+        let updated_content = fs::read_to_string(&hosts_path).await?;
+
+        // Should still contain original entries
+        assert!(updated_content.contains("127.0.0.1\tlocalhost"));
+        assert!(updated_content.contains("::1\tlocalhost ip6-localhost ip6-loopback"));
+
+        // Should contain both old and new entries without duplicates
+        assert!(updated_content.contains("192.168.1.100\thost1.local"));
+        assert!(updated_content.contains("192.168.1.102\thost3.local"));
+
+        // Count occurrences of the first IP to ensure no duplicates
+        let count = updated_content
+            .lines()
+            .filter(|line| line.contains("192.168.1.100"))
+            .count();
+        assert_eq!(count, 1, "Should not have duplicate entries");
 
         Ok(())
     }

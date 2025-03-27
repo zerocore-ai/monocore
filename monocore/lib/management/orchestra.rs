@@ -14,14 +14,13 @@ use nix::{
     sys::signal::{self, Signal},
     unistd::Pid,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{
-    config,
-    config::DEFAULT_SCRIPT,
+    config::{self, Monocore, DEFAULT_SCRIPT},
     management::sandbox,
     utils::{MONOCORE_ENV_DIR, SANDBOX_DB_FILENAME},
-    MonocoreResult,
+    MonocoreError, MonocoreResult,
 };
 
 use super::{db, menv};
@@ -178,9 +177,12 @@ pub async fn up(
     project_dir: Option<PathBuf>,
     config_file: Option<&str>,
 ) -> MonocoreResult<()> {
-    // Load the configuration first to validate it exists before acquiring lock
+    // Load the configuration first to validate it exists
     let (config, canonical_project_dir, config_file) =
         config::load_config(project_dir, config_file).await?;
+
+    // Validate all sandbox names exist in config before proceeding
+    validate_sandbox_names(&sandbox_names, &config, &canonical_project_dir, &config_file)?;
 
     // Ensure menv files exist
     let menv_path = canonical_project_dir.join(MONOCORE_ENV_DIR);
@@ -270,9 +272,12 @@ pub async fn down(
     project_dir: Option<PathBuf>,
     config_file: Option<&str>,
 ) -> MonocoreResult<()> {
-    // Load the configuration first to validate it exists before acquiring lock
+    // Load the configuration first to validate it exists
     let (config, canonical_project_dir, config_file) =
         config::load_config(project_dir, config_file).await?;
+
+    // Validate all sandbox names exist in config before proceeding
+    validate_sandbox_names(&sandbox_names, &config, &canonical_project_dir, &config_file)?;
 
     // Ensure menv files exist
     let menv_path = canonical_project_dir.join(MONOCORE_ENV_DIR);
@@ -309,4 +314,90 @@ pub async fn down(
     }
 
     Ok(())
+}
+
+//--------------------------------------------------------------------------------------------------
+// Functions: Helpers
+//--------------------------------------------------------------------------------------------------
+
+/// Validate that all requested sandbox names exist in the configuration
+fn validate_sandbox_names(
+    sandbox_names: &[String],
+    config: &Monocore,
+    project_dir: &Path,
+    config_file: &str,
+) -> MonocoreResult<()> {
+    let config_sandboxes = config
+        .get_sandboxes()
+        .as_ref()
+        .map(|s| s.as_slice())
+        .unwrap_or_default();
+
+    let config_sandbox_names: Vec<String> = config_sandboxes
+        .iter()
+        .map(|s| s.get_name().to_string())
+        .collect();
+
+    let missing_sandboxes: Vec<String> = sandbox_names
+        .iter()
+        .filter(|name| !config_sandbox_names.contains(name))
+        .cloned()
+        .collect();
+
+    if !missing_sandboxes.is_empty() {
+        return Err(MonocoreError::SandboxNotFoundInConfig(
+            missing_sandboxes.join(", "),
+            project_dir.join(config_file),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Checks if specified sandboxes from the configuration are running.
+async fn _check_running(
+    sandbox_names: Vec<String>,
+    config: &Monocore,
+    project_dir: &Path,
+    config_file: &str,
+) -> MonocoreResult<Vec<(String, bool)>> {
+    // Ensure menv files exist
+    let canonical_project_dir = project_dir.canonicalize().map_err(|e| {
+        MonocoreError::InvalidArgument(format!("Failed to canonicalize project directory: {}", e))
+    })?;
+    let menv_path = canonical_project_dir.join(MONOCORE_ENV_DIR);
+    menv::ensure_menv_files(&menv_path).await?;
+
+    // Get database connection pool
+    let db_path = menv_path.join(SANDBOX_DB_FILENAME);
+    let pool = db::get_or_create_pool(&db_path, &db::SANDBOX_DB_MIGRATOR).await?;
+
+    // Get all sandboxes defined in config
+    let config_sandboxes = config
+        .get_sandboxes()
+        .as_ref()
+        .map(|s| s.as_slice())
+        .unwrap_or_default();
+
+    let config_sandbox_names: Vec<String> = config_sandboxes
+        .iter()
+        .map(|s| s.get_name().to_string())
+        .collect();
+
+    // Get all running sandboxes from database
+    let running_sandboxes = db::get_running_config_sandboxes(&pool, config_file).await?;
+    let running_sandbox_names: Vec<String> =
+        running_sandboxes.iter().map(|s| s.name.clone()).collect();
+
+    // Check status of specified sandboxes
+    let mut statuses = Vec::new();
+    for sandbox_name in sandbox_names {
+        // Only check if sandbox exists in config
+        if config_sandbox_names.contains(&sandbox_name) {
+            let is_running = running_sandbox_names.contains(&sandbox_name);
+            statuses.push((sandbox_name, is_running));
+        }
+    }
+
+    Ok(statuses)
 }

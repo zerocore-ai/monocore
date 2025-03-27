@@ -457,12 +457,12 @@ async fn setup_image_rootfs(
 
     // Get the extracted layer paths
     let mut layer_paths = Vec::new();
-    for (digest, _, _) in &layers {
-        let layer_path = layers_dir.join(format!("{}.{}", digest, EXTRACTED_LAYER_SUFFIX));
+    for layer in &layers {
+        let layer_path = layers_dir.join(format!("{}.{}", layer.digest, EXTRACTED_LAYER_SUFFIX));
         if !layer_path.exists() {
             return Err(MonocoreError::PathNotFound(format!(
                 "extracted layer {} not found at {}",
-                digest,
+                layer.digest,
                 layer_path.display()
             )));
         }
