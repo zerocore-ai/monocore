@@ -1,12 +1,9 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
 use clap::{error::ErrorKind, CommandFactory, Parser};
 use monocore::{
     cli::{AnsiStyles, MonocoreArgs, MonocoreSubcommand, ServerSubcommand},
-    config::{self, DEFAULT_SERVER_PORT},
-    management::{image, menv, orchestra, sandbox},
+    config,
+    management::{image, menv, orchestra, sandbox, server},
     oci::Reference,
-    server::SandboxServer,
     MonocoreError, MonocoreResult,
 };
 use std::path::PathBuf;
@@ -514,28 +511,17 @@ async fn main() -> MonocoreResult<()> {
         }
         Some(MonocoreSubcommand::Server { subcommand }) => {
             match subcommand {
-                ServerSubcommand::Up {
+                ServerSubcommand::Start {
                     port,
                     path,
                     disable_default,
                 } => {
-                    let server = SandboxServer::new(
-                        path,
-                        !disable_default,
-                        SocketAddr::new(
-                            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                            port.unwrap_or(DEFAULT_SERVER_PORT),
-                        ),
-                    )?;
-                    server.serve().await?;
+                    server::start(port, path, disable_default, true).await?;
                 }
-                ServerSubcommand::Down => {
-                    // We need to store the pid somewhere (~/.monocore/server.pid maybe?) and send a signal to it
-                    unimplemented!()
+                ServerSubcommand::Stop => {
+                    server::stop().await?;
                 }
             }
-
-            todo!()
         }
         Some(_) => (), // TODO: implement other subcommands
         None => {

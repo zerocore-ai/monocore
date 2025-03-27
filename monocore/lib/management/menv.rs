@@ -7,7 +7,7 @@
 
 use crate::{
     config::DEFAULT_CONFIG,
-    utils::{MONOCORE_CONFIG_FILENAME, ORCHESTRA_LOCK_FILE, RW_SUBDIR},
+    utils::{MONOCORE_CONFIG_FILENAME, RW_SUBDIR},
     MonocoreResult,
 };
 use std::path::{Path, PathBuf};
@@ -75,10 +75,6 @@ pub(crate) async fn ensure_menv_files(menv_path: &PathBuf) -> MonocoreResult<()>
 
     // Get the sandbox database path
     let db_path = menv_path.join(SANDBOX_DB_FILENAME);
-
-    // Create the orchestra lock file
-    let lock_path = menv_path.join(ORCHESTRA_LOCK_FILE);
-    fs::File::create(&lock_path).await?;
 
     // Initialize sandbox database
     let _ = db::initialize(&db_path, &db::SANDBOX_DB_MIGRATOR).await?;

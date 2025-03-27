@@ -1,10 +1,11 @@
-//! `mcrun` is a polymorphic binary that can operate in two modes: MicroVM or supervisor.
+//! `mcrun` is a polymorphic binary that can operate in three modes: MicroVM, supervisor, or sandbox server.
 //!
 //! # Overview
 //!
 //! This binary provides a unified interface for running either:
 //! - A MicroVM that provides an isolated execution environment
 //! - A supervisor process that can manage and monitor child processes
+//! - A sandbox server that can orchestrate sandboxes
 //!
 //! ## Usage
 //!
@@ -47,16 +48,26 @@
 //!     --forward-output \
 //!     -- -m http.server 8080
 //! ```
+//!
+//! ## Server Mode
+//!
+//! To start the sandbox server:
+//! ```bash
+//! mcrun server --port 8080 --path /path/to/namespaces --disable-default
+//! ```
 
-use std::env;
+use std::{
+    env,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
 
 use anyhow::Result;
-use chrono::Duration;
 use clap::Parser;
 use monocore::{
     cli::{McrunArgs, McrunSubcommand},
-    config::{EnvPair, PathPair, PortPair},
+    config::{EnvPair, PathPair, PortPair, DEFAULT_SERVER_PORT},
     runtime::MicroVmMonitor,
+    server::SandboxServer,
     vm::{MicroVm, Rootfs},
 };
 use monoutils::runtime::Supervisor;
@@ -213,7 +224,6 @@ async fn main() -> Result<()> {
                 config_last_modified,
                 log_dir.clone(),
                 rootfs.clone(),
-                Duration::days(1),
                 forward_output,
             )
             .await?;
@@ -296,6 +306,21 @@ async fn main() -> Result<()> {
                 Supervisor::new(child_exe, child_args, child_envs, log_dir, process_monitor);
 
             supervisor.start().await?;
+        }
+        McrunSubcommand::Server {
+            port,
+            path,
+            disable_default,
+        } => {
+            let server = SandboxServer::new(
+                path,
+                !disable_default,
+                SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                    port.unwrap_or(DEFAULT_SERVER_PORT),
+                ),
+            )?;
+            server.serve().await?;
         }
     }
 

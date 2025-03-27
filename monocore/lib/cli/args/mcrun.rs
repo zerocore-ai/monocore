@@ -138,4 +138,18 @@ pub enum McrunSubcommand {
         #[arg(last = true)]
         args: Vec<String>,
     },
+    /// Start the sandbox server
+    Server {
+        /// Port to listen on
+        #[arg(long)]
+        port: Option<u16>,
+
+        /// Path to the namespace directory
+        #[arg(long)]
+        path: Option<PathBuf>,
+
+        /// Disable default namespace
+        #[arg(long, default_value_t = false)]
+        disable_default: bool,
+    },
 }
