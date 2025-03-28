@@ -509,20 +509,18 @@ async fn main() -> MonocoreResult<()> {
 
             handle_log_subcommand(&sandbox, path, config.as_deref(), follow, tail).await?;
         }
-        Some(MonocoreSubcommand::Server { subcommand }) => {
-            match subcommand {
-                ServerSubcommand::Start {
-                    port,
-                    path,
-                    disable_default,
-                } => {
-                    server::start(port, path, disable_default, true).await?;
-                }
-                ServerSubcommand::Stop => {
-                    server::stop().await?;
-                }
+        Some(MonocoreSubcommand::Server { subcommand }) => match subcommand {
+            ServerSubcommand::Start {
+                port,
+                path,
+                disable_default,
+            } => {
+                server::start(port, path, disable_default, true).await?;
             }
-        }
+            ServerSubcommand::Stop => {
+                server::stop().await?;
+            }
+        },
         Some(_) => (), // TODO: implement other subcommands
         None => {
             MonocoreArgs::command().print_help()?;

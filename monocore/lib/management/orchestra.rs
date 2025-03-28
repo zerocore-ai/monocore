@@ -85,16 +85,7 @@ pub async fn apply(project_dir: Option<PathBuf>, config_file: Option<&str>) -> M
     let pool = db::get_or_create_pool(&db_path, &db::SANDBOX_DB_MIGRATOR).await?;
 
     // Get all sandboxes defined in config
-    let config_sandboxes = config
-        .get_sandboxes()
-        .as_ref()
-        .map(|s| s.as_slice())
-        .unwrap_or_default();
-
-    let config_sandbox_names: Vec<String> = config_sandboxes
-        .iter()
-        .map(|s| s.get_name().to_string())
-        .collect();
+    let config_sandboxes = config.get_sandboxes();
 
     // Get all running sandboxes from database
     let running_sandboxes = db::get_running_config_sandboxes(&pool, &config_file).await?;
@@ -102,12 +93,12 @@ pub async fn apply(project_dir: Option<PathBuf>, config_file: Option<&str>) -> M
         running_sandboxes.iter().map(|s| s.name.clone()).collect();
 
     // Start sandboxes that are in config but not active
-    for sandbox_config in config_sandboxes {
+    for (name, _) in config_sandboxes {
         // Should start in parallel
-        if !running_sandbox_names.contains(sandbox_config.get_name()) {
-            tracing::info!("Starting sandbox: {}", sandbox_config.get_name());
+        if !running_sandbox_names.contains(name) {
+            tracing::info!("Starting sandbox: {}", name);
             sandbox::run(
-                sandbox_config.get_name(),
+                name,
                 Some(DEFAULT_SCRIPT),
                 Some(canonical_project_dir.clone()),
                 Some(&config_file),
@@ -121,7 +112,7 @@ pub async fn apply(project_dir: Option<PathBuf>, config_file: Option<&str>) -> M
 
     // Stop sandboxes that are active but not in config
     for sandbox in running_sandboxes {
-        if !config_sandbox_names.contains(&sandbox.name) {
+        if !config_sandboxes.contains_key(&sandbox.name) {
             tracing::info!("Stopping sandbox: {}", sandbox.name);
             signal::kill(
                 Pid::from_raw(sandbox.supervisor_pid as i32),
@@ -198,11 +189,7 @@ pub async fn up(
     let pool = db::get_or_create_pool(&db_path, &db::SANDBOX_DB_MIGRATOR).await?;
 
     // Get all sandboxes defined in config
-    let config_sandboxes = config
-        .get_sandboxes()
-        .as_ref()
-        .map(|s| s.as_slice())
-        .unwrap_or_default();
+    let config_sandboxes = config.get_sandboxes();
 
     // Get all running sandboxes from database
     let running_sandboxes = db::get_running_config_sandboxes(&pool, &config_file).await?;
@@ -210,12 +197,9 @@ pub async fn up(
         running_sandboxes.iter().map(|s| s.name.clone()).collect();
 
     // Start specified sandboxes that are in config but not active
-    for sandbox_config in config_sandboxes {
-        let sandbox_name = sandbox_config.get_name();
+    for (sandbox_name, _) in config_sandboxes {
         // Only start if sandbox is in the specified list and not already running
-        if sandbox_names.contains(&sandbox_name.to_string())
-            && !running_sandbox_names.contains(sandbox_name)
-        {
+        if sandbox_names.contains(sandbox_name) && !running_sandbox_names.contains(sandbox_name) {
             tracing::info!("Starting sandbox: {}", sandbox_name);
             sandbox::run(
                 sandbox_name,
@@ -298,23 +282,14 @@ pub async fn down(
     let pool = db::get_or_create_pool(&db_path, &db::SANDBOX_DB_MIGRATOR).await?;
 
     // Get all sandboxes defined in config
-    let config_sandboxes = config
-        .get_sandboxes()
-        .as_ref()
-        .map(|s| s.as_slice())
-        .unwrap_or_default();
-
-    let config_sandbox_names: Vec<String> = config_sandboxes
-        .iter()
-        .map(|s| s.get_name().to_string())
-        .collect();
+    let config_sandboxes = config.get_sandboxes();
 
     // Get all running sandboxes from database
     let running_sandboxes = db::get_running_config_sandboxes(&pool, &config_file).await?;
 
     // Stop specified sandboxes that are both in config and running
     for sandbox in running_sandboxes {
-        if sandbox_names.contains(&sandbox.name) && config_sandbox_names.contains(&sandbox.name) {
+        if sandbox_names.contains(&sandbox.name) && config_sandboxes.contains_key(&sandbox.name) {
             tracing::info!("Stopping sandbox: {}", sandbox.name);
             signal::kill(
                 Pid::from_raw(sandbox.supervisor_pid as i32),
@@ -337,20 +312,11 @@ fn validate_sandbox_names(
     project_dir: &Path,
     config_file: &str,
 ) -> MonocoreResult<()> {
-    let config_sandboxes = config
-        .get_sandboxes()
-        .as_ref()
-        .map(|s| s.as_slice())
-        .unwrap_or_default();
-
-    let config_sandbox_names: Vec<String> = config_sandboxes
-        .iter()
-        .map(|s| s.get_name().to_string())
-        .collect();
+    let config_sandboxes = config.get_sandboxes();
 
     let missing_sandboxes: Vec<String> = sandbox_names
         .iter()
-        .filter(|name| !config_sandbox_names.contains(name))
+        .filter(|name| !config_sandboxes.contains_key(*name))
         .cloned()
         .collect();
 
@@ -383,16 +349,7 @@ async fn _check_running(
     let pool = db::get_or_create_pool(&db_path, &db::SANDBOX_DB_MIGRATOR).await?;
 
     // Get all sandboxes defined in config
-    let config_sandboxes = config
-        .get_sandboxes()
-        .as_ref()
-        .map(|s| s.as_slice())
-        .unwrap_or_default();
-
-    let config_sandbox_names: Vec<String> = config_sandboxes
-        .iter()
-        .map(|s| s.get_name().to_string())
-        .collect();
+    let config_sandboxes = config.get_sandboxes();
 
     // Get all running sandboxes from database
     let running_sandboxes = db::get_running_config_sandboxes(&pool, config_file).await?;
@@ -403,7 +360,7 @@ async fn _check_running(
     let mut statuses = Vec::new();
     for sandbox_name in sandbox_names {
         // Only check if sandbox exists in config
-        if config_sandbox_names.contains(&sandbox_name) {
+        if config_sandboxes.contains_key(&sandbox_name) {
             let is_running = running_sandbox_names.contains(&sandbox_name);
             statuses.push((sandbox_name, is_running));
         }

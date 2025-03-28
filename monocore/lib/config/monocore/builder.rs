@@ -8,7 +8,7 @@ use crate::{
     MonocoreResult,
 };
 
-use super::{Build, Group, Meta, Monocore, Proxy, Require, Sandbox, SandboxGroup, SandboxNetwork};
+use super::{Build, Group, Meta, Module, Monocore, Proxy, Sandbox, SandboxGroup, SandboxNetwork};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -18,17 +18,17 @@ use super::{Build, Group, Meta, Monocore, Proxy, Require, Sandbox, SandboxGroup,
 ///
 /// ### Optional fields:
 /// - `meta`: The metadata for the configuration
-/// - `requires`: The configuration files to import
+/// - `modules`: The modules to import
 /// - `builds`: The builds to run
 /// - `sandboxes`: The sandboxes to run
 /// - `groups`: The groups to run the sandboxes in
 #[derive(Default)]
 pub struct MonocoreBuilder {
     meta: Option<Meta>,
-    requires: Option<Vec<Require>>,
-    builds: Option<Vec<Build>>,
-    sandboxes: Option<Vec<Sandbox>>,
-    groups: Option<Vec<Group>>,
+    modules: HashMap<String, Module>,
+    builds: HashMap<String, Build>,
+    sandboxes: HashMap<String, Sandbox>,
+    groups: HashMap<String, Group>,
 }
 
 /// Builder for Sandbox configuration
@@ -55,8 +55,7 @@ pub struct MonocoreBuilder {
 /// - `exports`: The files to export
 /// - `network`: The network configuration for the sandbox
 /// - `proxy`: The proxy to use
-pub struct SandboxBuilder<N, I, S> {
-    name: N,
+pub struct SandboxBuilder<I, S> {
     version: Option<Version>,
     meta: Option<Meta>,
     image: I,
@@ -88,27 +87,27 @@ impl MonocoreBuilder {
         self
     }
 
-    /// Sets the configuration files to import
-    pub fn requires(mut self, requires: impl IntoIterator<Item = Require>) -> Self {
-        self.requires = Some(requires.into_iter().collect());
+    /// Sets the modules to import
+    pub fn modules(mut self, modules: impl IntoIterator<Item = (String, Module)>) -> Self {
+        self.modules = modules.into_iter().collect();
         self
     }
 
     /// Sets the builds to run
-    pub fn builds(mut self, builds: impl IntoIterator<Item = Build>) -> Self {
-        self.builds = Some(builds.into_iter().collect());
+    pub fn builds(mut self, builds: impl IntoIterator<Item = (String, Build)>) -> Self {
+        self.builds = builds.into_iter().collect();
         self
     }
 
     /// Sets the sandboxes to run
-    pub fn sandboxes(mut self, sandboxes: impl IntoIterator<Item = Sandbox>) -> Self {
-        self.sandboxes = Some(sandboxes.into_iter().collect());
+    pub fn sandboxes(mut self, sandboxes: impl IntoIterator<Item = (String, Sandbox)>) -> Self {
+        self.sandboxes = sandboxes.into_iter().collect();
         self
     }
 
     /// Sets the groups to run the sandboxes in
-    pub fn groups(mut self, groups: impl IntoIterator<Item = Group>) -> Self {
-        self.groups = Some(groups.into_iter().collect());
+    pub fn groups(mut self, groups: impl IntoIterator<Item = (String, Group)>) -> Self {
+        self.groups = groups.into_iter().collect();
         self
     }
 
@@ -123,7 +122,7 @@ impl MonocoreBuilder {
     pub fn build_unchecked(self) -> Monocore {
         Monocore {
             meta: self.meta,
-            requires: self.requires,
+            modules: self.modules,
             builds: self.builds,
             sandboxes: self.sandboxes,
             groups: self.groups,
@@ -131,48 +130,22 @@ impl MonocoreBuilder {
     }
 }
 
-impl<N, I, S> SandboxBuilder<N, I, S> {
-    /// Sets the name of the sandbox
-    pub fn name(self, name: impl AsRef<str>) -> SandboxBuilder<String, I, S> {
-        SandboxBuilder {
-            name: name.as_ref().to_string(),
-            version: self.version,
-            meta: self.meta,
-            image: self.image,
-            ram: self.ram,
-            cpus: self.cpus,
-            volumes: self.volumes,
-            ports: self.ports,
-            envs: self.envs,
-            env_file: self.env_file,
-            groups: self.groups,
-            depends_on: self.depends_on,
-            workdir: self.workdir,
-            shell: self.shell,
-            scripts: self.scripts,
-            imports: self.imports,
-            exports: self.exports,
-            network: self.network,
-            proxy: self.proxy,
-        }
-    }
-
+impl<I, S> SandboxBuilder<I, S> {
     /// Sets the version of the sandbox
-    pub fn version(mut self, version: impl Into<Version>) -> SandboxBuilder<N, I, S> {
+    pub fn version(mut self, version: impl Into<Version>) -> SandboxBuilder<I, S> {
         self.version = Some(version.into());
         self
     }
 
     /// Sets the metadata for the sandbox
-    pub fn meta(mut self, meta: Meta) -> SandboxBuilder<N, I, S> {
+    pub fn meta(mut self, meta: Meta) -> SandboxBuilder<I, S> {
         self.meta = Some(meta);
         self
     }
 
     /// Sets the image for the sandbox
-    pub fn image(self, image: impl Into<ReferenceOrPath>) -> SandboxBuilder<N, ReferenceOrPath, S> {
+    pub fn image(self, image: impl Into<ReferenceOrPath>) -> SandboxBuilder<ReferenceOrPath, S> {
         SandboxBuilder {
-            name: self.name,
             version: self.version,
             meta: self.meta,
             image: image.into(),
@@ -195,40 +168,37 @@ impl<N, I, S> SandboxBuilder<N, I, S> {
     }
 
     /// Sets the maximum amount of RAM allowed for the sandbox
-    pub fn ram(mut self, ram: u32) -> SandboxBuilder<N, I, S> {
+    pub fn ram(mut self, ram: u32) -> SandboxBuilder<I, S> {
         self.ram = Some(ram);
         self
     }
 
     /// Sets the maximum number of CPUs allowed for the sandbox
-    pub fn cpus(mut self, cpus: u8) -> SandboxBuilder<N, I, S> {
+    pub fn cpus(mut self, cpus: u8) -> SandboxBuilder<I, S> {
         self.cpus = Some(cpus);
         self
     }
 
     /// Sets the volumes to mount for the sandbox
-    pub fn volumes(
-        mut self,
-        volumes: impl IntoIterator<Item = PathPair>,
-    ) -> SandboxBuilder<N, I, S> {
+    pub fn volumes(mut self, volumes: impl IntoIterator<Item = PathPair>) -> SandboxBuilder<I, S> {
         self.volumes = volumes.into_iter().collect();
         self
     }
 
     /// Sets the ports to expose for the sandbox
-    pub fn ports(mut self, ports: impl IntoIterator<Item = PortPair>) -> SandboxBuilder<N, I, S> {
+    pub fn ports(mut self, ports: impl IntoIterator<Item = PortPair>) -> SandboxBuilder<I, S> {
         self.ports = ports.into_iter().collect();
         self
     }
 
     /// Sets the environment variables for the sandbox
-    pub fn envs(mut self, envs: impl IntoIterator<Item = EnvPair>) -> SandboxBuilder<N, I, S> {
+    pub fn envs(mut self, envs: impl IntoIterator<Item = EnvPair>) -> SandboxBuilder<I, S> {
         self.envs = envs.into_iter().collect();
         self
     }
 
     /// Sets the environment file for the sandbox
-    pub fn env_file(mut self, env_file: impl Into<Utf8UnixPathBuf>) -> SandboxBuilder<N, I, S> {
+    pub fn env_file(mut self, env_file: impl Into<Utf8UnixPathBuf>) -> SandboxBuilder<I, S> {
         self.env_file = Some(env_file.into());
         self
     }
@@ -237,7 +207,7 @@ impl<N, I, S> SandboxBuilder<N, I, S> {
     pub fn groups(
         mut self,
         groups: impl IntoIterator<Item = (String, SandboxGroup)>,
-    ) -> SandboxBuilder<N, I, S> {
+    ) -> SandboxBuilder<I, S> {
         self.groups = groups.into_iter().collect();
         self
     }
@@ -246,21 +216,20 @@ impl<N, I, S> SandboxBuilder<N, I, S> {
     pub fn depends_on(
         mut self,
         depends_on: impl IntoIterator<Item = String>,
-    ) -> SandboxBuilder<N, I, S> {
+    ) -> SandboxBuilder<I, S> {
         self.depends_on = depends_on.into_iter().collect();
         self
     }
 
     /// Sets the working directory for the sandbox
-    pub fn workdir(mut self, workdir: impl Into<Utf8UnixPathBuf>) -> SandboxBuilder<N, I, S> {
+    pub fn workdir(mut self, workdir: impl Into<Utf8UnixPathBuf>) -> SandboxBuilder<I, S> {
         self.workdir = Some(workdir.into());
         self
     }
 
     /// Sets the shell for the sandbox
-    pub fn shell(self, shell: impl AsRef<str>) -> SandboxBuilder<N, I, String> {
+    pub fn shell(self, shell: impl AsRef<str>) -> SandboxBuilder<I, String> {
         SandboxBuilder {
-            name: self.name,
             version: self.version,
             meta: self.meta,
             image: self.image,
@@ -286,7 +255,7 @@ impl<N, I, S> SandboxBuilder<N, I, S> {
     pub fn scripts(
         mut self,
         scripts: impl IntoIterator<Item = (String, String)>,
-    ) -> SandboxBuilder<N, I, S> {
+    ) -> SandboxBuilder<I, S> {
         self.scripts = scripts.into_iter().collect();
         self
     }
@@ -295,7 +264,7 @@ impl<N, I, S> SandboxBuilder<N, I, S> {
     pub fn imports(
         mut self,
         imports: impl IntoIterator<Item = (String, Utf8UnixPathBuf)>,
-    ) -> SandboxBuilder<N, I, S> {
+    ) -> SandboxBuilder<I, S> {
         self.imports = imports.into_iter().collect();
         self
     }
@@ -304,29 +273,28 @@ impl<N, I, S> SandboxBuilder<N, I, S> {
     pub fn exports(
         mut self,
         exports: impl IntoIterator<Item = (String, Utf8UnixPathBuf)>,
-    ) -> SandboxBuilder<N, I, S> {
+    ) -> SandboxBuilder<I, S> {
         self.exports = exports.into_iter().collect();
         self
     }
 
     /// Sets the network for the sandbox
-    pub fn network(mut self, network: SandboxNetwork) -> SandboxBuilder<N, I, S> {
+    pub fn network(mut self, network: SandboxNetwork) -> SandboxBuilder<I, S> {
         self.network = Some(network);
         self
     }
 
     /// Sets the proxy for the sandbox
-    pub fn proxy(mut self, proxy: Proxy) -> SandboxBuilder<N, I, S> {
+    pub fn proxy(mut self, proxy: Proxy) -> SandboxBuilder<I, S> {
         self.proxy = Some(proxy);
         self
     }
 }
 
-impl SandboxBuilder<String, ReferenceOrPath, String> {
+impl SandboxBuilder<ReferenceOrPath, String> {
     /// Builds the sandbox
     pub fn build(self) -> Sandbox {
         Sandbox {
-            name: self.name,
             version: self.version,
             meta: self.meta,
             image: self.image,
@@ -353,10 +321,9 @@ impl SandboxBuilder<String, ReferenceOrPath, String> {
 // Trait Implementations
 //--------------------------------------------------------------------------------------------------
 
-impl Default for SandboxBuilder<(), (), String> {
+impl Default for SandboxBuilder<(), String> {
     fn default() -> Self {
         Self {
-            name: (),
             version: None,
             meta: None,
             image: (),
