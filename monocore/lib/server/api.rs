@@ -97,7 +97,7 @@ impl SandboxServer {
 
         orchestra::up(
             request.sandboxes.clone(),
-            Some(namespace_path),
+            Some(&namespace_path),
             request.config_file.as_deref(),
         )
         .await
@@ -135,7 +135,7 @@ impl SandboxServer {
 
         orchestra::down(
             request.sandboxes.clone(),
-            Some(namespace_path),
+            Some(&namespace_path),
             request.config_file.as_deref(),
         )
         .await

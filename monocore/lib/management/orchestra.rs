@@ -14,11 +14,11 @@ use nix::{
     sys::signal::{self, Signal},
     unistd::Pid,
 };
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::{
-    config::{self, Monocore, DEFAULT_SCRIPT},
-    management::sandbox,
+    config::{Monocore, DEFAULT_SCRIPT},
+    management::{config, sandbox},
     utils::{MONOCORE_ENV_DIR, SANDBOX_DB_FILENAME},
     MonocoreError, MonocoreResult,
 };
@@ -71,7 +71,7 @@ use super::{db, menv};
 ///     Ok(())
 /// }
 /// ```
-pub async fn apply(project_dir: Option<PathBuf>, config_file: Option<&str>) -> MonocoreResult<()> {
+pub async fn apply(project_dir: Option<&Path>, config_file: Option<&str>) -> MonocoreResult<()> {
     // Load the configuration first to validate it exists before acquiring lock
     let (config, canonical_project_dir, config_file) =
         config::load_config(project_dir, config_file).await?;
@@ -100,7 +100,7 @@ pub async fn apply(project_dir: Option<PathBuf>, config_file: Option<&str>) -> M
             sandbox::run(
                 name,
                 Some(DEFAULT_SCRIPT),
-                Some(canonical_project_dir.clone()),
+                Some(&canonical_project_dir),
                 Some(&config_file),
                 vec![],
                 true,
@@ -165,7 +165,7 @@ pub async fn apply(project_dir: Option<PathBuf>, config_file: Option<&str>) -> M
 /// ```
 pub async fn up(
     sandbox_names: Vec<String>,
-    project_dir: Option<PathBuf>,
+    project_dir: Option<&Path>,
     config_file: Option<&str>,
 ) -> MonocoreResult<()> {
     // Load the configuration first to validate it exists
@@ -204,7 +204,7 @@ pub async fn up(
             sandbox::run(
                 sandbox_name,
                 Some(DEFAULT_SCRIPT),
-                Some(canonical_project_dir.clone()),
+                Some(&canonical_project_dir),
                 Some(&config_file),
                 vec![],
                 true,
@@ -258,7 +258,7 @@ pub async fn up(
 /// ```
 pub async fn down(
     sandbox_names: Vec<String>,
-    project_dir: Option<PathBuf>,
+    project_dir: Option<&Path>,
     config_file: Option<&str>,
 ) -> MonocoreResult<()> {
     // Load the configuration first to validate it exists

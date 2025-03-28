@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{error::Error, path::PathBuf};
 
 use crate::{cli::styles, oci::Reference};
 use clap::Parser;
@@ -43,15 +43,15 @@ pub enum MonocoreSubcommand {
     /// Add a new build, sandbox, or group component to the project
     #[command(name = "add")]
     Add {
-        /// Add a sandbox
+        /// Whether to add a sandbox
         #[arg(short, long)]
         sandbox: bool,
 
-        /// Add a build
+        /// Whether to add a build sandbox
         #[arg(short, long)]
         build: bool,
 
-        /// Add a group
+        /// Whether to add a group
         #[arg(short, long)]
         group: bool,
 
@@ -61,31 +61,35 @@ pub enum MonocoreSubcommand {
 
         /// Image to use
         #[arg(short, long)]
-        image: Option<String>,
+        image: String,
 
-        /// Number of CPUs
-        #[arg(long)]
-        cpus: Option<u32>,
-
-        /// RAM in MB
+        /// RAM in MiB
         #[arg(long)]
         ram: Option<u32>,
 
-        /// Volume mappings
-        #[arg(long)]
+        /// Number of CPUs
+        #[arg(long, alias = "cpu")]
+        cpus: Option<u32>,
+
+        /// Volume mappings, format: <host_path>:<container_path>
+        #[arg(long = "volume", name = "VOLUME")]
         volumes: Vec<String>,
 
-        /// Port mappings
-        #[arg(long)]
+        /// Port mappings, format: <host_port>:<container_port>
+        #[arg(long = "port", name = "PORT")]
         ports: Vec<String>,
 
-        /// Environment variables
-        #[arg(long)]
+        /// Environment variables, format: <key>=<value>
+        #[arg(long = "env", name = "ENV")]
         envs: Vec<String>,
 
-        /// Groups to join
+        /// Environment file
         #[arg(long)]
-        groups: Vec<String>,
+        env_file: Option<Utf8UnixPathBuf>,
+
+        /// Dependencies
+        #[arg(long)]
+        depends_on: Vec<String>,
 
         /// Working directory
         #[arg(long)]
@@ -96,34 +100,42 @@ pub enum MonocoreSubcommand {
         shell: Option<String>,
 
         /// Scripts to add
-        #[arg(long)]
-        scripts: Vec<String>,
+        #[arg(long = "script", name = "SCRIPT", value_parser = parse_key_val::<String, String>)]
+        scripts: Vec<(String, String)>,
 
-        /// Files to import
-        #[arg(long)]
-        imports: Vec<String>,
+        /// Files to import, format: <name>=<path>
+        #[arg(long = "import", name = "IMPORT", value_parser = parse_key_val::<String, String>)]
+        imports: Vec<(String, String)>,
 
-        /// Files to export
-        #[arg(long)]
-        exports: Vec<String>,
+        /// Files to export, format: <name>=<path>
+        #[arg(long = "export", name = "EXPORT", value_parser = parse_key_val::<String, String>)]
+        exports: Vec<(String, String)>,
 
-        /// Network configuration
+        /// Network reach, options: local, public, any, none
         #[arg(long)]
-        network: Option<String>,
+        reach: Option<String>,
+
+        /// Project path
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Config path
+        #[arg(short, long)]
+        config: Option<String>,
     },
 
     /// Remove a build, sandbox, or group component from the project
     #[command(name = "remove")]
     Remove {
-        /// Remove a sandbox
+        /// Whether to remove a sandbox
         #[arg(short, long)]
         sandbox: bool,
 
-        /// Remove a build
+        /// Whether to remove a build sandbox
         #[arg(short, long)]
         build: bool,
 
-        /// Remove a group
+        /// Whether to remove a group
         #[arg(short, long)]
         group: bool,
 
@@ -135,15 +147,15 @@ pub enum MonocoreSubcommand {
     /// List build, sandbox, or group components in the project
     #[command(name = "list")]
     List {
-        /// List sandboxes
+        /// Whether to list sandboxes
         #[arg(short, long)]
         sandbox: bool,
 
-        /// List builds
+        /// Whether to list build sandboxes
         #[arg(short, long)]
         build: bool,
 
-        /// List groups
+        /// Whether to list groups
         #[arg(short, long)]
         group: bool,
     },
@@ -151,15 +163,15 @@ pub enum MonocoreSubcommand {
     /// Show logs of a running build, sandbox, or group
     #[command(name = "log")]
     Log {
-        /// Show logs of a sandbox
+        /// Whether to show logs of a sandbox
         #[arg(short, long)]
         sandbox: bool,
 
-        /// Show logs of a build
+        /// Whether to show logs of a build sandbox
         #[arg(short, long)]
         build: bool,
 
-        /// Show logs of a group
+        /// Whether to show logs of a group
         #[arg(short, long)]
         group: bool,
 
@@ -187,15 +199,15 @@ pub enum MonocoreSubcommand {
     /// Show tree of layers that make up a build, sandbox, or group component
     #[command(name = "tree")]
     Tree {
-        /// Show sandbox tree
+        /// Whether to show a sandbox tree
         #[arg(short, long)]
         sandbox: bool,
 
-        /// Show build tree
+        /// Whether to show a build sandbox tree
         #[arg(short, long)]
         build: bool,
 
-        /// Show group tree
+        /// Whether to show a group tree
         #[arg(short, long)]
         group: bool,
 
@@ -211,11 +223,11 @@ pub enum MonocoreSubcommand {
     /// Run a sandbox script
     #[command(name = "run")]
     Run {
-        /// Run a sandbox script
+        /// Whether to run start or specific script for a sandbox
         #[arg(short, long)]
         sandbox: bool,
 
-        /// Run a build script
+        /// Whether to run start or specific script for a build sandbox
         #[arg(short, long)]
         build: bool,
 
@@ -231,10 +243,6 @@ pub enum MonocoreSubcommand {
         #[arg(short, long)]
         config: Option<String>,
 
-        /// Additional arguments after `--`
-        #[arg(last = true)]
-        args: Vec<String>,
-
         /// Run sandbox in the background
         #[arg(short, long)]
         detach: bool,
@@ -242,16 +250,20 @@ pub enum MonocoreSubcommand {
         /// Execute a command within the sandbox
         #[arg(short, long)]
         exec: Option<String>,
+
+        /// Additional arguments after `--`
+        #[arg(last = true)]
+        args: Vec<String>,
     },
 
     /// Start a sandbox
     #[command(name = "start")]
     Start {
-        /// Run start command for a sandbox
+        /// Whether to run start script for a sandbox
         #[arg(short, long)]
         sandbox: bool,
 
-        /// Run start command for a build
+        /// Whether to run start script for a build sandbox
         #[arg(short, long)]
         build: bool,
 
@@ -279,11 +291,11 @@ pub enum MonocoreSubcommand {
     /// Open a shell in a sandbox
     #[command(name = "shell")]
     Shell {
-        /// Open a shell in a sandbox
+        /// Whether to open a shell in a sandbox
         #[arg(short, long)]
         sandbox: bool,
 
-        /// Open a shell in a build
+        /// Whether to open a shell in a build sandbox
         #[arg(short, long)]
         build: bool,
 
@@ -311,7 +323,7 @@ pub enum MonocoreSubcommand {
     /// Create a temporary sandbox
     #[command(name = "tmp")]
     Tmp {
-        /// Create a temporary sandbox from an image
+        /// Whether to create a temporary sandbox from an image
         #[arg(short, long)]
         image: bool,
 
@@ -327,16 +339,16 @@ pub enum MonocoreSubcommand {
         #[arg(long)]
         ram: Option<u32>,
 
-        /// Volume mappings
-        #[arg(long)]
+        /// Volume mappings, format: <host_path>:<container_path>
+        #[arg(long = "volume", name = "VOLUME")]
         volumes: Vec<String>,
 
-        /// Port mappings
-        #[arg(long)]
+        /// Port mappings, format: <host_port>:<container_port>
+        #[arg(long = "port", name = "PORT")]
         ports: Vec<String>,
 
-        /// Environment variables
-        #[arg(long)]
+        /// Environment variables, format: <key>=<value>
+        #[arg(long = "env", name = "ENV")]
         envs: Vec<String>,
 
         /// Working directory
@@ -412,7 +424,7 @@ pub enum MonocoreSubcommand {
         #[arg(short, long)]
         sandbox: bool,
 
-        /// Whether to start a build
+        /// Whether to start a build sandbox
         #[arg(short, long)]
         build: bool,
 
@@ -440,7 +452,7 @@ pub enum MonocoreSubcommand {
         #[arg(short, long)]
         sandbox: bool,
 
-        /// Whether to stop a build
+        /// Whether to stop a build sandbox
         #[arg(short, long)]
         build: bool,
 
@@ -468,7 +480,7 @@ pub enum MonocoreSubcommand {
         #[arg(short, long)]
         sandbox: bool,
 
-        /// Whether to show a build
+        /// Whether to show a build sandbox
         #[arg(short, long)]
         build: bool,
 
@@ -508,9 +520,9 @@ pub enum MonocoreSubcommand {
         #[arg(short, long)]
         group: bool,
 
-        /// Name of the component
+        /// Names of components to build
         #[arg(required = true)]
-        name: String,
+        names: Vec<String>,
 
         /// Create a snapshot
         #[arg(long)]
@@ -540,9 +552,17 @@ pub enum MonocoreSubcommand {
     /// Push an image
     #[command(name = "push")]
     Push {
-        /// Image to push
+        /// Whether to push an image
         #[arg(short, long)]
-        image: String,
+        image: bool,
+
+        /// Whether to push an image group
+        #[arg(short = 'G', long)]
+        image_group: bool,
+
+        /// Name of the image or image group
+        #[arg(required = true)]
+        name: String,
     },
 
     /// Manage monocore itself
@@ -599,5 +619,19 @@ pub enum SelfAction {
 }
 
 //-------------------------------------------------------------------------------------------------
-// Methods
+// Functions: Helpers
 //-------------------------------------------------------------------------------------------------
+
+fn parse_key_val<T, U>(s: &str) -> Result<(T, U), Box<dyn Error + Send + Sync + 'static>>
+where
+    T: std::str::FromStr,
+    T::Err: Error + Send + Sync + 'static,
+    U: std::str::FromStr,
+    U::Err: Error + Send + Sync + 'static,
+{
+    let pos = s
+        .find('=')
+        .ok_or_else(|| format!("invalid KEY=value: no `=` found in `{s}`"))?;
+
+    Ok((s[..pos].parse()?, s[pos + 1..].parse()?))
+}

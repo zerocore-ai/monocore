@@ -1,4 +1,15 @@
 //! Server management for the Monocore runtime.
+//!
+//! This module provides functionality for managing the Monocore sandbox server.
+//! The sandbox server is responsible for orchestrating and managing multiple
+//! sandbox instances, providing a centralized control mechanism.
+//!
+//! Key features include:
+//! - Starting the server with configurable options (port, namespace path, etc.)
+//! - Stopping the server and cleaning up resources
+//!
+//! The server uses a PID file to track the running process and supports
+//! detached mode for running as a background service.
 
 use std::{path::PathBuf, process::Stdio};
 
