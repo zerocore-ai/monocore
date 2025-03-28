@@ -142,6 +142,14 @@ pub enum MonocoreSubcommand {
         /// Names of components to remove
         #[arg(required = true)]
         names: Vec<String>,
+
+        /// Project path
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Config path
+        #[arg(short, long)]
+        config: Option<String>,
     },
 
     /// List build, sandbox, or group components in the project

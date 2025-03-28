@@ -74,6 +74,17 @@ pub enum Component {
     Group {},
 }
 
+/// The type of component to add to the Monocore configuration.
+#[derive(Debug, Clone)]
+pub enum ComponentType {
+    /// A sandbox component.
+    Sandbox,
+    /// A build component.
+    Build,
+    /// A group component.
+    Group,
+}
+
 //--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------
@@ -128,22 +139,13 @@ pub async fn add(
                 reach,
             } => {
                 let doc_mut = doc.as_mut();
-                let mut root_mapping =
-                    doc_mut
-                        .into_mapping_mut()
-                        .ok_or(MonocoreError::ConfigParseError(
-                            "config is not valid. expected an object".to_string(),
-                        ))?;
+                let mut root_mapping = doc_mut.make_mapping();
 
                 // Ensure the "sandboxes" key exists in the root mapping
                 let mut sandboxes_mapping =
                     if let Some(sandboxes_mut) = root_mapping.get_mut("sandboxes") {
                         // Get the existing sandboxes mapping
-                        sandboxes_mut
-                            .into_mapping_mut()
-                            .ok_or(MonocoreError::ConfigParseError(
-                                "sandboxes is not a valid mapping".to_string(),
-                            ))?
+                        sandboxes_mut.make_mapping()
                     } else {
                         // Create a new sandboxes mapping if it doesn't exist
                         root_mapping
@@ -306,8 +308,60 @@ pub async fn add(
 ///   contains invalid YAML, or the component does not exist
 ///
 /// Note: This function is currently a placeholder and needs to be implemented.
-pub async fn remove(_component: Component) -> MonocoreResult<()> {
-    unimplemented!()
+pub async fn remove(
+    component_type: ComponentType,
+    names: &[String],
+    project_dir: Option<&Path>,
+    config_file: Option<&str>,
+) -> MonocoreResult<()> {
+    let (_, _, full_config_path) = resolve_config_paths(project_dir, config_file).await?;
+
+    // Read the configuration file content
+    let config_contents = fs::read_to_string(&full_config_path).await?;
+
+    let mut doc = yaml::from_slice(config_contents.as_bytes())
+        .map_err(|e| MonocoreError::ConfigParseError(e.to_string()))?;
+
+    match component_type {
+        ComponentType::Sandbox => {
+            let doc_mut = doc.as_mut();
+            let mut root_mapping =
+                doc_mut
+                    .into_mapping_mut()
+                    .ok_or(MonocoreError::ConfigParseError(
+                        "config is not valid. expected an object".to_string(),
+                    ))?;
+
+            // Ensure the "sandboxes" key exists in the root mapping
+            let mut sandboxes_mapping =
+                if let Some(sandboxes_mut) = root_mapping.get_mut("sandboxes") {
+                    // Get the existing sandboxes mapping
+                    sandboxes_mut
+                        .into_mapping_mut()
+                        .ok_or(MonocoreError::ConfigParseError(
+                            "sandboxes is not a valid mapping".to_string(),
+                        ))?
+                } else {
+                    // Create a new sandboxes mapping if it doesn't exist
+                    root_mapping
+                        .insert("sandboxes", yaml::Separator::Auto)
+                        .make_mapping()
+                };
+
+            for name in names {
+                sandboxes_mapping.remove(name);
+            }
+        }
+        _ => (),
+    }
+
+    // Write the modified YAML back to the file, preserving formatting
+    let modified_content = doc.to_string();
+
+    // TODO: Validate config before writing
+    fs::write(full_config_path, modified_content).await?;
+
+    Ok(())
 }
 
 //--------------------------------------------------------------------------------------------------

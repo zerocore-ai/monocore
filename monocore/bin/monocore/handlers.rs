@@ -2,7 +2,7 @@ use clap::{error::ErrorKind, CommandFactory};
 use monocore::{
     cli::{AnsiStyles, MonocoreArgs},
     management::{
-        config::{self, Component},
+        config::{self, Component, ComponentType},
         menv, orchestra, sandbox,
     },
     oci::Reference,
@@ -45,13 +45,7 @@ pub async fn add_subcommand(
     path: Option<PathBuf>,
     config: Option<String>,
 ) -> MonocoreResult<()> {
-    match (build, sandbox, group) {
-        (true, true, _) => conflict_error("build", "sandbox", "add", "[NAMES]"),
-        (true, _, true) => conflict_error("build", "group", "add", "[NAMES]"),
-        (_, true, true) => conflict_error("sandbox", "group", "add", "[NAMES]"),
-        _ => (),
-    }
-
+    trio_conflict_error(build, sandbox, group, "add", "[NAMES]");
     unsupported_build_group_error(build, group, "add", "[NAMES]");
 
     let component = Component::Sandbox {
@@ -71,13 +65,26 @@ pub async fn add_subcommand(
         reach,
     };
 
-    config::add(&names, &component, path.as_deref(), config.as_deref()).await?;
-
-    Ok(())
+    config::add(&names, &component, path.as_deref(), config.as_deref()).await
 }
 
-pub async fn _remove_subcommand() -> MonocoreResult<()> {
-    unimplemented!()
+pub async fn remove_subcommand(
+    sandbox: bool,
+    build: bool,
+    group: bool,
+    names: Vec<String>,
+    path: Option<PathBuf>,
+    config: Option<String>,
+) -> MonocoreResult<()> {
+    trio_conflict_error(build, sandbox, group, "remove", "[NAMES]");
+    unsupported_build_group_error(build, group, "remove", "[NAMES]");
+    config::remove(
+        ComponentType::Sandbox,
+        &names,
+        path.as_deref(),
+        config.as_deref(),
+    )
+    .await
 }
 
 pub async fn init_subcommand(
@@ -120,16 +127,7 @@ pub async fn run_subcommand(
 ) -> MonocoreResult<()> {
     if build && sandbox {
         MonocoreArgs::command()
-            .override_usage(format!(
-                "{} {} {} {} {} {}{}",
-                "monocore".literal(),
-                "run".literal(),
-                "[OPTIONS]".placeholder(),
-                "[NAME]".placeholder(),
-                "[--".literal(),
-                "<ARGS>...".placeholder(),
-                "]".literal()
-            ))
+            .override_usage(usage("run", "[NAME]", Some("<ARGS>")))
             .error(
                 ErrorKind::ArgumentConflict,
                 format!(
@@ -146,7 +144,7 @@ pub async fn run_subcommand(
     let (sandbox, script) = parse_name_and_script(&name);
     if matches!((script, &exec), (Some(_), Some(_))) {
         MonocoreArgs::command()
-            .override_usage(usage("run", "[NAME[~SCRIPT]]", Some("<ARGS>...")))
+            .override_usage(usage("run", "[NAME[~SCRIPT]]", Some("<ARGS>")))
             .error(
                 ErrorKind::ArgumentConflict,
                 format!(
@@ -184,7 +182,7 @@ pub async fn script_run_subcommand(
 ) -> MonocoreResult<()> {
     if build && sandbox {
         MonocoreArgs::command()
-            .override_usage(usage(&script, "[NAME]", Some("<ARGS>...")))
+            .override_usage(usage(&script, "[NAME]", Some("<ARGS>")))
             .error(
                 ErrorKind::ArgumentConflict,
                 format!(
@@ -207,9 +205,7 @@ pub async fn script_run_subcommand(
         detach,
         exec.as_deref(),
     )
-    .await?;
-
-    Ok(())
+    .await
 }
 
 pub async fn tmp_subcommand(
@@ -228,7 +224,7 @@ pub async fn tmp_subcommand(
 
     if matches!((script, &exec), (Some(_), Some(_))) {
         MonocoreArgs::command()
-            .override_usage(usage("tmp", "[NAME[~SCRIPT]]", Some("<ARGS>...")))
+            .override_usage(usage("tmp", "[NAME[~SCRIPT]]", Some("<ARGS>")))
             .error(
                 ErrorKind::ArgumentConflict,
                 format!(
@@ -251,9 +247,7 @@ pub async fn tmp_subcommand(
         exec.as_deref(),
         args,
     )
-    .await?;
-
-    Ok(())
+    .await
 }
 
 pub async fn up_subcommand(
@@ -264,18 +258,10 @@ pub async fn up_subcommand(
     path: Option<PathBuf>,
     config: Option<String>,
 ) -> MonocoreResult<()> {
-    match (build, sandbox, group) {
-        (true, true, _) => conflict_error("build", "sandbox", "up", "[NAMES]"),
-        (true, _, true) => conflict_error("build", "group", "up", "[NAMES]"),
-        (_, true, true) => conflict_error("sandbox", "group", "up", "[NAMES]"),
-        _ => (),
-    }
-
+    trio_conflict_error(build, sandbox, group, "up", "[NAMES]");
     unsupported_build_group_error(build, group, "up", "[NAMES]");
 
-    orchestra::up(names, path.as_deref(), config.as_deref()).await?;
-
-    Ok(())
+    orchestra::up(names, path.as_deref(), config.as_deref()).await
 }
 
 pub async fn down_subcommand(
@@ -286,18 +272,10 @@ pub async fn down_subcommand(
     path: Option<PathBuf>,
     config: Option<String>,
 ) -> MonocoreResult<()> {
-    match (build, sandbox, group) {
-        (true, true, _) => conflict_error("build", "sandbox", "down", "[NAMES]"),
-        (true, _, true) => conflict_error("build", "group", "down", "[NAMES]"),
-        (_, true, true) => conflict_error("sandbox", "group", "down", "[NAMES]"),
-        _ => (),
-    }
-
+    trio_conflict_error(build, sandbox, group, "down", "[NAMES]");
     unsupported_build_group_error(build, group, "down", "[NAMES]");
 
-    orchestra::down(names, path.as_deref(), config.as_deref()).await?;
-
-    Ok(())
+    orchestra::down(names, path.as_deref(), config.as_deref()).await
 }
 
 pub async fn log_subcommand(
@@ -310,13 +288,7 @@ pub async fn log_subcommand(
     follow: bool,
     tail: Option<usize>,
 ) -> MonocoreResult<()> {
-    match (build, sandbox, group) {
-        (true, true, _) => conflict_error("build", "sandbox", "log", "[NAME]"),
-        (true, _, true) => conflict_error("build", "group", "log", "[NAME]"),
-        (_, true, true) => conflict_error("sandbox", "group", "log", "[NAME]"),
-        _ => (),
-    }
-
+    trio_conflict_error(build, sandbox, group, "log", "[NAME]");
     unsupported_build_group_error(build, group, "log", "[NAME]");
 
     // Check if tail command exists when follow mode is requested
@@ -398,6 +370,21 @@ pub async fn log_subcommand(
 //--------------------------------------------------------------------------------------------------
 // Functions: Common Errors
 //--------------------------------------------------------------------------------------------------
+
+fn trio_conflict_error(
+    build: bool,
+    sandbox: bool,
+    group: bool,
+    command: &str,
+    positional_placeholder: &str,
+) {
+    match (build, sandbox, group) {
+        (true, true, _) => conflict_error("build", "sandbox", command, positional_placeholder),
+        (true, _, true) => conflict_error("build", "group", command, positional_placeholder),
+        (_, true, true) => conflict_error("sandbox", "group", command, positional_placeholder),
+        _ => (),
+    }
+}
 
 fn conflict_error(arg1: &str, arg2: &str, command: &str, positional_placeholder: &str) {
     MonocoreArgs::command()
