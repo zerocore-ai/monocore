@@ -28,21 +28,21 @@ pub struct Monocore {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub(super) meta: Option<Meta>,
 
-    /// The files to import.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub(super) requires: Option<Vec<Require>>,
+    /// The modules to import.
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
+    pub(super) modules: HashMap<String, Module>,
 
     /// The builds to run.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub(super) builds: Option<Vec<Build>>,
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
+    pub(super) builds: HashMap<String, Build>,
 
     /// The sandboxes to run.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub(super) sandboxes: Option<Vec<Sandbox>>,
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
+    pub(super) sandboxes: HashMap<String, Sandbox>,
 
     /// The groups to run the sandboxes in.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub(super) groups: Option<Vec<Group>>,
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
+    pub(super) groups: HashMap<String, Group>,
 }
 
 /// The metadata about the configuration.
@@ -100,37 +100,19 @@ pub struct Meta {
 #[getset(get = "pub with_prefix")]
 pub struct ComponentMapping {
     /// The alias for the component.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "Option::is_none", default, rename = "as")]
     #[builder(default, setter(strip_option))]
     pub(super) as_: Option<String>,
 }
 
-/// Import configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Getters)]
-#[getset(get = "pub with_prefix")]
-pub struct Require {
-    /// The path to the file to import.
-    #[builder(setter(transform = |path: impl AsRef<str>| Utf8UnixPathBuf::from(path.as_ref().to_string())))]
-    #[serde(
-        serialize_with = "serialize_path",
-        deserialize_with = "deserialize_path"
-    )]
-    pub(super) path: Utf8UnixPathBuf,
-
-    /// The component mappings.
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    #[builder(default)]
-    pub(super) imports: HashMap<String, ComponentMapping>,
-}
+/// Module import configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Module(pub HashMap<String, Option<ComponentMapping>>);
 
 /// A build to run.
 #[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct Build {
-    /// The name of the build.
-    #[builder(setter(transform = |name: impl AsRef<str>| name.as_ref().to_string()))]
-    pub(super) name: String,
-
     /// The image to use. This can be a path to a local rootfs or an OCI image reference.
     pub(super) image: ReferenceOrPath,
 
@@ -252,10 +234,10 @@ pub struct SandboxGroupNetwork {
     #[builder(default, setter(strip_option))]
     pub(super) ip: Option<Ipv4Addr>,
 
-    /// The domain names for this sandbox in the group
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    #[builder(default)]
-    pub(super) domains: Vec<String>,
+    /// The hostname for this sandbox in the group
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[builder(default, setter(strip_option))]
+    pub(super) hostname: Option<String>,
 }
 
 /// Network configuration for a group.
@@ -319,9 +301,6 @@ pub enum Proxy {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct Sandbox {
-    /// The name of the sandbox.
-    pub(super) name: String,
-
     /// The version of the sandbox.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub(super) version: Option<Version>,
@@ -420,12 +399,7 @@ pub struct SandboxGroup {
     /// The volumes to mount.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
-    pub(super) volumes: HashMap<String, PathPair>,
-
-    /// The environment variables to use.
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    #[builder(default)]
-    pub(super) envs: HashMap<String, Vec<EnvPair>>,
+    pub(super) volumes: HashMap<String, String>,
 
     /// The network configuration for this sandbox in the group.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -437,10 +411,6 @@ pub struct SandboxGroup {
 #[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
 #[getset(get = "pub with_prefix")]
 pub struct Group {
-    /// The name of the group.
-    #[builder(setter(transform = |name: impl AsRef<str>| name.as_ref().to_string()))]
-    pub(super) name: String,
-
     /// The version of the group.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
@@ -465,11 +435,6 @@ pub struct Group {
     )]
     #[builder(default)]
     pub(super) volumes: HashMap<String, Utf8UnixPathBuf>,
-
-    /// The environment variables to use.
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    #[builder(default)]
-    pub(super) envs: HashMap<String, Vec<EnvPair>>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -482,23 +447,17 @@ impl Monocore {
 
     /// Get a sandbox by name in this configuration
     pub fn get_sandbox(&self, sandbox_name: &str) -> Option<&Sandbox> {
-        self.sandboxes
-            .as_ref()
-            .and_then(|sandboxes| sandboxes.iter().find(|s| s.get_name() == sandbox_name))
+        self.sandboxes.get(sandbox_name)
     }
 
     /// Get a group by name in this configuration
     pub fn get_group(&self, group_name: &str) -> Option<&Group> {
-        self.groups
-            .as_ref()
-            .and_then(|groups| groups.iter().find(|g| g.get_name() == group_name))
+        self.groups.get(group_name)
     }
 
     /// Get a build by name in this configuration
     pub fn get_build(&self, build_name: &str) -> Option<&Build> {
-        self.builds
-            .as_ref()
-            .and_then(|builds| builds.iter().find(|b| b.get_name() == build_name))
+        self.builds.get(build_name)
     }
 
     /// Validates the configuration.
@@ -526,7 +485,7 @@ impl Sandbox {
     /// Returns a builder for the sandbox.
     ///
     /// See [`SandboxBuilder`] for options.
-    pub fn builder() -> SandboxBuilder<(), (), String> {
+    pub fn builder() -> SandboxBuilder<(), String> {
         SandboxBuilder::default()
     }
 
@@ -558,31 +517,9 @@ impl SandboxNetwork {
     }
 }
 
-impl GroupNetwork {
-    /// Returns the default network reach configuration.
-    pub fn default_reach() -> Option<SandboxNetworkReach> {
-        Some(SandboxNetworkReach::Local)
-    }
-}
-
 //--------------------------------------------------------------------------------------------------
 // Functions: Serialization helpers
 //--------------------------------------------------------------------------------------------------
-
-fn serialize_path<S>(path: &Utf8UnixPathBuf, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_str(path.as_str())
-}
-
-fn deserialize_path<'de, D>(deserializer: D) -> Result<Utf8UnixPathBuf, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    Ok(Utf8UnixPathBuf::from(s))
-}
 
 fn serialize_optional_path<S>(
     path: &Option<Utf8UnixPathBuf>,
@@ -638,3 +575,895 @@ where
 //--------------------------------------------------------------------------------------------------
 // Tests
 //--------------------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+
+    #[test]
+    fn test_monocore_config_empty_config() {
+        let yaml = r#"
+            # Empty config with no fields
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.meta.is_none());
+        assert!(config.modules.is_empty());
+        assert!(config.builds.is_empty());
+        assert!(config.sandboxes.is_empty());
+        assert!(config.groups.is_empty());
+    }
+
+    #[test]
+    fn test_monocore_config_default_config() {
+        // Test Default trait implementation
+        let config = Monocore::default();
+        assert!(config.meta.is_none());
+        assert!(config.modules.is_empty());
+        assert!(config.builds.is_empty());
+        assert!(config.sandboxes.is_empty());
+        assert!(config.groups.is_empty());
+
+        // Test empty sections
+        let yaml = r#"
+            meta: {}
+            modules: {}
+            builds: {}
+            sandboxes: {}
+            groups: {}
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.meta.unwrap() == Meta::default());
+        assert!(config.modules.is_empty());
+        assert!(config.builds.is_empty());
+        assert!(config.sandboxes.is_empty());
+        assert!(config.groups.is_empty());
+    }
+
+    #[test]
+    fn test_monocore_config_minimal_sandbox_config() {
+        let yaml = r#"
+            sandboxes:
+              test:
+                image: "alpine:latest"
+                shell: "/bin/sh"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+        let sandboxes = &config.sandboxes;
+        let sandbox = sandboxes.get("test").unwrap();
+
+        assert!(sandbox.version.is_none());
+        assert!(sandbox.ram.is_none());
+        assert!(sandbox.cpus.is_none());
+        assert!(sandbox.volumes.is_empty());
+        assert!(sandbox.ports.is_empty());
+        assert!(sandbox.envs.is_empty());
+        assert!(sandbox.workdir.is_none());
+        assert_eq!(sandbox.shell, "/bin/sh");
+        assert!(sandbox.scripts.is_empty());
+        assert!(sandbox.network.is_none());
+        assert!(sandbox.proxy.is_none());
+    }
+
+    #[test]
+    fn test_monocore_config_default_script_behavior() {
+        let yaml = r#"
+            sandboxes:
+              test1:
+                image: "alpine:latest"
+                shell: "/bin/sh"
+              test2:
+                image: "alpine:latest"
+                shell: "/bin/sh"
+                scripts:
+                  start: "echo 'custom start'"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+        let sandboxes = &config.sandboxes;
+
+        // Test sandbox with no scripts (should use shell as default)
+        let sandbox1 = sandboxes.get("test1").unwrap();
+        let scripts1 = sandbox1.get_full_scripts();
+        assert_eq!(scripts1.get(DEFAULT_SCRIPT).unwrap(), "/bin/sh");
+
+        // Test sandbox with explicit start script
+        let sandbox2 = sandboxes.get("test2").unwrap();
+        let scripts2 = sandbox2.get_full_scripts();
+        assert_eq!(scripts2.get(DEFAULT_SCRIPT).unwrap(), "echo 'custom start'");
+    }
+
+    #[test]
+    fn test_monocore_config_default_network_reach() {
+        // Test default network reach for sandbox
+        assert_eq!(
+            SandboxNetwork::default_reach().unwrap(),
+            SandboxNetworkReach::Local
+        );
+
+        // Test default network reach in YAML
+        let yaml = r#"
+            sandboxes:
+              test:
+                image: "alpine:latest"
+                shell: "/bin/sh"
+                network: {}
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+        let sandboxes = &config.sandboxes;
+        let sandbox = sandboxes.get("test").unwrap();
+
+        assert!(matches!(
+            sandbox.network.as_ref().unwrap().reach.as_ref().unwrap(),
+            SandboxNetworkReach::Local
+        ));
+    }
+
+    #[test]
+    fn test_monocore_config_basic_monocore_config() {
+        let yaml = r#"
+            meta:
+              authors:
+                - "John Doe <john@example.com>"
+              description: "Test configuration"
+              homepage: "https://example.com"
+              repository: "https://github.com/example/test"
+              readme: "./README.md"
+              tags:
+                - "test"
+                - "example"
+              icon: "./icon.png"
+
+            sandboxes:
+              test_sandbox:
+                version: "1.0.0"
+                image: "alpine:latest"
+                ram: 1024
+                cpus: 2
+                volumes:
+                  - "./src:/app/src"
+                ports:
+                  - "8080:80"
+                envs:
+                  - "DEBUG=true"
+                workdir: "/app"
+                shell: "/bin/sh"
+                scripts:
+                  start: "echo 'Hello, World!'"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+
+        // Verify meta section
+        let meta = config.meta.as_ref().unwrap();
+        assert_eq!(
+            meta.authors.as_ref().unwrap()[0],
+            "John Doe <john@example.com>"
+        );
+        assert_eq!(meta.description.as_ref().unwrap(), "Test configuration");
+        assert_eq!(meta.homepage.as_ref().unwrap(), "https://example.com");
+        assert_eq!(
+            meta.repository.as_ref().unwrap(),
+            "https://github.com/example/test"
+        );
+        assert_eq!(
+            meta.readme.as_ref().unwrap(),
+            &Utf8UnixPathBuf::from("./README.md")
+        );
+        assert_eq!(meta.tags.as_ref().unwrap(), &vec!["test", "example"]);
+        assert_eq!(
+            meta.icon.as_ref().unwrap(),
+            &Utf8UnixPathBuf::from("./icon.png")
+        );
+
+        // Verify sandbox section
+        let sandboxes = &config.sandboxes;
+        let sandbox = sandboxes.get("test_sandbox").unwrap();
+        assert_eq!(sandbox.version.as_ref().unwrap().to_string(), "1.0.0");
+        assert_eq!(sandbox.ram.unwrap(), 1024);
+        assert_eq!(sandbox.cpus.unwrap(), 2);
+        assert_eq!(sandbox.volumes[0].to_string(), "./src:/app/src");
+        assert_eq!(sandbox.ports[0].to_string(), "8080:80");
+        assert_eq!(sandbox.envs[0].to_string(), "DEBUG=true");
+        assert_eq!(
+            sandbox.workdir.as_ref().unwrap(),
+            &Utf8UnixPathBuf::from("/app")
+        );
+        assert_eq!(sandbox.shell, "/bin/sh");
+        assert_eq!(
+            sandbox.scripts.get("start").unwrap(),
+            "echo 'Hello, World!'"
+        );
+    }
+
+    #[test]
+    fn test_monocore_config_full_monocore_config() {
+        let yaml = r#"
+            meta:
+              description: "Full test configuration"
+
+            modules:
+              "./database.yaml":
+                database: {}
+              "./redis.yaml":
+                redis:
+                  as: "cache"
+
+            builds:
+              base_build:
+                image: "python:3.11-slim"
+                ram: 2048
+                cpus: 2
+                volumes:
+                  - "./requirements.txt:/build/requirements.txt"
+                envs:
+                  - "PYTHON_VERSION=3.11"
+                workdir: "/build"
+                shell: "/bin/bash"
+                scripts:
+                  build: "pip install -r requirements.txt"
+                imports:
+                  requirements: "./requirements.txt"
+                exports:
+                  packages: "/build/dist/packages"
+                groups:
+                  build_group:
+                    volumes:
+                      logs: "/var/log"
+
+            sandboxes:
+              api:
+                version: "1.0.0"
+                image: "python:3.11-slim"
+                ram: 1024
+                cpus: 1
+                volumes:
+                  - "./api:/app/src"
+                ports:
+                  - "8000:8000"
+                envs:
+                  - "DEBUG=false"
+                depends_on:
+                  - "database"
+                  - "cache"
+                workdir: "/app"
+                shell: "/bin/bash"
+                scripts:
+                  start: "python -m uvicorn src.main:app"
+                network:
+                  reach: "public"
+                groups:
+                  backend_group:
+                    network:
+                      ip: "10.0.1.10"
+                      hostname: "api.internal"
+
+            groups:
+              backend_group:
+                version: "1.0.0"
+                meta:
+                  description: "Backend services group"
+                network:
+                  subnet: "10.0.1.0/24"
+                volumes:
+                  logs: "/var/log"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+
+        // Test modules
+        let modules = &config.modules;
+        assert!(modules.contains_key("./database.yaml"));
+        assert!(modules.contains_key("./redis.yaml"));
+
+        // Fix for the ComponentMapping.as_() error
+        let redis_module = &modules.get("./redis.yaml").unwrap().0;
+        let redis_comp = redis_module.get("redis").unwrap().as_ref().unwrap();
+        // Access as_ field directly as a field, not a method
+        assert_eq!(redis_comp.as_.as_ref().unwrap(), "cache");
+
+        // Test builds
+        let builds = &config.builds;
+        let base_build = builds.get("base_build").unwrap();
+        assert_eq!(base_build.ram.unwrap(), 2048);
+        assert_eq!(base_build.cpus.unwrap(), 2);
+        assert_eq!(
+            base_build.workdir.as_ref().unwrap(),
+            &Utf8UnixPathBuf::from("/build")
+        );
+        assert_eq!(base_build.shell, "/bin/bash");
+        assert_eq!(
+            base_build.scripts.get("build").unwrap(),
+            "pip install -r requirements.txt"
+        );
+        assert_eq!(
+            base_build.imports.get("requirements").unwrap(),
+            &Utf8UnixPathBuf::from("./requirements.txt")
+        );
+        assert_eq!(
+            base_build.exports.get("packages").unwrap(),
+            &Utf8UnixPathBuf::from("/build/dist/packages")
+        );
+
+        // Test sandboxes
+        let sandboxes = &config.sandboxes;
+        let api = sandboxes.get("api").unwrap();
+        assert_eq!(api.version.as_ref().unwrap().to_string(), "1.0.0");
+        assert_eq!(api.ram.unwrap(), 1024);
+        assert_eq!(api.cpus.unwrap(), 1);
+        assert_eq!(api.depends_on, vec!["database", "cache"]);
+        assert!(matches!(
+            api.network.as_ref().unwrap().reach.as_ref().unwrap(),
+            SandboxNetworkReach::Public
+        ));
+
+        let api_group = api.groups.get("backend_group").unwrap();
+        assert_eq!(
+            api_group.network.as_ref().unwrap().ip.unwrap(),
+            Ipv4Addr::new(10, 0, 1, 10)
+        );
+        assert_eq!(
+            api_group
+                .network
+                .as_ref()
+                .unwrap()
+                .hostname
+                .as_ref()
+                .unwrap(),
+            "api.internal"
+        );
+
+        // Test groups
+        let groups = &config.groups;
+        let backend_group = groups.get("backend_group").unwrap();
+        assert_eq!(backend_group.version.as_ref().unwrap().to_string(), "1.0.0");
+        assert_eq!(
+            backend_group
+                .meta
+                .as_ref()
+                .unwrap()
+                .description
+                .as_ref()
+                .unwrap(),
+            "Backend services group"
+        );
+        assert_eq!(
+            backend_group
+                .network
+                .as_ref()
+                .unwrap()
+                .subnet
+                .unwrap()
+                .to_string(),
+            "10.0.1.0/24"
+        );
+        assert_eq!(
+            backend_group.volumes.get("logs").unwrap(),
+            &Utf8UnixPathBuf::from("/var/log")
+        );
+    }
+
+    #[test]
+    fn test_monocore_config_network_configuration() {
+        let yaml = r#"
+            sandboxes:
+              test_sandbox:
+                image: "alpine:latest"
+                shell: "/bin/sh"
+                network:
+                  reach: "local"
+                groups:
+                  test_group:
+                    network:
+                      ip: "10.0.1.10"
+                      hostname: "test.internal"
+
+            groups:
+              test_group:
+                network:
+                  subnet: "10.0.1.0/24"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+
+        // Fix temporary value dropped issue by using direct reference
+        let sandboxes = &config.sandboxes;
+        let sandbox = sandboxes.get("test_sandbox").unwrap();
+        assert!(matches!(
+            sandbox.network.as_ref().unwrap().reach.as_ref().unwrap(),
+            SandboxNetworkReach::Local
+        ));
+
+        let sandbox_group = sandbox.groups.get("test_group").unwrap();
+        assert_eq!(
+            sandbox_group.network.as_ref().unwrap().ip.unwrap(),
+            Ipv4Addr::new(10, 0, 1, 10)
+        );
+        assert_eq!(
+            sandbox_group
+                .network
+                .as_ref()
+                .unwrap()
+                .hostname
+                .as_ref()
+                .unwrap(),
+            "test.internal"
+        );
+
+        // Fix temporary value dropped issue for groups
+        let groups = &config.groups;
+        let group = groups.get("test_group").unwrap();
+        assert_eq!(
+            group.network.as_ref().unwrap().subnet.unwrap().to_string(),
+            "10.0.1.0/24"
+        );
+    }
+
+    #[test]
+    fn test_monocore_config_proxy_configuration() {
+        let yaml = r#"
+            sandboxes:
+              test_sandbox:
+                image: "alpine:latest"
+                shell: "/bin/sh"
+                proxy:
+                  type: "legacy"
+                  prefix: "/api"
+                  keep_alive: "60s"
+                  concurrency: 100
+                  port: "8080:80"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+
+        // Fix temporary value dropped issue
+        let sandboxes = &config.sandboxes;
+        let sandbox = sandboxes.get("test_sandbox").unwrap();
+        if let Some(Proxy::Legacy {
+            prefix,
+            keep_alive,
+            concurrency,
+            port,
+        }) = &sandbox.proxy
+        {
+            assert_eq!(prefix.as_ref().unwrap(), "/api");
+            assert_eq!(keep_alive.as_ref().unwrap(), "60s");
+            assert_eq!(concurrency.unwrap(), 100);
+            assert_eq!(port.as_ref().unwrap().to_string(), "8080:80");
+        } else {
+            panic!("Expected legacy proxy configuration");
+        }
+    }
+
+    #[test]
+    fn test_monocore_config_build_dependencies() {
+        let yaml = r#"
+            builds:
+              base:
+                image: "python:3.11-slim"
+                depends_on: ["deps"]
+              deps:
+                image: "python:3.11-slim"
+                scripts:
+                  install: "pip install -r requirements.txt"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+        let builds = &config.builds;
+
+        let base = builds.get("base").unwrap();
+        assert_eq!(base.depends_on, vec!["deps"]);
+
+        let deps = builds.get("deps").unwrap();
+        assert_eq!(
+            deps.scripts.get("install").unwrap(),
+            "pip install -r requirements.txt"
+        );
+    }
+
+    #[test]
+    fn test_monocore_config_invalid_configurations() {
+        // Test invalid network reach
+        let yaml = r#"
+            sandboxes:
+              test:
+                image: "alpine:latest"
+                shell: "/bin/sh"
+                network:
+                  reach: "invalid"
+        "#;
+        assert!(serde_yaml::from_str::<Monocore>(yaml).is_err());
+
+        // Test invalid IP address
+        let yaml = r#"
+            sandboxes:
+              test:
+                image: "alpine:latest"
+                shell: "/bin/sh"
+                groups:
+                  test_group:
+                    network:
+                      ip: "invalid"
+        "#;
+        assert!(serde_yaml::from_str::<Monocore>(yaml).is_err());
+
+        // Test invalid subnet
+        let yaml = r#"
+            groups:
+              test:
+                network:
+                  subnet: "invalid"
+        "#;
+        assert!(serde_yaml::from_str::<Monocore>(yaml).is_err());
+
+        // Test invalid version
+        let yaml = r#"
+            sandboxes:
+              test:
+                image: "alpine:latest"
+                shell: "/bin/sh"
+                version: "invalid"
+        "#;
+        assert!(serde_yaml::from_str::<Monocore>(yaml).is_err());
+    }
+
+    #[test]
+    fn test_monocore_config_group_basic() {
+        let yaml = r#"
+            groups:
+              simple_group:
+                version: "1.0.0"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+        let groups = &config.groups;
+
+        assert!(groups.contains_key("simple_group"));
+        let group = groups.get("simple_group").unwrap();
+        assert_eq!(group.version.as_ref().unwrap().to_string(), "1.0.0");
+        assert!(group.meta.is_none());
+        assert!(group.network.is_none());
+        assert!(group.volumes.is_empty());
+    }
+
+    #[test]
+    fn test_monocore_config_group_metadata() {
+        let yaml = r#"
+            groups:
+              metadata_group:
+                meta:
+                  description: "A group with metadata"
+                  authors:
+                    - "Test Author <test@example.com>"
+                  tags:
+                    - "test"
+                    - "metadata"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+        let groups = &config.groups;
+
+        assert!(groups.contains_key("metadata_group"));
+        let group = groups.get("metadata_group").unwrap();
+        assert!(group.version.is_none());
+
+        let meta = group.meta.as_ref().unwrap();
+        assert_eq!(meta.description.as_ref().unwrap(), "A group with metadata");
+        assert_eq!(
+            meta.authors.as_ref().unwrap()[0],
+            "Test Author <test@example.com>"
+        );
+        assert_eq!(meta.tags.as_ref().unwrap(), &vec!["test", "metadata"]);
+    }
+
+    #[test]
+    fn test_monocore_config_group_network() {
+        let yaml = r#"
+            groups:
+              network_group:
+                network:
+                  subnet: "10.0.2.0/24"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+        let groups = &config.groups;
+
+        assert!(groups.contains_key("network_group"));
+        let group = groups.get("network_group").unwrap();
+        assert!(group.version.is_none());
+        assert!(group.meta.is_none());
+
+        let network = group.network.as_ref().unwrap();
+        assert_eq!(network.subnet.unwrap().to_string(), "10.0.2.0/24");
+    }
+
+    #[test]
+    fn test_monocore_config_group_volumes() {
+        let yaml = r#"
+            groups:
+              volume_group:
+                volumes:
+                  data: "/data"
+                  logs: "/var/log"
+                  static: "/var/www/static"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+        let groups = &config.groups;
+
+        assert!(groups.contains_key("volume_group"));
+        let group = groups.get("volume_group").unwrap();
+        assert!(group.version.is_none());
+        assert!(group.meta.is_none());
+        assert!(group.network.is_none());
+
+        let volumes = &group.volumes;
+        assert_eq!(volumes.len(), 3);
+        assert_eq!(
+            volumes.get("data").unwrap(),
+            &Utf8UnixPathBuf::from("/data")
+        );
+        assert_eq!(
+            volumes.get("logs").unwrap(),
+            &Utf8UnixPathBuf::from("/var/log")
+        );
+        assert_eq!(
+            volumes.get("static").unwrap(),
+            &Utf8UnixPathBuf::from("/var/www/static")
+        );
+    }
+
+    #[test]
+    fn test_monocore_config_group_complete() {
+        let yaml = r#"
+            groups:
+              complete_group:
+                version: "2.1.0"
+                meta:
+                  description: "A complete group with all properties"
+                  authors:
+                    - "Test Author <test@example.com>"
+                  tags:
+                    - "test"
+                    - "complete"
+                  readme: "./README.md"
+                network:
+                  subnet: "10.1.0.0/16"
+                volumes:
+                  cache: "/var/cache"
+                  db: "/var/lib/database"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+        let groups = &config.groups;
+
+        assert!(groups.contains_key("complete_group"));
+        let group = groups.get("complete_group").unwrap();
+
+        // Check version
+        assert_eq!(group.version.as_ref().unwrap().to_string(), "2.1.0");
+
+        // Check metadata
+        let meta = group.meta.as_ref().unwrap();
+        assert_eq!(
+            meta.description.as_ref().unwrap(),
+            "A complete group with all properties"
+        );
+        assert_eq!(
+            meta.authors.as_ref().unwrap()[0],
+            "Test Author <test@example.com>"
+        );
+        assert_eq!(meta.tags.as_ref().unwrap(), &vec!["test", "complete"]);
+        assert_eq!(
+            meta.readme.as_ref().unwrap(),
+            &Utf8UnixPathBuf::from("./README.md")
+        );
+
+        // Check network
+        let network = group.network.as_ref().unwrap();
+        assert_eq!(network.subnet.unwrap().to_string(), "10.1.0.0/16");
+
+        // Check volumes
+        let volumes = &group.volumes;
+        assert_eq!(volumes.len(), 2);
+        assert_eq!(
+            volumes.get("cache").unwrap(),
+            &Utf8UnixPathBuf::from("/var/cache")
+        );
+        assert_eq!(
+            volumes.get("db").unwrap(),
+            &Utf8UnixPathBuf::from("/var/lib/database")
+        );
+    }
+
+    #[test]
+    fn test_monocore_config_group_sandbox_association() {
+        let yaml = r#"
+            sandboxes:
+              web:
+                image: "nginx:alpine"
+                shell: "/bin/sh"
+                groups:
+                  frontend_group:
+                    network:
+                      ip: "10.2.0.10"
+                      hostname: "web.internal"
+              api:
+                image: "python:3.9-slim"
+                shell: "/bin/bash"
+                groups:
+                  backend_group:
+                    network:
+                      ip: "10.3.0.20"
+                      hostname: "api.internal"
+                  frontend_group:
+                    network:
+                      ip: "10.2.0.20"
+                      hostname: "api-frontend.internal"
+
+            groups:
+              frontend_group:
+                network:
+                  subnet: "10.2.0.0/24"
+              backend_group:
+                network:
+                  subnet: "10.3.0.0/24"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+
+        // Check that sandboxes are properly associated with groups
+        let sandboxes = &config.sandboxes;
+        let groups = &config.groups;
+
+        // Check web sandbox in frontend group
+        let web = sandboxes.get("web").unwrap();
+        assert!(web.groups.contains_key("frontend_group"));
+        let web_frontend = web.groups.get("frontend_group").unwrap();
+        assert_eq!(
+            web_frontend.network.as_ref().unwrap().ip.unwrap(),
+            Ipv4Addr::new(10, 2, 0, 10)
+        );
+        assert_eq!(
+            web_frontend
+                .network
+                .as_ref()
+                .unwrap()
+                .hostname
+                .as_ref()
+                .unwrap(),
+            "web.internal"
+        );
+
+        // Check api sandbox in backend and frontend groups
+        let api = sandboxes.get("api").unwrap();
+        assert!(api.groups.contains_key("backend_group"));
+        assert!(api.groups.contains_key("frontend_group"));
+
+        let api_backend = api.groups.get("backend_group").unwrap();
+        assert_eq!(
+            api_backend.network.as_ref().unwrap().ip.unwrap(),
+            Ipv4Addr::new(10, 3, 0, 20)
+        );
+        assert_eq!(
+            api_backend
+                .network
+                .as_ref()
+                .unwrap()
+                .hostname
+                .as_ref()
+                .unwrap(),
+            "api.internal"
+        );
+
+        let api_frontend = api.groups.get("frontend_group").unwrap();
+        assert_eq!(
+            api_frontend.network.as_ref().unwrap().ip.unwrap(),
+            Ipv4Addr::new(10, 2, 0, 20)
+        );
+        assert_eq!(
+            api_frontend
+                .network
+                .as_ref()
+                .unwrap()
+                .hostname
+                .as_ref()
+                .unwrap(),
+            "api-frontend.internal"
+        );
+
+        // Check group subnets
+        let frontend_group = groups.get("frontend_group").unwrap();
+        assert_eq!(
+            frontend_group
+                .network
+                .as_ref()
+                .unwrap()
+                .subnet
+                .unwrap()
+                .to_string(),
+            "10.2.0.0/24"
+        );
+
+        let backend_group = groups.get("backend_group").unwrap();
+        assert_eq!(
+            backend_group
+                .network
+                .as_ref()
+                .unwrap()
+                .subnet
+                .unwrap()
+                .to_string(),
+            "10.3.0.0/24"
+        );
+    }
+
+    #[test]
+    fn test_monocore_config_group_multiple() {
+        let yaml = r#"
+            groups:
+              group_a:
+                version: "1.0.0"
+                network:
+                  subnet: "10.10.0.0/24"
+              group_b:
+                version: "1.0.0"
+                network:
+                  subnet: "10.20.0.0/24"
+              group_c:
+                version: "1.0.0"
+                network:
+                  subnet: "10.30.0.0/24"
+        "#;
+
+        let config: Monocore = serde_yaml::from_str(yaml).unwrap();
+        let groups = &config.groups;
+
+        assert_eq!(groups.len(), 3);
+        assert!(groups.contains_key("group_a"));
+        assert!(groups.contains_key("group_b"));
+        assert!(groups.contains_key("group_c"));
+
+        // Check subnets of each group
+        assert_eq!(
+            groups
+                .get("group_a")
+                .unwrap()
+                .network
+                .as_ref()
+                .unwrap()
+                .subnet
+                .unwrap()
+                .to_string(),
+            "10.10.0.0/24"
+        );
+        assert_eq!(
+            groups
+                .get("group_b")
+                .unwrap()
+                .network
+                .as_ref()
+                .unwrap()
+                .subnet
+                .unwrap()
+                .to_string(),
+            "10.20.0.0/24"
+        );
+        assert_eq!(
+            groups
+                .get("group_c")
+                .unwrap()
+                .network
+                .as_ref()
+                .unwrap()
+                .subnet
+                .unwrap()
+                .to_string(),
+            "10.30.0.0/24"
+        );
+    }
+}

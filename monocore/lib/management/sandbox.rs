@@ -128,6 +128,7 @@ pub async fn run(
         ReferenceOrPath::Path(root_path) => {
             setup_native_rootfs(
                 &canonical_project_dir.join(root_path),
+                sandbox_name,
                 sandbox_config,
                 &config_file,
                 &config_last_modified,
@@ -139,6 +140,7 @@ pub async fn run(
         ReferenceOrPath::Reference(reference) => {
             setup_image_rootfs(
                 reference,
+                sandbox_name,
                 sandbox_config,
                 &menv_path,
                 &config_file,
@@ -368,9 +370,7 @@ pub async fn run_temp(
 
     // Build the temporary sandbox configuration.
     let sandbox = {
-        let mut b = Sandbox::builder()
-            .name(TEMPORARY_SANDBOX_NAME)
-            .image(ReferenceOrPath::Reference(image.clone()));
+        let mut b = Sandbox::builder().image(ReferenceOrPath::Reference(image.clone()));
 
         if let Some(cpus) = cpus {
             b = b.cpus(cpus);
@@ -401,7 +401,7 @@ pub async fn run_temp(
 
     // Create the monocore config with the temporary sandbox
     let config = Monocore::builder()
-        .sandboxes(vec![sandbox])
+        .sandboxes([(TEMPORARY_SANDBOX_NAME.to_string(), sandbox)])
         .build_unchecked();
 
     // Write the config to the temporary directory
@@ -433,6 +433,7 @@ pub async fn run_temp(
 
 async fn setup_image_rootfs(
     image: &Reference,
+    sandbox_name: &str,
     sandbox_config: &Sandbox,
     menv_path: &Path,
     config_file: &str,
@@ -472,7 +473,7 @@ async fn setup_image_rootfs(
     }
 
     // Get sandbox namespace
-    let namespaced_name = PathBuf::from(config_file).join(sandbox_config.get_name());
+    let namespaced_name = PathBuf::from(config_file).join(sandbox_name);
 
     // Create the scripts directory
     let patch_dir = menv_path.join(PATCH_SUBDIR).join(&namespaced_name);
@@ -485,7 +486,7 @@ async fn setup_image_rootfs(
     if script_name != SHELL_SCRIPT_NAME && !scripts.contains_key(script_name) {
         return Err(MonocoreError::ScriptNotFoundInSandbox(
             script_name.to_string(),
-            sandbox_config.get_name().to_string(),
+            sandbox_name.to_string(),
         ));
     }
 
@@ -497,7 +498,7 @@ async fn setup_image_rootfs(
     // Check if we need to patch scripts
     let should_patch_scripts = has_sandbox_config_changed(
         sandbox_pool,
-        sandbox_config.get_name(),
+        sandbox_name,
         config_file,
         config_last_modified,
     )
@@ -527,6 +528,7 @@ async fn setup_image_rootfs(
 
 async fn setup_native_rootfs(
     root_path: &Path,
+    sandbox_name: &str,
     sandbox_config: &Sandbox,
     config_file: &str,
     config_last_modified: &DateTime<Utc>,
@@ -542,14 +544,14 @@ async fn setup_native_rootfs(
     if script_name != SHELL_SCRIPT_NAME && !scripts.contains_key(script_name) {
         return Err(MonocoreError::ScriptNotFoundInSandbox(
             script_name.to_string(),
-            sandbox_config.get_name().to_string(),
+            sandbox_name.to_string(),
         ));
     }
 
     // Check if we need to patch scripts
     let should_patch_scripts = has_sandbox_config_changed(
         sandbox_pool,
-        sandbox_config.get_name(),
+        sandbox_name,
         config_file,
         config_last_modified,
     )
