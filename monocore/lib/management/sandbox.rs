@@ -17,10 +17,10 @@ use typed_path::Utf8UnixPathBuf;
 
 use crate::{
     config::{
-        self, EnvPair, Monocore, PathPair, PortPair, ReferenceOrPath, Sandbox,
-        DEFAULT_MCRUN_EXE_PATH, DEFAULT_SCRIPT,
+        EnvPair, Monocore, PathPair, PortPair, ReferenceOrPath, Sandbox, DEFAULT_MCRUN_EXE_PATH,
+        DEFAULT_SCRIPT,
     },
-    management::{db, image, menv, rootfs},
+    management::{config, db, image, menv, rootfs},
     oci::Reference,
     utils::{
         env, EXTRACTED_LAYER_SUFFIX, LAYERS_SUBDIR, LOG_SUBDIR, MCRUN_EXE_ENV_VAR,
@@ -86,7 +86,7 @@ const TEMPORARY_SANDBOX_NAME: &str = "tmp";
 pub async fn run(
     sandbox_name: &str,
     script_name: Option<&str>,
-    project_dir: Option<PathBuf>,
+    project_dir: Option<&Path>,
     config_file: Option<&str>,
     args: Vec<String>,
     detach: bool,
@@ -412,7 +412,7 @@ pub async fn run_temp(
     run(
         TEMPORARY_SANDBOX_NAME,
         script,
-        Some(temp_dir_path),
+        Some(&temp_dir_path),
         None,
         args,
         false,

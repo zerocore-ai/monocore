@@ -141,11 +141,6 @@ pub struct Build {
     #[builder(default)]
     pub(super) envs: Vec<EnvPair>,
 
-    /// The groups to run in.
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    #[builder(default)]
-    pub(super) groups: HashMap<String, SandboxGroup>,
-
     /// The builds to depend on.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
@@ -199,7 +194,7 @@ pub enum SandboxNetworkReach {
     #[serde(rename = "local")]
     Local,
 
-    /// Sandboxes can communicate with other groups on 172.16.0.0/12 range or any other non-private address
+    /// Sandboxes can communicate with any other non-private address
     #[serde(rename = "public")]
     Public,
 

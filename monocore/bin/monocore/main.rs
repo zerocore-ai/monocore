@@ -33,6 +33,34 @@ async fn main() -> MonocoreResult<()> {
         }) => {
             handlers::init_subcommand(path, path_with_flag).await?;
         }
+        Some(MonocoreSubcommand::Add {
+            sandbox,
+            build,
+            group,
+            names,
+            image,
+            ram,
+            cpus,
+            volumes,
+            ports,
+            envs,
+            env_file,
+            depends_on,
+            workdir,
+            shell,
+            scripts,
+            imports,
+            exports,
+            reach,
+            path,
+            config,
+        }) => {
+            handlers::add_subcommand(
+                sandbox, build, group, names, image, ram, cpus, volumes, ports, envs, env_file,
+                depends_on, workdir, shell, scripts, imports, exports, reach, path, config,
+            )
+            .await?;
+        }
         Some(MonocoreSubcommand::Pull {
             image,
             image_group,
@@ -114,7 +142,7 @@ async fn main() -> MonocoreResult<()> {
                 .await?;
         }
         Some(MonocoreSubcommand::Apply { path, config }) => {
-            orchestra::apply(path, config.as_deref()).await?;
+            orchestra::apply(path.as_deref(), config.as_deref()).await?;
         }
         Some(MonocoreSubcommand::Up {
             sandbox,

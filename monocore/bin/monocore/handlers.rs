@@ -1,8 +1,10 @@
 use clap::{error::ErrorKind, CommandFactory};
 use monocore::{
     cli::{AnsiStyles, MonocoreArgs},
-    config,
-    management::{menv, orchestra, sandbox},
+    management::{
+        config::{self, Component},
+        menv, orchestra, sandbox,
+    },
     oci::Reference,
     MonocoreError, MonocoreResult,
 };
@@ -21,6 +23,63 @@ const LOG_SUBDIR: &str = "log";
 // Functions: Handlers
 //--------------------------------------------------------------------------------------------------
 
+pub async fn add_subcommand(
+    sandbox: bool,
+    build: bool,
+    group: bool,
+    names: Vec<String>,
+    image: String,
+    ram: Option<u32>,
+    cpus: Option<u32>,
+    volumes: Vec<String>,
+    ports: Vec<String>,
+    envs: Vec<String>,
+    env_file: Option<Utf8UnixPathBuf>,
+    depends_on: Vec<String>,
+    workdir: Option<Utf8UnixPathBuf>,
+    shell: Option<String>,
+    scripts: Vec<(String, String)>,
+    imports: Vec<(String, String)>,
+    exports: Vec<(String, String)>,
+    reach: Option<String>,
+    path: Option<PathBuf>,
+    config: Option<String>,
+) -> MonocoreResult<()> {
+    match (build, sandbox, group) {
+        (true, true, _) => conflict_error("build", "sandbox", "add", "[NAMES]"),
+        (true, _, true) => conflict_error("build", "group", "add", "[NAMES]"),
+        (_, true, true) => conflict_error("sandbox", "group", "add", "[NAMES]"),
+        _ => (),
+    }
+
+    unsupported_build_group_error(build, group, "add", "[NAMES]");
+
+    let component = Component::Sandbox {
+        image,
+        ram,
+        cpus,
+        volumes,
+        ports,
+        envs,
+        env_file,
+        depends_on,
+        workdir,
+        shell,
+        scripts: scripts.into_iter().map(|(k, v)| (k, v.into())).collect(),
+        imports: imports.into_iter().map(|(k, v)| (k, v.into())).collect(),
+        exports: exports.into_iter().map(|(k, v)| (k, v.into())).collect(),
+        reach,
+    };
+
+    config::add(&names, &component, path.as_deref(), config.as_deref()).await?;
+
+    Ok(())
+}
+
+pub async fn _remove_subcommand() -> MonocoreResult<()> {
+    unimplemented!()
+}
+
 pub async fn init_subcommand(
     path: Option<PathBuf>,
     path_with_flag: Option<PathBuf>,
@@ -30,13 +89,7 @@ pub async fn init_subcommand(
         (None, Some(path)) => Some(path),
         (Some(_), Some(_)) => {
             MonocoreArgs::command()
-                .override_usage(format!(
-                    "{} {} {} {}",
-                    "monocore".literal(),
-                    "init".literal(),
-                    "[OPTIONS]".placeholder(),
-                    "[PATH]".placeholder()
-                ))
+                .override_usage(usage("init", "[PATH]", None))
                 .error(
                     ErrorKind::ArgumentConflict,
                     format!(
@@ -88,38 +141,12 @@ pub async fn run_subcommand(
             .exit();
     }
 
-    if build {
-        MonocoreArgs::command()
-            .override_usage(format!(
-                "{} {} {} {} {} {}{}",
-                "monocore".literal(),
-                "run".literal(),
-                "[OPTIONS]".placeholder(),
-                "[NAME]".placeholder(),
-                "[--".literal(),
-                "<ARGS>...".placeholder(),
-                "]".literal()
-            ))
-            .error(
-                ErrorKind::ArgumentConflict,
-                format!("`{}` not yet supported.", "--build".literal()),
-            )
-            .exit();
-    }
+    unsupported_build_group_error(build, sandbox, "run", "[NAME]");
 
     let (sandbox, script) = parse_name_and_script(&name);
     if matches!((script, &exec), (Some(_), Some(_))) {
         MonocoreArgs::command()
-            .override_usage(format!(
-                "{} {} {} {} {} {}{}",
-                "monocore".literal(),
-                "run".literal(),
-                "[OPTIONS]".placeholder(),
-                "[NAME[~SCRIPT]]".placeholder(),
-                "[--".literal(),
-                "<ARGS>...".placeholder(),
-                "]".literal()
-            ))
+            .override_usage(usage("run", "[NAME[~SCRIPT]]", Some("<ARGS>...")))
             .error(
                 ErrorKind::ArgumentConflict,
                 format!(
@@ -133,7 +160,7 @@ pub async fn run_subcommand(
     sandbox::run(
         &sandbox,
         script,
-        path,
+        path.as_deref(),
         config.as_deref(),
         args,
         detach,
@@ -157,16 +184,7 @@ pub async fn script_run_subcommand(
 ) -> MonocoreResult<()> {
     if build && sandbox {
         MonocoreArgs::command()
-            .override_usage(format!(
-                "{} {} {} {} {} {}{}",
-                "monocore".literal(),
-                script.literal(),
-                "[OPTIONS]".placeholder(),
-                "[NAME]".placeholder(),
-                "[--".literal(),
-                "<ARGS>...".placeholder(),
-                "]".literal()
-            ))
+            .override_usage(usage(&script, "[NAME]", Some("<ARGS>...")))
             .error(
                 ErrorKind::ArgumentConflict,
                 format!(
@@ -178,29 +196,12 @@ pub async fn script_run_subcommand(
             .exit();
     }
 
-    if build {
-        MonocoreArgs::command()
-            .override_usage(format!(
-                "{} {} {} {} {} {}{}",
-                "monocore".literal(),
-                script.literal(),
-                "[OPTIONS]".placeholder(),
-                "[NAME]".placeholder(),
-                "[--".literal(),
-                "<ARGS>...".placeholder(),
-                "]".literal()
-            ))
-            .error(
-                ErrorKind::ArgumentConflict,
-                format!("`{}` not yet supported.", "--build".literal()),
-            )
-            .exit();
-    }
+    unsupported_build_group_error(build, sandbox, &script, "[NAME]");
 
     sandbox::run(
         &name,
         Some(&script),
-        path,
+        path.as_deref(),
         config.as_deref(),
         args,
         detach,
@@ -227,16 +228,7 @@ pub async fn tmp_subcommand(
 
     if matches!((script, &exec), (Some(_), Some(_))) {
         MonocoreArgs::command()
-            .override_usage(format!(
-                "{} {} {} {} {} {}{}",
-                "monocore".literal(),
-                "tmp".literal(),
-                "[OPTIONS]".placeholder(),
-                "[NAME[~SCRIPT]]".placeholder(),
-                "[--".literal(),
-                "<ARGS>...".placeholder(),
-                "]".literal()
-            ))
+            .override_usage(usage("tmp", "[NAME[~SCRIPT]]", Some("<ARGS>...")))
             .error(
                 ErrorKind::ArgumentConflict,
                 format!(
@@ -273,33 +265,15 @@ pub async fn up_subcommand(
     config: Option<String>,
 ) -> MonocoreResult<()> {
     match (build, sandbox, group) {
-        (true, true, _) => conflict_error("build", "sandbox", "up"),
-        (true, _, true) => conflict_error("build", "group", "up"),
-        (_, true, true) => conflict_error("sandbox", "group", "up"),
+        (true, true, _) => conflict_error("build", "sandbox", "up", "[NAMES]"),
+        (true, _, true) => conflict_error("build", "group", "up", "[NAMES]"),
+        (_, true, true) => conflict_error("sandbox", "group", "up", "[NAMES]"),
         _ => (),
     }
 
-    if build || group {
-        MonocoreArgs::command()
-            .override_usage(format!(
-                "{} {} {} {}",
-                "monocore".literal(),
-                "up".literal(),
-                "[OPTIONS]".placeholder(),
-                "[NAME]".placeholder(),
-            ))
-            .error(
-                ErrorKind::ArgumentConflict,
-                format!(
-                    "`{}` or `{}` not yet supported.",
-                    "--build".literal(),
-                    "--group".literal()
-                ),
-            )
-            .exit();
-    }
+    unsupported_build_group_error(build, group, "up", "[NAMES]");
 
-    orchestra::up(names, path, config.as_deref()).await?;
+    orchestra::up(names, path.as_deref(), config.as_deref()).await?;
 
     Ok(())
 }
@@ -313,33 +287,15 @@ pub async fn down_subcommand(
     config: Option<String>,
 ) -> MonocoreResult<()> {
     match (build, sandbox, group) {
-        (true, true, _) => conflict_error("build", "sandbox", "down"),
-        (true, _, true) => conflict_error("build", "group", "down"),
-        (_, true, true) => conflict_error("sandbox", "group", "down"),
+        (true, true, _) => conflict_error("build", "sandbox", "down", "[NAMES]"),
+        (true, _, true) => conflict_error("build", "group", "down", "[NAMES]"),
+        (_, true, true) => conflict_error("sandbox", "group", "down", "[NAMES]"),
         _ => (),
     }
 
-    if build || group {
-        MonocoreArgs::command()
-            .override_usage(format!(
-                "{} {} {} {}",
-                "monocore".literal(),
-                "down".literal(),
-                "[OPTIONS]".placeholder(),
-                "[NAME]".placeholder(),
-            ))
-            .error(
-                ErrorKind::ArgumentConflict,
-                format!(
-                    "`{}` or `{}` not yet supported.",
-                    "--build".literal(),
-                    "--group".literal()
-                ),
-            )
-            .exit();
-    }
+    unsupported_build_group_error(build, group, "down", "[NAMES]");
 
-    orchestra::down(names, path, config.as_deref()).await?;
+    orchestra::down(names, path.as_deref(), config.as_deref()).await?;
 
     Ok(())
 }
@@ -355,37 +311,20 @@ pub async fn log_subcommand(
     tail: Option<usize>,
 ) -> MonocoreResult<()> {
     match (build, sandbox, group) {
-        (true, true, _) => conflict_error("build", "sandbox", "log"),
-        (true, _, true) => conflict_error("build", "group", "log"),
-        (_, true, true) => conflict_error("sandbox", "group", "log"),
+        (true, true, _) => conflict_error("build", "sandbox", "log", "[NAME]"),
+        (true, _, true) => conflict_error("build", "group", "log", "[NAME]"),
+        (_, true, true) => conflict_error("sandbox", "group", "log", "[NAME]"),
         _ => (),
     }
 
-    if build || group {
-        MonocoreArgs::command()
-            .override_usage(format!(
-                "{} {} {} {}",
-                "monocore".literal(),
-                "log".literal(),
-                "[OPTIONS]".placeholder(),
-                "[NAME]".placeholder(),
-            ))
-            .error(
-                ErrorKind::ArgumentConflict,
-                format!(
-                    "`{}` or `{}` not yet supported.",
-                    "--build".literal(),
-                    "--group".literal()
-                ),
-            )
-            .exit();
-    }
+    unsupported_build_group_error(build, group, "log", "[NAME]");
 
     // Check if tail command exists when follow mode is requested
     if follow {
         let tail_exists = which::which("tail").is_ok();
         if !tail_exists {
             MonocoreArgs::command()
+                .override_usage(usage("log", "[NAME]", None))
                 .error(
                     ErrorKind::InvalidValue,
                     "'tail' command not found. Please install it to use the follow (-f) option.",
@@ -396,7 +335,7 @@ pub async fn log_subcommand(
 
     // Load the configuration to get canonical paths
     let (_, canonical_project_dir, config_file) =
-        config::load_config(project_dir, config_file.as_deref()).await?;
+        config::load_config(project_dir.as_deref(), config_file.as_deref()).await?;
 
     // Construct log file path: <project_dir>/.menv/log/<config>-<sandbox>.log
     let log_path = canonical_project_dir
@@ -457,18 +396,12 @@ pub async fn log_subcommand(
 }
 
 //--------------------------------------------------------------------------------------------------
-// Functions: Helpers
+// Functions: Common Errors
 //--------------------------------------------------------------------------------------------------
 
-fn conflict_error(arg1: &str, arg2: &str, command: &str) {
+fn conflict_error(arg1: &str, arg2: &str, command: &str, positional_placeholder: &str) {
     MonocoreArgs::command()
-        .override_usage(format!(
-            "{} {} {} {}",
-            "monocore".literal(),
-            command.literal(),
-            "[OPTIONS]".placeholder(),
-            "[NAME]".placeholder(),
-        ))
+        .override_usage(usage(command, positional_placeholder, None))
         .error(
             ErrorKind::ArgumentConflict,
             format!(
@@ -478,6 +411,54 @@ fn conflict_error(arg1: &str, arg2: &str, command: &str) {
             ),
         )
         .exit();
+}
+
+fn unsupported_build_group_error(
+    build: bool,
+    group: bool,
+    command: &str,
+    positional_placeholder: &str,
+) {
+    if build || group {
+        MonocoreArgs::command()
+            .override_usage(usage(command, positional_placeholder, None))
+            .error(
+                ErrorKind::ArgumentConflict,
+                format!(
+                    "`{}/{}` or `{}/{}` not yet supported.",
+                    "--build".literal(),
+                    "-b".literal(),
+                    "--group".literal(),
+                    "-g".literal()
+                ),
+            )
+            .exit();
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Functions: Helpers
+//--------------------------------------------------------------------------------------------------
+
+fn usage(command: &str, positional_placeholder: &str, varargs: Option<&str>) -> String {
+    let mut usage = format!(
+        "{} {} {} {}",
+        "monocore".literal(),
+        command.literal(),
+        "[OPTIONS]".placeholder(),
+        positional_placeholder.placeholder()
+    );
+
+    if let Some(varargs) = varargs {
+        usage.push_str(&format!(
+            " {} {} {}",
+            "[--".literal(),
+            format!("{}...", varargs).placeholder(),
+            "]".literal()
+        ));
+    }
+
+    usage
 }
 
 fn parse_name_and_script(name_and_script: &str) -> (&str, Option<&str>) {
