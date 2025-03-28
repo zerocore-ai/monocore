@@ -87,6 +87,23 @@ pub async fn remove_subcommand(
     .await
 }
 
+pub async fn list_subcommand(
+    sandbox: bool,
+    build: bool,
+    group: bool,
+    path: Option<PathBuf>,
+    config: Option<String>,
+) -> MonocoreResult<()> {
+    trio_conflict_error(build, sandbox, group, "list", "[NAMES]");
+    unsupported_build_group_error(build, group, "list", "[NAMES]");
+    let names = config::list(ComponentType::Sandbox, path.as_deref(), config.as_deref()).await?;
+    for name in names {
+        println!("{}", name);
+    }
+
+    Ok(())
+}
+
 pub async fn init_subcommand(
     path: Option<PathBuf>,
     path_with_flag: Option<PathBuf>,

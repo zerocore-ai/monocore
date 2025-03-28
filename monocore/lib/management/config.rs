@@ -364,6 +364,35 @@ pub async fn remove(
     Ok(())
 }
 
+/// Lists components in the Monocore configuration.
+///
+/// Retrieves and displays information about components defined in the Monocore configuration.
+///
+/// ## Arguments
+///
+/// * `component_type` - The type of component to list
+/// * `project_dir` - Optional path to the project directory. If None, defaults to current directory
+/// * `config_file` - Optional path to the Monocore config file. If None, uses default filename
+///
+/// ## Returns
+///
+/// * `Ok(())` on success, or error if the file cannot be found/read/written,
+///   contains invalid YAML, or the component does not exist
+pub async fn list(
+    component_type: ComponentType,
+    project_dir: Option<&Path>,
+    config_file: Option<&str>,
+) -> MonocoreResult<Vec<String>> {
+    let (config, _, _) = load_config(project_dir, config_file).await?;
+
+    match component_type {
+        ComponentType::Sandbox => {
+            return Ok(config.get_sandboxes().keys().cloned().collect());
+        }
+        _ => return Ok(vec![]),
+    }
+}
+
 //--------------------------------------------------------------------------------------------------
 // Functions: Helpers
 //--------------------------------------------------------------------------------------------------

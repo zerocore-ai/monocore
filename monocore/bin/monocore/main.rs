@@ -71,6 +71,15 @@ async fn main() -> MonocoreResult<()> {
         }) => {
             handlers::remove_subcommand(sandbox, build, group, names, path, config).await?;
         }
+        Some(MonocoreSubcommand::List {
+            sandbox,
+            build,
+            group,
+            path,
+            config,
+        }) => {
+            handlers::list_subcommand(sandbox, build, group, path, config).await?;
+        }
         Some(MonocoreSubcommand::Pull {
             image,
             image_group,
