@@ -166,6 +166,14 @@ pub enum MonocoreSubcommand {
         /// Whether to list groups
         #[arg(short, long)]
         group: bool,
+
+        /// Project path
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Config path
+        #[arg(short, long)]
+        config: Option<String>,
     },
 
     /// Show logs of a running build, sandbox, or group
