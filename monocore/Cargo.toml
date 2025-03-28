@@ -13,7 +13,7 @@ path = "lib/lib.rs"
 
 [[bin]]
 name = "monocore"
-path = "bin/monocore.rs"
+path = "bin/monocore/main.rs"
 
 [[bin]]
 name = "mcrun"

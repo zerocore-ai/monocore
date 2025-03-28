@@ -44,7 +44,7 @@ pub enum MonocoreSubcommand {
     #[command(name = "add")]
     Add {
         /// Add a sandbox
-        #[arg(short, long, default_value_t = true)]
+        #[arg(short, long)]
         sandbox: bool,
 
         /// Add a build
@@ -151,13 +151,21 @@ pub enum MonocoreSubcommand {
     /// Show logs of a running build, sandbox, or group
     #[command(name = "log")]
     Log {
-        /// Specifies the sandbox
-        #[arg(name = "SANDBOX")]
-        sandbox: Option<String>,
+        /// Show logs of a sandbox
+        #[arg(short, long)]
+        sandbox: bool,
 
-        /// Specifies the sandbox
-        #[arg(short, long = "sandbox", name = "SANDBOX\0")]
-        sandbox_with_flag: Option<String>,
+        /// Show logs of a build
+        #[arg(short, long)]
+        build: bool,
+
+        /// Show logs of a group
+        #[arg(short, long)]
+        group: bool,
+
+        /// Name of the component
+        #[arg(required = true)]
+        name: String,
 
         /// Project path
         #[arg(short, long)]
@@ -203,13 +211,17 @@ pub enum MonocoreSubcommand {
     /// Run a sandbox script
     #[command(name = "run")]
     Run {
-        /// Specifies the sandbox and script to run
-        #[arg(name = "SANDBOX[~SCRIPT]")]
-        sandbox_script: Option<String>,
+        /// Run a sandbox script
+        #[arg(short, long)]
+        sandbox: bool,
 
-        /// Specifies the sandbox and script to run
-        #[arg(short, long = "sandbox", name = "SANDBOX[~SCRIPT]\0")]
-        sandbox_script_with_flag: Option<String>,
+        /// Run a build script
+        #[arg(short, long)]
+        build: bool,
+
+        /// Name of the component
+        #[arg(required = true, name = "NAME[~SCRIPT]")]
+        name: String,
 
         /// Project path
         #[arg(short, long)]
@@ -235,13 +247,17 @@ pub enum MonocoreSubcommand {
     /// Start a sandbox
     #[command(name = "start")]
     Start {
-        /// Specifies the sandbox
-        #[arg(name = "SANDBOX")]
-        sandbox: Option<String>,
+        /// Run start command for a sandbox
+        #[arg(short, long)]
+        sandbox: bool,
 
-        /// Specifies the sandbox
-        #[arg(short, long = "sandbox", name = "SANDBOX\0")]
-        sandbox_with_flag: Option<String>,
+        /// Run start command for a build
+        #[arg(short, long)]
+        build: bool,
+
+        /// Name of the component
+        #[arg(required = true)]
+        name: String,
 
         /// Project path
         #[arg(short, long)]
@@ -263,13 +279,17 @@ pub enum MonocoreSubcommand {
     /// Open a shell in a sandbox
     #[command(name = "shell")]
     Shell {
-        /// Specifies the sandbox
-        #[arg(name = "SANDBOX")]
-        sandbox: Option<String>,
+        /// Open a shell in a sandbox
+        #[arg(short, long)]
+        sandbox: bool,
 
-        /// Specifies the sandbox
-        #[arg(short, long = "sandbox", name = "SANDBOX\0")]
-        sandbox_with_flag: Option<String>,
+        /// Open a shell in a build
+        #[arg(short, long)]
+        build: bool,
+
+        /// Name of the component
+        #[arg(required = true)]
+        name: String,
 
         /// Project path
         #[arg(short, long)]
@@ -291,13 +311,13 @@ pub enum MonocoreSubcommand {
     /// Create a temporary sandbox
     #[command(name = "tmp")]
     Tmp {
-        /// Specifies the image and script to run
-        #[arg(name = "IMAGE[~SCRIPT]")]
-        image_script: Option<String>,
+        /// Create a temporary sandbox from an image
+        #[arg(short, long)]
+        image: bool,
 
-        /// Specifies the image and script to run
-        #[arg(short, long = "image", name = "IMAGE[~SCRIPT]\0")]
-        image_script_with_flag: Option<String>,
+        /// Name of the image
+        #[arg(required = true, name = "NAME[~SCRIPT]")]
+        name: String,
 
         /// Number of CPUs
         #[arg(long)]
@@ -336,7 +356,7 @@ pub enum MonocoreSubcommand {
     #[command(name = "install")]
     Install {
         /// Whether to install from an image
-        #[arg(short, long, default_value_t = true)]
+        #[arg(short, long)]
         image: bool,
 
         /// Whether to install from an image group
@@ -344,6 +364,7 @@ pub enum MonocoreSubcommand {
         image_group: bool,
 
         /// Name of the image or image group
+        #[arg(required = true)]
         name: String,
 
         /// Script to install
@@ -360,7 +381,7 @@ pub enum MonocoreSubcommand {
         script: Option<String>,
 
         /// Whether to uninstall from an image
-        #[arg(short, long, default_value_t = true)]
+        #[arg(short, long)]
         image: bool,
 
         /// Whether to uninstall from an image group
@@ -368,6 +389,7 @@ pub enum MonocoreSubcommand {
         image_group: bool,
 
         /// Name of the image or image group
+        #[arg(required = true)]
         name: String,
     },
 
@@ -386,19 +408,21 @@ pub enum MonocoreSubcommand {
     /// Start project sandboxes
     #[command(name = "up")]
     Up {
-        /// Names of components to start
-        #[arg(
-            short,
-            long = "sandbox",
-            name = "SANDBOXES\0",
-            value_delimiter = ' ',
-            num_args = 1..
-        )]
-        sandboxes_with_flag: Option<Vec<String>>,
+        /// Whether to start a sandbox
+        #[arg(short, long)]
+        sandbox: bool,
+
+        /// Whether to start a build
+        #[arg(short, long)]
+        build: bool,
+
+        /// Whether to start a group
+        #[arg(short, long)]
+        group: bool,
 
         /// Names of components to start
-        #[arg(name = "SANDBOXES")]
-        sandboxes: Option<Vec<String>>,
+        #[arg(required = true)]
+        names: Vec<String>,
 
         /// Project path
         #[arg(short, long)]
@@ -412,19 +436,21 @@ pub enum MonocoreSubcommand {
     /// Stop project sandboxes
     #[command(name = "down")]
     Down {
-        /// Names of components to start
-        #[arg(
-            short,
-            long = "sandbox",
-            name = "SANDBOXES\0",
-            value_delimiter = ' ',
-            num_args = 1..
-        )]
-        sandboxes_with_flag: Option<Vec<String>>,
+        /// Whether to stop a sandbox
+        #[arg(short, long)]
+        sandbox: bool,
 
-        /// Names of components to start
-        #[arg(name = "SANDBOXES")]
-        sandboxes: Option<Vec<String>>,
+        /// Whether to stop a build
+        #[arg(short, long)]
+        build: bool,
+
+        /// Whether to stop a group
+        #[arg(short, long)]
+        group: bool,
+
+        /// Names of components to stop
+        #[arg(required = true)]
+        names: Vec<String>,
 
         /// Project path
         #[arg(short, long)]
@@ -438,19 +464,21 @@ pub enum MonocoreSubcommand {
     /// Show running status
     #[command(name = "status")]
     Status {
-        /// Names of components to start
-        #[arg(
-            short,
-            long = "sandbox",
-            name = "SANDBOXES\0",
-            value_delimiter = ' ',
-            num_args = 1..
-        )]
-        sandboxes_with_flag: Option<Vec<String>>,
+        /// Whether to show a sandbox
+        #[arg(short, long)]
+        sandbox: bool,
 
-        /// Names of components to start
-        #[arg(name = "SANDBOXES")]
-        sandboxes: Option<Vec<String>>,
+        /// Whether to show a build
+        #[arg(short, long)]
+        build: bool,
+
+        /// Whether to show a group
+        #[arg(short, long)]
+        group: bool,
+
+        /// Name of the component
+        #[arg(required = true)]
+        name: String,
 
         /// Project path
         #[arg(short, long)]
@@ -473,7 +501,7 @@ pub enum MonocoreSubcommand {
         build: bool,
 
         /// Build from sandbox
-        #[arg(short, long, default_value_t = true)]
+        #[arg(short, long)]
         sandbox: bool,
 
         /// Build from group
@@ -493,7 +521,7 @@ pub enum MonocoreSubcommand {
     #[command(name = "pull")]
     Pull {
         /// Whether to pull an image
-        #[arg(short, long, default_value_t = true)]
+        #[arg(short, long)]
         image: bool,
 
         /// Whether to pull an image group
@@ -501,6 +529,7 @@ pub enum MonocoreSubcommand {
         image_group: bool,
 
         /// Name of the image or image group
+        #[arg(required = true)]
         name: Reference,
 
         /// Path to store the layer files
@@ -523,10 +552,6 @@ pub enum MonocoreSubcommand {
         #[arg(value_enum)]
         action: SelfAction,
     },
-
-    /// Manage remote sandboxes
-    #[command(name = "remote")]
-    Remote,
 
     /// Start a server for orchestrating sandboxes
     #[command(name = "server")]
