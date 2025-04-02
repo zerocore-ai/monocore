@@ -63,6 +63,18 @@ pub enum McrunSubcommand {
         #[arg(long)]
         port_map: Vec<String>,
 
+        /// Network communication scope
+        #[arg(long)]
+        scope: Option<String>,
+
+        /// Assigned IP address
+        #[arg(long)]
+        ip: Option<String>,
+
+        /// Assigned subnet
+        #[arg(long)]
+        subnet: Option<String>,
+
         /// Additional arguments after `--`
         #[arg(last = true)]
         args: Vec<String>,
@@ -133,6 +145,18 @@ pub enum McrunSubcommand {
         /// Port mappings (host:guest format)
         #[arg(long)]
         port_map: Vec<String>,
+
+        /// Network communication scope
+        #[arg(long)]
+        scope: Option<String>,
+
+        /// Assigned IP address
+        #[arg(long)]
+        ip: Option<String>,
+
+        /// Assigned subnet
+        #[arg(long)]
+        subnet: Option<String>,
 
         /// Additional arguments after `--`
         #[arg(last = true)]

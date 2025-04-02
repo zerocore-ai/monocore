@@ -8,7 +8,7 @@ use crate::{
     MonocoreResult,
 };
 
-use super::{Build, Group, Meta, Module, Monocore, Proxy, Sandbox, SandboxGroup, SandboxNetwork};
+use super::{Build, Group, Meta, Module, Monocore, Proxy, Sandbox, SandboxGroup, NetworkScope};
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -53,7 +53,7 @@ pub struct MonocoreBuilder {
 /// - `scripts`: The scripts available in the sandbox
 /// - `imports`: The files to import
 /// - `exports`: The files to export
-/// - `network`: The network configuration for the sandbox
+/// - `scope`: The network scope for the sandbox
 /// - `proxy`: The proxy to use
 pub struct SandboxBuilder<I, S> {
     version: Option<Version>,
@@ -72,7 +72,7 @@ pub struct SandboxBuilder<I, S> {
     scripts: HashMap<String, String>,
     imports: HashMap<String, Utf8UnixPathBuf>,
     exports: HashMap<String, Utf8UnixPathBuf>,
-    network: Option<SandboxNetwork>,
+    scope: NetworkScope,
     proxy: Option<Proxy>,
 }
 
@@ -162,7 +162,7 @@ impl<I, S> SandboxBuilder<I, S> {
             scripts: self.scripts,
             imports: self.imports,
             exports: self.exports,
-            network: self.network,
+            scope: self.scope,
             proxy: self.proxy,
         }
     }
@@ -246,7 +246,7 @@ impl<I, S> SandboxBuilder<I, S> {
             scripts: self.scripts,
             imports: self.imports,
             exports: self.exports,
-            network: self.network,
+            scope: self.scope,
             proxy: self.proxy,
         }
     }
@@ -278,9 +278,9 @@ impl<I, S> SandboxBuilder<I, S> {
         self
     }
 
-    /// Sets the network for the sandbox
-    pub fn network(mut self, network: SandboxNetwork) -> SandboxBuilder<I, S> {
-        self.network = Some(network);
+    /// Sets the network scope for the sandbox
+    pub fn scope(mut self, scope: NetworkScope) -> SandboxBuilder<I, S> {
+        self.scope = scope;
         self
     }
 
@@ -311,7 +311,7 @@ impl SandboxBuilder<ReferenceOrPath, String> {
             scripts: self.scripts,
             imports: self.imports,
             exports: self.exports,
-            network: self.network,
+            scope: self.scope,
             proxy: self.proxy,
         }
     }
@@ -340,7 +340,7 @@ impl Default for SandboxBuilder<(), String> {
             scripts: HashMap::new(),
             imports: HashMap::new(),
             exports: HashMap::new(),
-            network: None,
+            scope: NetworkScope::Group,
             proxy: None,
         }
     }

@@ -1,11 +1,12 @@
-use std::{ffi::CString, path::PathBuf};
+use std::{ffi::CString, net::Ipv4Addr, path::PathBuf, ptr};
 
 use getset::Getters;
+use ipnetwork::Ipv4Network;
 use monoutils::SupportedPathType;
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
-    config::{EnvPair, PathPair, PortPair},
+    config::{EnvPair, NetworkScope, PathPair, PortPair},
     utils, InvalidMicroVMConfigError, MonocoreError, MonocoreResult,
 };
 
@@ -49,7 +50,7 @@ pub const VIRTIOFS_TAG_PREFIX: &str = "virtiofs";
 /// ```
 #[derive(Debug, Getters)]
 pub struct MicroVm {
-    /// The context ID for the MicroVm.
+    /// The context ID for the MicroVm configuration.
     ctx_id: u32,
 
     /// The configuration for the MicroVm.
@@ -131,6 +132,15 @@ pub struct MicroVmConfig {
 
     /// The port map to use for the MicroVm.
     pub port_map: Vec<PortPair>,
+
+    /// The network scope to use for the MicroVm.
+    pub scope: NetworkScope,
+
+    /// The IP address to use for the MicroVm.
+    pub ip: Option<Ipv4Addr>,
+
+    /// The subnet to use for the MicroVm.
+    pub subnet: Option<Ipv4Network>,
 
     /// The resource limits to use for the MicroVm.
     pub rlimits: Vec<LinuxRlimit>,
@@ -351,6 +361,12 @@ impl MicroVm {
         unsafe {
             let status = ffi::krun_set_port_map(ctx_id, c_port_map_ptrs.as_ptr());
             assert!(status >= 0, "failed to set port map: {}", status);
+        }
+
+        // Set network scope
+        unsafe {
+            let status = ffi::krun_set_tsi_scope(ctx_id, ptr::null(), ptr::null(), config.scope as u8);
+            assert!(status >= 0, "failed to set network scope: {}", status);
         }
 
         // Set resource limits

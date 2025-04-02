@@ -17,7 +17,6 @@ extern "C" {
     ///   - `3` - Info
     ///   - `4` - Debug
     ///   - `5` - Trace
-    #[allow(dead_code)]
     pub(crate) fn krun_set_log_level(level: u32) -> i32;
 
     /// Creates a configuration context.
@@ -197,6 +196,39 @@ extern "C" {
     /// supported as an API of libkrun (but you can still do port mapping using command line
     /// arguments of passt).
     pub(crate) fn krun_set_port_map(ctx_id: u32, c_port_map: *const *const c_char) -> i32;
+
+    /// Configures the static IP, subnet, and scope for the TSI network backend.
+    ///
+    /// ## Arguments
+    ///
+    /// * `ctx_id` - The configuration context ID.
+    /// * `c_ip` - An optional null-terminated string representing the guest's static IPv4 address.
+    /// * `c_subnet` - An optional null-terminated string representing the guest's subnet in CIDR notation (e.g., "192.168.1.0/24").
+    /// * `scope` - An integer specifying the scope (0-3):
+    ///   - `0` - None - Block all IP communication
+    ///   - `1` - Group - Allow within subnet (if specified; otherwise, block all like scope 0)
+    ///   - `2` - Public - Allow public IPs
+    ///   - `3` - Any - Allow any IP
+    ///
+    /// ## Returns
+    ///
+    /// Returns 0 on success or a negative error number on failure.
+    ///
+    /// ## Errors
+    ///
+    /// * `-EINVAL` - If scope value is > 3 or IP/subnet strings are invalid.
+    /// * `-ENOTSUP` - If the network mode is not TSI.
+    ///
+    /// ## Notes
+    ///
+    /// This function is only effective when the default TSI network backend is used (i.e., neither
+    /// `krun_set_passt_fd` nor `krun_set_gvproxy_path` has been called).
+    pub(crate) fn krun_set_tsi_scope(
+        ctx_id: u32,
+        c_ip: *const c_char,
+        c_subnet: *const c_char,
+        scope: u8,
+    ) -> i32;
 
     /// Enables and configures a virtio-gpu device.
     ///

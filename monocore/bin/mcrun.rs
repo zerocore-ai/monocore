@@ -23,6 +23,9 @@
 //!     --exec-path=/usr/bin/python3 \
 //!     --mapped-dirs=/host/path:/guest/path \
 //!     --port-maps=8080:80 \
+//!     --scope=group \
+//!     --ip=192.168.1.1 \
+//!     --subnet=192.168.1.0/24 \
 //!     --envs=KEY=VALUE \
 //!     -- -m http.server 8080
 //! ```
@@ -46,6 +49,9 @@
 //!     --port-maps=8080:80 \
 //!     --envs=KEY=VALUE \
 //!     --forward-output \
+//!     --scope=group \
+//!     --ip=192.168.1.1 \
+//!     --subnet=192.168.1.0/24 \
 //!     -- -m http.server 8080
 //! ```
 //!
@@ -93,6 +99,9 @@ async fn main() -> Result<()> {
             env,
             mapped_dir,
             port_map,
+            scope,
+            ip,
+            subnet,
             args,
         } => {
             tracing_subscriber::fmt::init();
@@ -159,6 +168,21 @@ async fn main() -> Result<()> {
                 builder = builder.port_map(port_map);
             }
 
+            // Set scope if provided
+            if let Some(scope) = scope {
+                builder = builder.scope(scope.parse()?);
+            }
+
+            // Set ip if provided
+            if let Some(ip) = ip {
+                builder = builder.ip(ip.parse()?);
+            }
+
+            // Set subnet if provided
+            if let Some(subnet) = subnet {
+                builder = builder.subnet(subnet.parse()?);
+            }
+
             // Set env if provided
             if !env.is_empty() {
                 builder = builder.env(env);
@@ -192,6 +216,9 @@ async fn main() -> Result<()> {
             env,
             mapped_dir,
             port_map,
+            scope,
+            ip,
+            subnet,
             args,
         } => {
             tracing_subscriber::fmt::init();
@@ -277,6 +304,21 @@ async fn main() -> Result<()> {
                 for port_map in port_map {
                     child_args.push(format!("--port-map={}", port_map));
                 }
+            }
+
+            // Set scope if provided
+            if let Some(scope) = scope {
+                child_args.push(format!("--scope={}", scope));
+            }
+
+            // Set ip if provided
+            if let Some(ip) = ip {
+                child_args.push(format!("--ip={}", ip));
+            }
+
+            // Set subnet if provided
+            if let Some(subnet) = subnet {
+                child_args.push(format!("--subnet={}", subnet));
             }
 
             // Set log level if provided

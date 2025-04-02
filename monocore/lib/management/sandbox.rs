@@ -183,6 +183,8 @@ pub async fn run(
         .arg(&config_last_modified.to_rfc3339())
         .arg("--sandbox-db-path")
         .arg(&sandbox_db_path)
+        .arg("--scope")
+        .arg(sandbox_config.get_scope().to_string())
         .arg("--exec-path")
         .arg(&exec_path);
 
