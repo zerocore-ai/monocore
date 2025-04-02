@@ -16,11 +16,18 @@ use typed_builder::TypedBuilder;
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
-    config::{EnvPair, PathPair, PortPair, ReferenceOrPath, DEFAULT_SCRIPT, DEFAULT_SHELL},
+    config::{EnvPair, PathPair, PortPair, ReferenceOrPath, DEFAULT_SHELL},
     MonocoreError, MonocoreResult,
 };
 
 use super::{MonocoreBuilder, SandboxBuilder};
+
+//--------------------------------------------------------------------------------------------------
+// Types
+//--------------------------------------------------------------------------------------------------
+
+/// The start script name.
+pub const START_SCRIPT_NAME: &str = "start";
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -32,23 +39,23 @@ use super::{MonocoreBuilder, SandboxBuilder};
 pub struct Monocore {
     /// The metadata about the configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub(super) meta: Option<Meta>,
+    pub(crate) meta: Option<Meta>,
 
     /// The modules to import.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub(super) modules: HashMap<String, Module>,
+    pub(crate) modules: HashMap<String, Module>,
 
     /// The builds to run.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub(super) builds: HashMap<String, Build>,
+    pub(crate) builds: HashMap<String, Build>,
 
     /// The sandboxes to run.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub(super) sandboxes: HashMap<String, Sandbox>,
+    pub(crate) sandboxes: HashMap<String, Sandbox>,
 
     /// The groups to run the sandboxes in.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub(super) groups: HashMap<String, Group>,
+    pub(crate) groups: HashMap<String, Group>,
 }
 
 /// The metadata about the configuration.
@@ -58,22 +65,22 @@ pub struct Meta {
     /// The authors of the configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) authors: Option<Vec<String>>,
+    pub(crate) authors: Option<Vec<String>>,
 
     /// The description of the sandbox.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) description: Option<String>,
+    pub(crate) description: Option<String>,
 
     /// The homepage of the configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) homepage: Option<String>,
+    pub(crate) homepage: Option<String>,
 
     /// The repository of the configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) repository: Option<String>,
+    pub(crate) repository: Option<String>,
 
     /// The path to the readme file.
     #[serde(
@@ -83,12 +90,12 @@ pub struct Meta {
         deserialize_with = "deserialize_optional_path"
     )]
     #[builder(default, setter(strip_option))]
-    pub(super) readme: Option<Utf8UnixPathBuf>,
+    pub(crate) readme: Option<Utf8UnixPathBuf>,
 
     /// The tags for the configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) tags: Option<Vec<String>>,
+    pub(crate) tags: Option<Vec<String>>,
 
     /// The icon for the configuration.
     #[serde(
@@ -98,7 +105,7 @@ pub struct Meta {
         deserialize_with = "deserialize_optional_path"
     )]
     #[builder(default, setter(strip_option))]
-    pub(super) icon: Option<Utf8UnixPathBuf>,
+    pub(crate) icon: Option<Utf8UnixPathBuf>,
 }
 
 /// Component mapping for imports.
@@ -108,7 +115,7 @@ pub struct ComponentMapping {
     /// The alias for the component.
     #[serde(skip_serializing_if = "Option::is_none", default, rename = "as")]
     #[builder(default, setter(strip_option))]
-    pub(super) as_: Option<String>,
+    pub(crate) as_: Option<String>,
 }
 
 /// Module import configuration.
@@ -120,37 +127,37 @@ pub struct Module(pub HashMap<String, Option<ComponentMapping>>);
 #[getset(get = "pub with_prefix")]
 pub struct Build {
     /// The image to use. This can be a path to a local rootfs or an OCI image reference.
-    pub(super) image: ReferenceOrPath,
+    pub(crate) image: ReferenceOrPath,
 
     /// The amount of RAM in MiB to use.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) ram: Option<u32>,
+    pub(crate) ram: Option<u32>,
 
     /// The number of vCPUs to use.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) cpus: Option<u8>,
+    pub(crate) cpus: Option<u8>,
 
     /// The volumes to mount.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
-    pub(super) volumes: Vec<PathPair>,
+    pub(crate) volumes: Vec<PathPair>,
 
     /// The ports to expose.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
-    pub(super) ports: Vec<PortPair>,
+    pub(crate) ports: Vec<PortPair>,
 
     /// The environment variables to use.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
-    pub(super) envs: Vec<EnvPair>,
+    pub(crate) envs: Vec<EnvPair>,
 
     /// The builds to depend on.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     #[builder(default)]
-    pub(super) depends_on: Vec<String>,
+    pub(crate) depends_on: Vec<String>,
 
     /// The working directory to use.
     #[serde(
@@ -160,17 +167,17 @@ pub struct Build {
         deserialize_with = "deserialize_optional_path"
     )]
     #[builder(default, setter(strip_option))]
-    pub(super) workdir: Option<Utf8UnixPathBuf>,
+    pub(crate) workdir: Option<Utf8UnixPathBuf>,
 
     /// The shell to use.
     #[serde(default = "Build::default_shell")]
     #[builder(default = Build::default_shell())]
-    pub(super) shell: String,
+    pub(crate) shell: String,
 
     /// The scripts that can be run.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
-    pub(super) scripts: HashMap<String, String>,
+    pub(crate) scripts: HashMap<String, String>,
 
     /// The files to import.
     #[serde(
@@ -180,7 +187,7 @@ pub struct Build {
         deserialize_with = "deserialize_path_map"
     )]
     #[builder(default)]
-    pub(super) imports: HashMap<String, Utf8UnixPathBuf>,
+    pub(crate) imports: HashMap<String, Utf8UnixPathBuf>,
 
     /// The artifacts produced by the build.
     #[serde(
@@ -190,7 +197,7 @@ pub struct Build {
         deserialize_with = "deserialize_path_map"
     )]
     #[builder(default)]
-    pub(super) exports: HashMap<String, Utf8UnixPathBuf>,
+    pub(crate) exports: HashMap<String, Utf8UnixPathBuf>,
 }
 
 /// Network scope configuration for a sandbox.
@@ -222,12 +229,12 @@ pub struct SandboxGroupNetwork {
     /// The IP address for the sandbox in this group
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) ip: Option<Ipv4Addr>,
+    pub(crate) ip: Option<Ipv4Addr>,
 
     /// The hostname for this sandbox in the group
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) hostname: Option<String>,
+    pub(crate) hostname: Option<String>,
 }
 
 /// Network configuration for a group.
@@ -237,7 +244,7 @@ pub struct GroupNetwork {
     /// The subnet CIDR for the group. Must be an IPv4 network.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) subnet: Option<Ipv4Net>,
+    pub(crate) subnet: Option<Ipv4Net>,
 }
 
 /// Proxy configuration for a sandbox.
@@ -293,34 +300,34 @@ pub enum Proxy {
 pub struct Sandbox {
     /// The version of the sandbox.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub(super) version: Option<Version>,
+    pub(crate) version: Option<Version>,
 
     /// The metadata about the sandbox.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub(super) meta: Option<Meta>,
+    pub(crate) meta: Option<Meta>,
 
     /// The image to use. This can be a path to a local rootfs or an OCI image reference.
-    pub(super) image: ReferenceOrPath,
+    pub(crate) image: ReferenceOrPath,
 
     /// The amount of RAM in MiB to use.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub(super) ram: Option<u32>,
+    pub(crate) ram: Option<u32>,
 
     /// The number of vCPUs to use.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub(super) cpus: Option<u8>,
+    pub(crate) cpus: Option<u8>,
 
     /// The volumes to mount.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub(super) volumes: Vec<PathPair>,
+    pub(crate) volumes: Vec<PathPair>,
 
     /// The ports to expose.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub(super) ports: Vec<PortPair>,
+    pub(crate) ports: Vec<PortPair>,
 
     /// The environment variables to use.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub(super) envs: Vec<EnvPair>,
+    pub(crate) envs: Vec<EnvPair>,
 
     /// The environment file to use.
     #[serde(
@@ -329,15 +336,15 @@ pub struct Sandbox {
         serialize_with = "serialize_optional_path",
         deserialize_with = "deserialize_optional_path"
     )]
-    pub(super) env_file: Option<Utf8UnixPathBuf>,
+    pub(crate) env_file: Option<Utf8UnixPathBuf>,
 
     /// The groups to run in.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub(super) groups: HashMap<String, SandboxGroup>,
+    pub(crate) groups: HashMap<String, SandboxGroup>,
 
     /// The sandboxes to depend on.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub(super) depends_on: Vec<String>,
+    pub(crate) depends_on: Vec<String>,
 
     /// The working directory to use.
     #[serde(
@@ -346,14 +353,14 @@ pub struct Sandbox {
         serialize_with = "serialize_optional_path",
         deserialize_with = "deserialize_optional_path"
     )]
-    pub(super) workdir: Option<Utf8UnixPathBuf>,
+    pub(crate) workdir: Option<Utf8UnixPathBuf>,
 
     /// The shell to use.
-    pub(super) shell: String,
+    pub(crate) shell: String,
 
     /// The scripts that can be run.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub(super) scripts: HashMap<String, String>,
+    pub(crate) scripts: HashMap<String, String>,
 
     /// The files to import.
     #[serde(
@@ -362,7 +369,7 @@ pub struct Sandbox {
         serialize_with = "serialize_path_map",
         deserialize_with = "deserialize_path_map"
     )]
-    pub(super) imports: HashMap<String, Utf8UnixPathBuf>,
+    pub(crate) imports: HashMap<String, Utf8UnixPathBuf>,
 
     /// The artifacts produced by the sandbox.
     #[serde(
@@ -371,15 +378,15 @@ pub struct Sandbox {
         serialize_with = "serialize_path_map",
         deserialize_with = "deserialize_path_map"
     )]
-    pub(super) exports: HashMap<String, Utf8UnixPathBuf>,
+    pub(crate) exports: HashMap<String, Utf8UnixPathBuf>,
 
     /// The network scope for the sandbox.
     #[serde(default)]
-    pub(super) scope: NetworkScope,
+    pub(crate) scope: NetworkScope,
 
     /// The proxy configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub(super) proxy: Option<Proxy>,
+    pub(crate) proxy: Option<Proxy>,
 }
 
 /// Configuration for a sandbox's group membership.
@@ -389,12 +396,12 @@ pub struct SandboxGroup {
     /// The volumes to mount.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     #[builder(default)]
-    pub(super) volumes: HashMap<String, String>,
+    pub(crate) volumes: HashMap<String, String>,
 
     /// The network configuration for this sandbox in the group.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) network: Option<SandboxGroupNetwork>,
+    pub(crate) network: Option<SandboxGroupNetwork>,
 }
 
 /// The group to run the sandboxes in.
@@ -404,17 +411,17 @@ pub struct Group {
     /// The version of the group.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) version: Option<Version>,
+    pub(crate) version: Option<Version>,
 
     /// The metadata about the group.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) meta: Option<Meta>,
+    pub(crate) meta: Option<Meta>,
 
     /// The network configuration for the group.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[builder(default, setter(strip_option))]
-    pub(super) network: Option<GroupNetwork>,
+    pub(crate) network: Option<GroupNetwork>,
 
     /// The volumes to mount.
     #[serde(
@@ -424,7 +431,7 @@ pub struct Group {
         deserialize_with = "deserialize_path_map"
     )]
     #[builder(default)]
-    pub(super) volumes: HashMap<String, Utf8UnixPathBuf>,
+    pub(crate) volumes: HashMap<String, Utf8UnixPathBuf>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -479,22 +486,14 @@ impl Sandbox {
         SandboxBuilder::default()
     }
 
-    /// Returns the start script for the sandbox.
-    pub fn get_start_script(&self) -> &str {
-        if let Some(script) = self.scripts.get(DEFAULT_SCRIPT) {
-            script
-        } else {
-            &self.shell
-        }
-    }
-
-    /// Returns the full scripts for the sandbox.
+    /// Returns the scripts defined for the sandbox, with the default script added if it is not
+    /// defined.
     pub fn get_full_scripts(&self) -> Cow<HashMap<String, String>> {
-        if self.scripts.contains_key(DEFAULT_SCRIPT) {
+        if self.scripts.contains_key(START_SCRIPT_NAME) {
             Cow::Borrowed(&self.scripts)
         } else {
             let mut scripts = self.scripts.clone();
-            scripts.insert(DEFAULT_SCRIPT.to_string(), self.shell.clone());
+            scripts.insert(START_SCRIPT_NAME.to_string(), self.shell.clone());
             Cow::Owned(scripts)
         }
     }
@@ -710,12 +709,12 @@ mod tests {
         // Test sandbox with no scripts (should use shell as default)
         let sandbox1 = sandboxes.get("test1").unwrap();
         let scripts1 = sandbox1.get_full_scripts();
-        assert_eq!(scripts1.get(DEFAULT_SCRIPT).unwrap(), "/bin/sh");
+        assert_eq!(scripts1.get(START_SCRIPT_NAME).unwrap(), "/bin/sh");
 
         // Test sandbox with explicit start script
         let sandbox2 = sandboxes.get("test2").unwrap();
         let scripts2 = sandbox2.get_full_scripts();
-        assert_eq!(scripts2.get(DEFAULT_SCRIPT).unwrap(), "echo 'custom start'");
+        assert_eq!(scripts2.get(START_SCRIPT_NAME).unwrap(), "echo 'custom start'");
     }
 
     #[test]

@@ -33,9 +33,6 @@ sandboxes: []
 /// The default shell to use for the sandbox.
 pub const DEFAULT_SHELL: &str = "/bin/sh";
 
-/// The default script to use for the sandbox.
-pub const DEFAULT_SCRIPT: &str = "start";
-
 /// The default path to the mcrun binary.
 pub static DEFAULT_MCRUN_EXE_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
     let current_exe = std::env::current_exe().unwrap();

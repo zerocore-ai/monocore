@@ -692,6 +692,68 @@ pub(crate) async fn get_image_layers(
         .collect())
 }
 
+/// Gets the configuration for an image from the database.
+///
+/// This function retrieves the configuration details for a specified image reference.
+/// It includes information like architecture, OS, environment variables, command,
+/// working directory, and other container configuration metadata.
+///
+/// ## Arguments
+///
+/// * `pool` - SQLite connection pool
+/// * `reference` - OCI image reference string (e.g., "ubuntu:latest")
+///
+/// ## Returns
+///
+/// Returns a `MonocoreResult` containing either the image `Config` or an error
+pub(crate) async fn get_image_config(
+    pool: &Pool<Sqlite>,
+    reference: &str,
+) -> MonocoreResult<Option<Config>> {
+    let record = sqlx::query(
+        r#"
+        SELECT c.id, c.manifest_id, c.media_type, c.created, c.architecture,
+               c.os, c.os_variant, c.config_env_json, c.config_cmd_json,
+               c.config_working_dir, c.config_entrypoint_json,
+               c.config_volumes_json, c.config_exposed_ports_json,
+               c.config_user, c.rootfs_type, c.rootfs_diff_ids_json,
+               c.history_json, c.created_at, c.modified_at
+        FROM configs c
+        JOIN manifests m ON c.manifest_id = m.id
+        JOIN images i ON m.image_id = i.id
+        WHERE i.reference = ?
+        LIMIT 1
+        "#,
+    )
+    .bind(reference)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(record.map(|row| Config {
+        id: row.get("id"),
+        manifest_id: row.get("manifest_id"),
+        media_type: row.get("media_type"),
+        created: row
+            .get::<Option<String>, _>("created")
+            .map(|dt| dt.parse::<DateTime<Utc>>().unwrap()),
+        architecture: row.get("architecture"),
+        os: row.get("os"),
+        os_variant: row.get("os_variant"),
+        config_env_json: row.get("config_env_json"),
+        config_cmd_json: row.get("config_cmd_json"),
+        config_working_dir: row.get("config_working_dir"),
+        config_entrypoint_json: row.get("config_entrypoint_json"),
+        config_volumes_json: row.get("config_volumes_json"),
+        config_exposed_ports_json: row.get("config_exposed_ports_json"),
+        config_user: row.get("config_user"),
+        rootfs_type: row.get("rootfs_type"),
+        rootfs_diff_ids_json: row.get("rootfs_diff_ids_json"),
+        history_json: row.get("history_json"),
+        created_at: parse_sqlite_datetime(&row.get::<String, _>("created_at")),
+        modified_at: parse_sqlite_datetime(&row.get::<String, _>("modified_at")),
+    }))
+}
+
 //--------------------------------------------------------------------------------------------------
 // Tests
 //--------------------------------------------------------------------------------------------------
@@ -786,6 +848,7 @@ mod tests {
         Ok(())
     }
 }
+
 //--------------------------------------------------------------------------------------------------
 // Functions: Helpers
 //--------------------------------------------------------------------------------------------------
