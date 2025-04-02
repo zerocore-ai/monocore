@@ -19,4 +19,4 @@ monocore/build/
 libkrunfw.*
 libkrun.*
 .menv/
-Sandboxfile
+Sandboxfile*

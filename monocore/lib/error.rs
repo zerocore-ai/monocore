@@ -297,6 +297,10 @@ pub enum MonocoreError {
     /// An error that occurred running the sandbox server.
     #[error("sandbox server error: {0}")]
     SandboxServerError(String),
+
+    /// An error that occurred when an invalid network scope was used.
+    #[error("invalid network scope: {0}")]
+    InvalidNetworkScope(String),
 }
 
 /// An error that occurred when an invalid MicroVm configuration was used.

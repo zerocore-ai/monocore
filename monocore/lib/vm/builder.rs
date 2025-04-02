@@ -1,7 +1,10 @@
+use std::net::Ipv4Addr;
+
+use ipnetwork::Ipv4Network;
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
-    config::{EnvPair, PathPair, PortPair, DEFAULT_NUM_VCPUS, DEFAULT_RAM_MIB},
+    config::{EnvPair, NetworkScope, PathPair, PortPair, DEFAULT_NUM_VCPUS, DEFAULT_RAM_MIB},
     MonocoreResult,
 };
 
@@ -35,6 +38,9 @@ pub struct MicroVmConfigBuilder<R, E> {
     ram_mib: u32,
     mapped_dirs: Vec<PathPair>,
     port_map: Vec<PortPair>,
+    scope: NetworkScope,
+    ip: Option<Ipv4Addr>,
+    subnet: Option<Ipv4Network>,
     rlimits: Vec<LinuxRlimit>,
     workdir_path: Option<Utf8UnixPathBuf>,
     exec_path: E,
@@ -59,6 +65,9 @@ pub struct MicroVmConfigBuilder<R, E> {
 /// - `ram_mib`: The amount of RAM in MiB to use for the MicroVm.
 /// - `mapped_dirs`: The directories to mount in the MicroVm.
 /// - `port_map`: The ports to map in the MicroVm.
+/// - `scope`: The network scope to use for the MicroVm.
+/// - `ip`: The IP address to use for the MicroVm.
+/// - `subnet`: The subnet to use for the MicroVm.
 /// - `rlimits`: The resource limits to use for the MicroVm.
 /// - `workdir_path`: The working directory to use for the MicroVm.
 /// - `args`: The arguments to pass to the executable.
@@ -69,6 +78,7 @@ pub struct MicroVmConfigBuilder<R, E> {
 ///
 /// ```rust
 /// use monocore::vm::{MicroVmBuilder, LogLevel, Rootfs};
+/// use monocore::config::NetworkScope;
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> anyhow::Result<()> {
@@ -79,6 +89,9 @@ pub struct MicroVmConfigBuilder<R, E> {
 ///     .ram_mib(1024)
 ///     .mapped_dirs(["/home:/guest/mount".parse()?])
 ///     .port_map(["8080:80".parse()?])
+///     .scope(NetworkScope::Public)
+///     .ip("192.168.1.100".parse()?)
+///     .subnet("192.168.1.0/24".parse()?)
 ///     .rlimits(["RLIMIT_NOFILE=1024:1024".parse()?])
 ///     .workdir_path("/workdir")
 ///     .exec_path("/bin/example")
@@ -160,6 +173,9 @@ impl<R, M> MicroVmConfigBuilder<R, M> {
             ram_mib: self.ram_mib,
             mapped_dirs: self.mapped_dirs,
             port_map: self.port_map,
+            scope: self.scope,
+            ip: self.ip,
+            subnet: self.subnet,
             rlimits: self.rlimits,
             workdir_path: self.workdir_path,
             exec_path: self.exec_path,
@@ -282,6 +298,86 @@ impl<R, M> MicroVmConfigBuilder<R, M> {
         self
     }
 
+    /// Sets the network scope for the MicroVm.
+    ///
+    /// The network scope controls the MicroVm's level of network isolation and connectivity.
+    ///
+    /// ## Examples
+    ///
+    /// ```rust
+    /// use monocore::vm::MicroVmConfigBuilder;
+    /// use monocore::config::NetworkScope;
+    ///
+    /// let config = MicroVmConfigBuilder::default()
+    ///     .scope(NetworkScope::Public);  // Allow access to public networks
+    /// ```
+    ///
+    /// ## Network Scope Options
+    /// - `None` - Sandboxes cannot communicate with any other sandboxes
+    /// - `Group` - Sandboxes can only communicate within their subnet (default)
+    /// - `Public` - Sandboxes can communicate with any other non-private address
+    /// - `Any` - Sandboxes can communicate with any address
+    ///
+    /// ## Notes
+    /// - Choose the appropriate scope based on your security requirements
+    /// - More restrictive scopes provide better isolation
+    /// - The default scope is `Group` if not specified
+    pub fn scope(mut self, scope: NetworkScope) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    /// Sets the IP address for the MicroVm.
+    ///
+    /// This sets a specific IPv4 address for the guest system's network interface.
+    ///
+    /// ## Examples
+    ///
+    /// ```rust
+    /// use monocore::vm::MicroVmConfigBuilder;
+    /// use std::net::Ipv4Addr;
+    ///
+    /// let config = MicroVmConfigBuilder::default()
+    ///     .ip(Ipv4Addr::new(192, 168, 1, 100));  // Assign IP 192.168.1.100 to the MicroVm
+    /// ```
+    ///
+    /// ## Notes
+    /// - The IP address should be within the subnet assigned to the MicroVm
+    /// - If not specified, an IP address may be assigned automatically
+    /// - Useful for predictable addressing when running multiple MicroVms
+    /// - Consider using with the `subnet` method to define the network
+    pub fn ip(mut self, ip: Ipv4Addr) -> Self {
+        self.ip = Some(ip);
+        self
+    }
+
+    /// Sets the subnet for the MicroVm.
+    ///
+    /// This defines the IPv4 network and mask for the guest system's network interface.
+    ///
+    /// ## Examples
+    ///
+    /// ```rust
+    /// use monocore::vm::MicroVmConfigBuilder;
+    /// use ipnetwork::Ipv4Network;
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// let config = MicroVmConfigBuilder::default()
+    ///     .subnet("192.168.1.0/24".parse()?);  // Set subnet to 192.168.1.0/24
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## Notes
+    /// - The subnet defines the range of IP addresses available to the MicroVm
+    /// - Common subnet masks: /24 (256 addresses), /16 (65536 addresses)
+    /// - IP addresses assigned to the MicroVm should be within this subnet
+    /// - Important for networking between multiple MicroVms in the same group
+    pub fn subnet(mut self, subnet: Ipv4Network) -> Self {
+        self.subnet = Some(subnet);
+        self
+    }
+
     /// Sets the resource limits for processes in the MicroVm.
     ///
     /// Resource limits control various system resources available to processes running
@@ -378,6 +474,9 @@ impl<R, M> MicroVmConfigBuilder<R, M> {
             ram_mib: self.ram_mib,
             mapped_dirs: self.mapped_dirs,
             port_map: self.port_map,
+            scope: self.scope,
+            ip: self.ip,
+            subnet: self.subnet,
             rlimits: self.rlimits,
             workdir_path: self.workdir_path,
             exec_path: exec_path.into(),
@@ -673,6 +772,92 @@ impl<R, M> MicroVmBuilder<R, M> {
         self
     }
 
+    /// Sets the network scope for the MicroVm.
+    ///
+    /// The network scope controls the MicroVm's level of network isolation and connectivity.
+    ///
+    /// ## Examples
+    ///
+    /// ```rust
+    /// use monocore::vm::{MicroVmBuilder, Rootfs};
+    /// use monocore::config::NetworkScope;
+    /// use std::path::PathBuf;
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// let vm = MicroVmBuilder::default()
+    ///     .scope(NetworkScope::Public)  // Allow access to public networks
+    ///     .rootfs(Rootfs::Native(PathBuf::from("/path/to/rootfs")))
+    ///     .exec_path("/bin/echo");
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## Network Scope Options
+    /// - `None` - Sandboxes cannot communicate with any other sandboxes
+    /// - `Group` - Sandboxes can only communicate within their subnet (default)
+    /// - `Public` - Sandboxes can communicate with any other non-private address
+    /// - `Any` - Sandboxes can communicate with any address
+    pub fn scope(mut self, scope: NetworkScope) -> Self {
+        self.inner = self.inner.scope(scope);
+        self
+    }
+
+    /// Sets the IP address for the MicroVm.
+    ///
+    /// This sets a specific IPv4 address for the guest system's network interface.
+    ///
+    /// ## Examples
+    ///
+    /// ```rust
+    /// use monocore::vm::{MicroVmBuilder, Rootfs};
+    /// use std::path::PathBuf;
+    /// use std::net::Ipv4Addr;
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// let vm = MicroVmBuilder::default()
+    ///     .ip(Ipv4Addr::new(192, 168, 1, 100))  // Assign IP 192.168.1.100 to the MicroVm
+    ///     .rootfs(Rootfs::Native(PathBuf::from("/path/to/rootfs")))
+    ///     .exec_path("/bin/echo");
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## Notes
+    /// - The IP address should be within the subnet assigned to the MicroVm
+    /// - If not specified, an IP address may be assigned automatically
+    pub fn ip(mut self, ip: Ipv4Addr) -> Self {
+        self.inner = self.inner.ip(ip);
+        self
+    }
+
+    /// Sets the subnet for the MicroVm.
+    ///
+    /// This defines the IPv4 network and mask for the guest system's network interface.
+    ///
+    /// ## Examples
+    ///
+    /// ```rust
+    /// use monocore::vm::{MicroVmBuilder, Rootfs};
+    /// use std::path::PathBuf;
+    /// use ipnetwork::Ipv4Network;
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// let vm = MicroVmBuilder::default()
+    ///     .subnet("192.168.1.0/24".parse()?)  // Set subnet to 192.168.1.0/24
+    ///     .rootfs(Rootfs::Native(PathBuf::from("/path/to/rootfs")))
+    ///     .exec_path("/bin/echo");
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## Notes
+    /// - The subnet defines the range of IP addresses available to the MicroVm
+    /// - Used for networking between multiple MicroVms in the same group
+    pub fn subnet(mut self, subnet: Ipv4Network) -> Self {
+        self.inner = self.inner.subnet(subnet);
+        self
+    }
+
     /// Sets the resource limits for the MicroVm.
     ///
     /// ## Examples
@@ -826,6 +1011,9 @@ impl MicroVmConfigBuilder<Rootfs, Utf8UnixPathBuf> {
             ram_mib: self.ram_mib,
             mapped_dirs: self.mapped_dirs,
             port_map: self.port_map,
+            scope: self.scope,
+            ip: self.ip,
+            subnet: self.subnet,
             rlimits: self.rlimits,
             workdir_path: self.workdir_path,
             exec_path: self.exec_path,
@@ -876,6 +1064,9 @@ impl MicroVmBuilder<Rootfs, Utf8UnixPathBuf> {
             ram_mib: self.inner.ram_mib,
             mapped_dirs: self.inner.mapped_dirs,
             port_map: self.inner.port_map,
+            scope: self.inner.scope,
+            ip: self.inner.ip,
+            subnet: self.inner.subnet,
             rlimits: self.inner.rlimits,
             workdir_path: self.inner.workdir_path,
             exec_path: self.inner.exec_path,
@@ -899,6 +1090,9 @@ impl Default for MicroVmConfigBuilder<(), ()> {
             ram_mib: DEFAULT_RAM_MIB,
             mapped_dirs: vec![],
             port_map: vec![],
+            scope: NetworkScope::Group,
+            ip: None,
+            subnet: None,
             rlimits: vec![],
             workdir_path: None,
             exec_path: (),

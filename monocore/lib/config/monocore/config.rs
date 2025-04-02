@@ -1,6 +1,12 @@
 //! Monocore configuration types and helpers.
 
-use std::{borrow::Cow, collections::HashMap, net::Ipv4Addr};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::{self, Display},
+    net::Ipv4Addr,
+    str::FromStr,
+};
 
 use getset::Getters;
 use ipnetwork::Ipv4Network as Ipv4Net;
@@ -11,7 +17,7 @@ use typed_path::Utf8UnixPathBuf;
 
 use crate::{
     config::{EnvPair, PathPair, PortPair, ReferenceOrPath, DEFAULT_SCRIPT, DEFAULT_SHELL},
-    MonocoreResult,
+    MonocoreError, MonocoreResult,
 };
 
 use super::{MonocoreBuilder, SandboxBuilder};
@@ -187,37 +193,26 @@ pub struct Build {
     pub(super) exports: HashMap<String, Utf8UnixPathBuf>,
 }
 
-/// Network reach configuration for a sandbox.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum SandboxNetworkReach {
+/// Network scope configuration for a sandbox.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub enum NetworkScope {
+    /// Sandboxes cannot communicate with any other sandboxes
+    #[serde(rename = "none")]
+    None = 0,
+
     /// Sandboxes can only communicate within their subnet
-    #[serde(rename = "local")]
-    Local,
+    #[serde(rename = "group")]
+    #[default]
+    Group = 1,
 
     /// Sandboxes can communicate with any other non-private address
     #[serde(rename = "public")]
-    Public,
+    Public = 2,
 
     /// Sandboxes can communicate with any address
     #[serde(rename = "any")]
-    Any,
-
-    /// Sandboxes cannot communicate with any other sandboxes
-    #[serde(rename = "none")]
-    None,
-}
-
-/// Network configuration for a sandbox.
-#[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder, PartialEq, Eq, Getters)]
-#[getset(get = "pub with_prefix")]
-pub struct SandboxNetwork {
-    /// The network reach configuration.
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        default = "SandboxNetwork::default_reach"
-    )]
-    #[builder(default = SandboxNetwork::default_reach(), setter(strip_option))]
-    pub(super) reach: Option<SandboxNetworkReach>,
+    Any = 3,
 }
 
 /// Network configuration for a sandbox in a group.
@@ -378,9 +373,9 @@ pub struct Sandbox {
     )]
     pub(super) exports: HashMap<String, Utf8UnixPathBuf>,
 
-    /// The network configuration for the sandbox.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub(super) network: Option<SandboxNetwork>,
+    /// The network scope for the sandbox.
+    #[serde(default)]
+    pub(super) scope: NetworkScope,
 
     /// The proxy configuration.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -505,10 +500,62 @@ impl Sandbox {
     }
 }
 
-impl SandboxNetwork {
-    /// Returns the default network reach configuration.
-    pub fn default_reach() -> Option<SandboxNetworkReach> {
-        Some(SandboxNetworkReach::Local)
+//--------------------------------------------------------------------------------------------------
+// Trait Implementations
+//--------------------------------------------------------------------------------------------------
+
+impl TryFrom<&str> for NetworkScope {
+    type Error = MonocoreError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        match s.to_lowercase().as_str() {
+            "none" => Ok(NetworkScope::None),
+            "group" => Ok(NetworkScope::Group),
+            "public" => Ok(NetworkScope::Public),
+            "any" => Ok(NetworkScope::Any),
+            _ => Err(MonocoreError::InvalidNetworkScope(s.to_string())),
+        }
+    }
+}
+
+impl Display for NetworkScope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NetworkScope::None => write!(f, "none"),
+            NetworkScope::Group => write!(f, "group"),
+            NetworkScope::Public => write!(f, "public"),
+            NetworkScope::Any => write!(f, "any"),
+        }
+    }
+}
+
+impl FromStr for NetworkScope {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(NetworkScope::try_from(s)?)
+    }
+}
+
+impl TryFrom<String> for NetworkScope {
+    type Error = MonocoreError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Ok(NetworkScope::try_from(s.as_str())?)
+    }
+}
+
+impl TryFrom<u8> for NetworkScope {
+    type Error = MonocoreError;
+
+    fn try_from(u: u8) -> Result<Self, Self::Error> {
+        match u {
+            0 => Ok(NetworkScope::None),
+            1 => Ok(NetworkScope::Group),
+            2 => Ok(NetworkScope::Public),
+            3 => Ok(NetworkScope::Any),
+            _ => Err(MonocoreError::InvalidNetworkScope(u.to_string())),
+        }
     }
 }
 
@@ -639,7 +686,7 @@ mod tests {
         assert!(sandbox.workdir.is_none());
         assert_eq!(sandbox.shell, "/bin/sh");
         assert!(sandbox.scripts.is_empty());
-        assert!(sandbox.network.is_none());
+        assert_eq!(sandbox.scope, NetworkScope::Group);
         assert!(sandbox.proxy.is_none());
     }
 
@@ -672,30 +719,27 @@ mod tests {
     }
 
     #[test]
-    fn test_monocore_config_default_network_reach() {
-        // Test default network reach for sandbox
-        assert_eq!(
-            SandboxNetwork::default_reach().unwrap(),
-            SandboxNetworkReach::Local
-        );
+    fn test_monocore_config_default_scope() {
+        // Test default scope for sandbox is Group
+        let sandbox = Sandbox::builder()
+            .image(ReferenceOrPath::Reference("alpine:latest".parse().unwrap()))
+            .shell("/bin/sh")
+            .build();
+        assert_eq!(sandbox.scope, NetworkScope::Group);
 
-        // Test default network reach in YAML
+        // Test default scope in YAML
         let yaml = r#"
             sandboxes:
               test:
                 image: "alpine:latest"
                 shell: "/bin/sh"
-                network: {}
         "#;
 
         let config: Monocore = serde_yaml::from_str(yaml).unwrap();
         let sandboxes = &config.sandboxes;
         let sandbox = sandboxes.get("test").unwrap();
 
-        assert!(matches!(
-            sandbox.network.as_ref().unwrap().reach.as_ref().unwrap(),
-            SandboxNetworkReach::Local
-        ));
+        assert_eq!(sandbox.scope, NetworkScope::Group);
     }
 
     #[test]
@@ -829,8 +873,7 @@ mod tests {
                 shell: "/bin/bash"
                 scripts:
                   start: "python -m uvicorn src.main:app"
-                network:
-                  reach: "public"
+                scope: "public"
                 groups:
                   backend_group:
                     network:
@@ -891,10 +934,7 @@ mod tests {
         assert_eq!(api.ram.unwrap(), 1024);
         assert_eq!(api.cpus.unwrap(), 1);
         assert_eq!(api.depends_on, vec!["database", "cache"]);
-        assert!(matches!(
-            api.network.as_ref().unwrap().reach.as_ref().unwrap(),
-            SandboxNetworkReach::Public
-        ));
+        assert_eq!(api.scope, NetworkScope::Public);
 
         let api_group = api.groups.get("backend_group").unwrap();
         assert_eq!(
@@ -949,8 +989,7 @@ mod tests {
               test_sandbox:
                 image: "alpine:latest"
                 shell: "/bin/sh"
-                network:
-                  reach: "local"
+                scope: "group"
                 groups:
                   test_group:
                     network:
@@ -968,10 +1007,7 @@ mod tests {
         // Fix temporary value dropped issue by using direct reference
         let sandboxes = &config.sandboxes;
         let sandbox = sandboxes.get("test_sandbox").unwrap();
-        assert!(matches!(
-            sandbox.network.as_ref().unwrap().reach.as_ref().unwrap(),
-            SandboxNetworkReach::Local
-        ));
+        assert_eq!(sandbox.scope, NetworkScope::Group);
 
         let sandbox_group = sandbox.groups.get("test_group").unwrap();
         assert_eq!(
@@ -1062,14 +1098,13 @@ mod tests {
 
     #[test]
     fn test_monocore_config_invalid_configurations() {
-        // Test invalid network reach
+        // Test invalid scope
         let yaml = r#"
             sandboxes:
               test:
                 image: "alpine:latest"
                 shell: "/bin/sh"
-                network:
-                  reach: "invalid"
+                scope: "invalid"
         "#;
         assert!(serde_yaml::from_str::<Monocore>(yaml).is_err());
 
