@@ -1,0 +1,35 @@
+cabal-version:      2.4
+name:               microsandbox
+version:            0.1.0
+synopsis:           A minimal Haskell SDK for the Microsandbox project
+description:        A minimal Haskell SDK for the Microsandbox project
+homepage:           https://github.com/microsandbox/microsandbox
+bug-reports:        https://github.com/microsandbox/microsandbox/issues
+license:            Apache-2.0
+license-file:       LICENSE
+author:             Microsandbox Team
+maintainer:         team@microsandbox.dev
+category:           Development
+extra-source-files:
+    README.md
+
+library
+  exposed-modules:    Microsandbox
+  hs-source-dirs:     src
+  default-language:   Haskell2010
+  build-depends:      base >= 4.7 && < 5
+  ghc-options:        -Wall
+
+test-suite microsandbox-test
+  type:               exitcode-stdio-1.0
+  main-is:            Spec.hs
+  hs-source-dirs:     test
+  default-language:   Haskell2010
+  build-depends:      base >= 4.7 && < 5
+                    , microsandbox
+                    , hspec >= 2.0.0
+  ghc-options:        -Wall
+
+source-repository head
+  type:     git
+  location: https://github.com/microsandbox/microsandbox

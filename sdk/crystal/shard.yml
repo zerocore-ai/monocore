@@ -1,0 +1,19 @@
+name: microsandbox
+version: 0.1.0
+
+authors:
+  - Microsandbox Team <team@microsandbox.dev>
+
+description: |
+  A lightweight Crystal SDK for interacting with the Microsandbox service.
+
+crystal: ">= 1.0.0"
+
+license: Apache-2.0
+
+repository: https://github.com/microsandbox/microsandbox
+
+development_dependencies:
+  ameba:
+    github: crystal-ameba/ameba
+    version: ~> 1.4.0

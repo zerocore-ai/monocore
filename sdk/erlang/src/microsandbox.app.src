@@ -1,0 +1,17 @@
+{application, microsandbox, [
+    {description, "A minimal Erlang SDK for the Microsandbox project"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]},
+    {links, [
+        {"GitHub", "https://github.com/microsandbox/microsandbox"},
+        {"Website", "https://microsandbox.dev"}
+    ]},
+    {maintainers, ["Microsandbox Team <team@microsandbox.dev>"]}
+]}.

@@ -1,0 +1,19 @@
+(lang dune 3.0)
+(name microsandbox)
+(version 0.1.0)
+
+(generate_opam_files true)
+
+(source (github microsandbox/microsandbox))
+(license Apache-2.0)
+(authors "Microsandbox Team")
+(maintainers "team@microsandbox.dev")
+(homepage "https://microsandbox.dev")
+
+(package
+ (name microsandbox)
+ (synopsis "A minimal OCaml SDK for the Microsandbox project")
+ (description "A minimal OCaml SDK for the Microsandbox project")
+ (depends
+  (ocaml (>= 4.14.0))
+  (dune (>= 3.0.0))))

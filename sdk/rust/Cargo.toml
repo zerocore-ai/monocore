@@ -1,0 +1,14 @@
+[package]
+name = "microsandbox"
+version = "0.1.0"
+edition = "2021"
+authors = ["Microsandbox Team <team@microsandbox.dev>"]
+description = "A minimal Rust SDK for the Microsandbox project"
+repository = "https://github.com/microsandbox/microsandbox"
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["microsandbox", "sdk"]
+categories = ["api-bindings"]
+homepage = "https://github.com/microsandbox/microsandbox"
+
+[dependencies]

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Version>0.1.0</Version>
+    <Authors>Microsandbox Team</Authors>
+    <Company>Microsandbox</Company>
+    <Description>A minimal C# SDK for the Microsandbox project</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/microsandbox/microsandbox</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/microsandbox/microsandbox</RepositoryUrl>
+    <PackageTags>microsandbox;sdk</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright (c) Microsandbox Team</Copyright>
+  </PropertyGroup>
+
+</Project>

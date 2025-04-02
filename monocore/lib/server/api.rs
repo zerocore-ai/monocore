@@ -169,6 +169,7 @@ impl SandboxServer {
         if !namespace_path.exists() {
             std::fs::create_dir_all(&namespace_path)?;
         }
+
         Ok(namespace_path)
     }
 }
