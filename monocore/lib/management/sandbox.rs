@@ -497,8 +497,8 @@ async fn setup_image_rootfs(
     fs::create_dir_all(&top_rw_path).await?;
     tracing::info!("top_rw_path: {}", top_rw_path.display());
 
-    // Check if we need to patch scripts
-    let should_patch_scripts = has_sandbox_config_changed(
+    // Check if we need to patch rootfs (scripts, volumes, etc.)
+    let should_patch = has_sandbox_config_changed(
         sandbox_pool,
         sandbox_name,
         config_file,
@@ -506,19 +506,28 @@ async fn setup_image_rootfs(
     )
     .await?;
 
-    // Only patch scripts if sandbox doesn't exist or config has changed
-    if should_patch_scripts {
-        tracing::info!("patching sandbox scripts - config has changed");
+    // Only patch if sandbox doesn't exist or config has changed
+    if should_patch {
+        tracing::info!("patching sandbox - config has changed");
+
         // If `/.sandbox_scripts` exists at the top layer, delete it
         let rw_scripts_dir = top_rw_path.join(SANDBOX_SCRIPT_DIR);
         if rw_scripts_dir.exists() {
             fs::remove_dir_all(&rw_scripts_dir).await?;
         }
 
+        // Patch with sandbox scripts
         rootfs::patch_with_sandbox_scripts(&script_dir, scripts, sandbox_config.get_shell())
             .await?;
+
+        // Patch with volume mounts if there are any volumes defined
+        let volumes = &sandbox_config.get_volumes();
+        if !volumes.is_empty() {
+            tracing::info!("patching with {} volume mounts", volumes.len());
+            rootfs::patch_with_virtiofs_mounts(&patch_dir, volumes).await?;
+        }
     } else {
-        tracing::info!("skipping sandbox scripts patch - config unchanged");
+        tracing::info!("skipping sandbox patch - config unchanged");
     }
 
     // Add the scripts and rootfs directories to the layer paths
@@ -550,8 +559,8 @@ async fn setup_native_rootfs(
         ));
     }
 
-    // Check if we need to patch scripts
-    let should_patch_scripts = has_sandbox_config_changed(
+    // Check if we need to patch rootfs (scripts, volumes, etc.)
+    let should_patch = has_sandbox_config_changed(
         sandbox_pool,
         sandbox_name,
         config_file,
@@ -559,13 +568,23 @@ async fn setup_native_rootfs(
     )
     .await?;
 
-    // Only patch scripts if sandbox doesn't exist or config has changed
-    if should_patch_scripts {
-        tracing::info!("patching sandbox scripts - config has changed");
+    // Only patch if sandbox doesn't exist or config has changed
+    if should_patch {
+        tracing::info!("patching sandbox - config has changed");
+
+        // Patch with sandbox scripts
         rootfs::patch_with_sandbox_scripts(&scripts_dir, scripts, sandbox_config.get_shell())
             .await?;
+
+        // Patch with volume mounts if there are any volumes defined
+        let volumes = &sandbox_config.get_volumes();
+        if !volumes.is_empty() {
+            tracing::info!("patching with {} volume mounts", volumes.len());
+            // For native rootfs, mount points should be created under the root path
+            rootfs::patch_with_virtiofs_mounts(root_path, volumes).await?;
+        }
     } else {
-        tracing::info!("skipping sandbox scripts patch - config unchanged");
+        tracing::info!("skipping sandbox patch - config unchanged");
     }
 
     Ok(Rootfs::Native(root_path.to_path_buf()))

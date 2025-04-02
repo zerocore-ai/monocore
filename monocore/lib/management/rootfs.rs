@@ -100,7 +100,7 @@ pub async fn patch_with_sandbox_scripts(
 /// - Cannot create directories in the rootfs
 /// - Cannot read or write the fstab file
 /// - Cannot set permissions on the fstab file
-async fn _patch_with_virtiofs_mounts(
+pub async fn patch_with_virtiofs_mounts(
     root_path: &Path,
     mapped_dirs: &[PathPair],
 ) -> MonocoreResult<()> {
@@ -267,7 +267,7 @@ mod tests {
         ];
 
         // Update fstab
-        _patch_with_virtiofs_mounts(root_path, &mapped_dirs).await?;
+        patch_with_virtiofs_mounts(root_path, &mapped_dirs).await?;
 
         // Verify fstab file was created with correct content
         let fstab_path = root_path.join("etc/fstab");
@@ -304,7 +304,7 @@ mod tests {
         ];
 
         // Update fstab again
-        _patch_with_virtiofs_mounts(root_path, &new_mapped_dirs).await?;
+        patch_with_virtiofs_mounts(root_path, &new_mapped_dirs).await?;
 
         // Verify updated content
         let updated_content = fs::read_to_string(&fstab_path).await?;
@@ -349,7 +349,7 @@ mod tests {
             vec![format!("{}:/container/data", host_path.display()).parse::<PathPair>()?];
 
         // Function should detect it cannot write to /etc/fstab and return an error
-        let result = _patch_with_virtiofs_mounts(readonly_path, &mapped_dirs).await;
+        let result = patch_with_virtiofs_mounts(readonly_path, &mapped_dirs).await;
 
         // Detailed error reporting for debugging
         if result.is_ok() {
