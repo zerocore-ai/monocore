@@ -106,7 +106,22 @@ async fn main() -> Result<()> {
         } => {
             tracing_subscriber::fmt::init();
 
-            // Check that only one of native_rootfs or overlayfs_rootfs is provided
+            tracing::debug!("log_level: {:#?}", log_level);
+            tracing::debug!("native_rootfs: {:#?}", native_rootfs);
+            tracing::debug!("overlayfs_layer: {:#?}", overlayfs_layer);
+            tracing::debug!("num_vcpus: {:#?}", num_vcpus);
+            tracing::debug!("ram_mib: {:#?}", ram_mib);
+            tracing::debug!("workdir_path: {:#?}", workdir_path);
+            tracing::debug!("exec_path: {:#?}", exec_path);
+            tracing::debug!("env: {:#?}", env);
+            tracing::debug!("mapped_dir: {:#?}", mapped_dir);
+            tracing::debug!("port_map: {:#?}", port_map);
+            tracing::debug!("scope: {:#?}", scope);
+            tracing::debug!("ip: {:#?}", ip);
+            tracing::debug!("subnet: {:#?}", subnet);
+            tracing::debug!("args: {:#?}", args);
+
+            // Check that only one of native_rootfs or overlayfs_layer is provided
             let rootfs = match (native_rootfs, overlayfs_layer.is_empty()) {
                 (Some(path), true) => Rootfs::Native(path),
                 (None, false) => Rootfs::Overlayfs(overlayfs_layer),

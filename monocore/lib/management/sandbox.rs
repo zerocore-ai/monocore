@@ -113,7 +113,7 @@ pub async fn run(
         ));
     };
 
-    tracing::debug!("sandbox_config: {:?}", sandbox_config);
+    tracing::debug!("original sandbox_config: {:#?}", sandbox_config);
 
     // Sandbox database path
     let sandbox_db_path = menv_path.join(SANDBOX_DB_FILENAME);
@@ -188,16 +188,34 @@ pub async fn run(
         .arg("--exec-path")
         .arg(&exec_path);
 
+    // CPU
     if let Some(cpus) = sandbox_config.get_cpus() {
         command.arg("--num-vcpus").arg(cpus.to_string());
     }
 
+    // RAM
     if let Some(ram) = sandbox_config.get_ram() {
         command.arg("--ram-mib").arg(ram.to_string());
     }
 
+    // Workdir
     if let Some(workdir) = sandbox_config.get_workdir() {
         command.arg("--workdir-path").arg(workdir);
+    }
+
+    // Env
+    for env in sandbox_config.get_envs() {
+        command.arg("--env").arg(env.to_string());
+    }
+
+    // Ports
+    for port in sandbox_config.get_ports() {
+        command.arg("--port").arg(port.to_string());
+    }
+
+    // Volumes
+    for volume in sandbox_config.get_volumes() {
+        command.arg("--mapped-dir").arg(volume.to_string());
     }
 
     // Pass the rootfs
