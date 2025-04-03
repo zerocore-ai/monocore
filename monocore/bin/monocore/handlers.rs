@@ -180,6 +180,7 @@ pub async fn run_subcommand(
         args,
         detach,
         exec.as_deref(),
+        true,
     )
     .await?;
 
@@ -221,6 +222,7 @@ pub async fn script_run_subcommand(
         args,
         detach,
         exec.as_deref(),
+        true,
     )
     .await
 }
@@ -263,6 +265,7 @@ pub async fn tmp_subcommand(
         workdir,
         exec.as_deref(),
         args,
+        true,
     )
     .await
 }

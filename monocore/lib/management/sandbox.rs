@@ -18,7 +18,7 @@ use typed_path::Utf8UnixPathBuf;
 use crate::{
     config::{
         EnvPair, Monocore, PathPair, PortPair, ReferenceOrPath, Sandbox, DEFAULT_MCRUN_EXE_PATH,
-        DEFAULT_SCRIPT,
+        START_SCRIPT_NAME,
     },
     management::{config, db, image, menv, rootfs},
     oci::Reference,
@@ -55,6 +55,7 @@ const TEMPORARY_SANDBOX_NAME: &str = "tmp";
 /// * `args` - Additional arguments to pass to the sandbox script
 /// * `detach` - Whether to run the sandbox in the background
 /// * `exec` - Optional command to execute within the sandbox. Overrides `script` if provided.
+/// * `use_image_defaults` - Whether to apply default settings from the OCI image configuration
 ///
 /// ## Returns
 ///
@@ -78,7 +79,10 @@ const TEMPORARY_SANDBOX_NAME: &str = "tmp";
 ///         "start",
 ///         None,
 ///         None,
-///         vec![]
+///         vec![],
+///         false,
+///         None,
+///         true
 ///     ).await?;
 ///     Ok(())
 /// }
@@ -91,10 +95,11 @@ pub async fn run(
     args: Vec<String>,
     detach: bool,
     exec: Option<&str>,
+    use_image_defaults: bool,
 ) -> MonocoreResult<()> {
     let script_name = match script_name {
         Some(script_name) => script_name,
-        None => DEFAULT_SCRIPT,
+        None => START_SCRIPT_NAME,
     };
 
     // Load the configuration
@@ -106,14 +111,14 @@ pub async fn run(
     menv::ensure_menv_files(&menv_path).await?;
 
     // Get the sandbox config
-    let Some(sandbox_config) = config.get_sandbox(sandbox_name) else {
+    let Some(mut sandbox_config) = config.get_sandbox(sandbox_name).cloned() else {
         return Err(MonocoreError::SandboxNotFoundInConfig(
             sandbox_name.to_string(),
             canonical_project_dir.join(&config_file),
         ));
     };
 
-    tracing::debug!("sandbox_config: {:?}", sandbox_config);
+    tracing::debug!("Original sandbox config: {:#?}", sandbox_config);
 
     // Sandbox database path
     let sandbox_db_path = menv_path.join(SANDBOX_DB_FILENAME);
@@ -124,12 +129,12 @@ pub async fn run(
     // Get the config last modified timestamp
     let config_last_modified: DateTime<Utc> = fs::metadata(&config_file).await?.modified()?.into();
 
-    let rootfs = match sandbox_config.get_image() {
+    let rootfs = match sandbox_config.get_image().clone() {
         ReferenceOrPath::Path(root_path) => {
             setup_native_rootfs(
                 &canonical_project_dir.join(root_path),
                 sandbox_name,
-                sandbox_config,
+                &sandbox_config,
                 &config_file,
                 &config_last_modified,
                 &sandbox_pool,
@@ -137,16 +142,17 @@ pub async fn run(
             )
             .await?
         }
-        ReferenceOrPath::Reference(reference) => {
+        ReferenceOrPath::Reference(ref reference) => {
             setup_image_rootfs(
                 reference,
                 sandbox_name,
-                sandbox_config,
+                &mut sandbox_config,
                 &menv_path,
                 &config_file,
                 &config_last_modified,
                 &sandbox_pool,
                 script_name,
+                use_image_defaults,
             )
             .await?
         }
@@ -188,16 +194,34 @@ pub async fn run(
         .arg("--exec-path")
         .arg(&exec_path);
 
+    // CPU
     if let Some(cpus) = sandbox_config.get_cpus() {
         command.arg("--num-vcpus").arg(cpus.to_string());
     }
 
+    // RAM
     if let Some(ram) = sandbox_config.get_ram() {
         command.arg("--ram-mib").arg(ram.to_string());
     }
 
+    // Workdir
     if let Some(workdir) = sandbox_config.get_workdir() {
         command.arg("--workdir-path").arg(workdir);
+    }
+
+    // Env
+    for env in sandbox_config.get_envs() {
+        command.arg("--env").arg(env.to_string());
+    }
+
+    // Ports
+    for port in sandbox_config.get_ports() {
+        command.arg("--port").arg(port.to_string());
+    }
+
+    // Volumes
+    for volume in sandbox_config.get_volumes() {
+        command.arg("--mapped-dir").arg(volume.to_string());
     }
 
     // Pass the rootfs
@@ -306,6 +330,9 @@ pub async fn run(
 /// * `ports` - List of port mappings in the format "host_port:guest_port"
 /// * `envs` - List of environment variables in the format "KEY=VALUE"
 /// * `workdir` - Optional working directory path inside the sandbox
+/// * `exec` - Optional command to execute within the sandbox. Overrides `script` if provided.
+/// * `args` - Additional arguments to pass to the specified script or command
+/// * `use_image_defaults` - Whether to apply default settings from the OCI image configuration
 ///
 /// # Returns
 ///
@@ -341,7 +368,10 @@ pub async fn run(
 ///         vec![              // Set environment variables
 ///             "DEBUG=1".to_string()
 ///         ],
-///         Some("/app".into()) // Set working directory
+///         Some("/app".into()), // Set working directory
+///         None,              // No exec command
+///         vec![],            // No additional args
+///         true               // Use image defaults
 ///     ).await?;
 ///     Ok(())
 /// }
@@ -357,6 +387,7 @@ pub async fn run_temp(
     workdir: Option<Utf8UnixPathBuf>,
     exec: Option<&str>,
     args: Vec<String>,
+    use_image_defaults: bool,
 ) -> MonocoreResult<()> {
     // Create a temporary directory without losing the TempDir guard for automatic cleanup
     let temp_dir = tempfile::tempdir()?;
@@ -419,6 +450,7 @@ pub async fn run_temp(
         args,
         false,
         exec,
+        use_image_defaults,
     )
     .await?;
 
@@ -436,16 +468,19 @@ pub async fn run_temp(
 async fn setup_image_rootfs(
     image: &Reference,
     sandbox_name: &str,
-    sandbox_config: &Sandbox,
+    sandbox_config: &mut Sandbox,
     menv_path: &Path,
     config_file: &str,
     config_last_modified: &DateTime<Utc>,
     sandbox_pool: &Pool<Sqlite>,
     script_name: &str,
+    use_image_defaults: bool,
 ) -> MonocoreResult<Rootfs> {
     // Pull the image from the registry
     tracing::info!("pulling image: {}", image);
     image::pull(image.clone(), true, false, None).await?;
+
+    tracing::debug!("Updated sandbox config: {:#?}", sandbox_config);
 
     // Get the monocore home path and database path
     let monocore_home_path = env::get_monocore_home_path();
@@ -454,6 +489,11 @@ async fn setup_image_rootfs(
 
     // Get or create a connection pool to the database
     let pool = db::get_or_create_pool(&db_path, &db::OCI_DB_MIGRATOR).await?;
+
+    // Apply image configuration defaults if enabled.
+    if use_image_defaults {
+        config::apply_image_defaults(sandbox_config, image, &pool).await?;
+    }
 
     // Get the layers for the image
     let layers = db::get_image_layers(&pool, &image.to_string()).await?;
@@ -515,8 +555,7 @@ async fn setup_image_rootfs(
             fs::remove_dir_all(&rw_scripts_dir).await?;
         }
 
-        rootfs::patch_with_sandbox_scripts(&script_dir, scripts, sandbox_config.get_shell())
-            .await?;
+        rootfs::patch_with_sandbox_scripts(&script_dir, scripts, &sandbox_config.shell).await?;
     } else {
         tracing::info!("skipping sandbox scripts patch - config unchanged");
     }

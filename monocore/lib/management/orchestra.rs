@@ -17,7 +17,7 @@ use nix::{
 use std::path::Path;
 
 use crate::{
-    config::{Monocore, DEFAULT_SCRIPT},
+    config::{Monocore, START_SCRIPT_NAME},
     management::{config, sandbox},
     utils::{MONOCORE_ENV_DIR, SANDBOX_DB_FILENAME},
     MonocoreError, MonocoreResult,
@@ -99,12 +99,13 @@ pub async fn apply(project_dir: Option<&Path>, config_file: Option<&str>) -> Mon
             tracing::info!("Starting sandbox: {}", name);
             sandbox::run(
                 name,
-                Some(DEFAULT_SCRIPT),
+                Some(START_SCRIPT_NAME),
                 Some(&canonical_project_dir),
                 Some(&config_file),
                 vec![],
                 true,
                 None,
+                true,
             )
             .await?;
         }
@@ -203,12 +204,13 @@ pub async fn up(
             tracing::info!("Starting sandbox: {}", sandbox_name);
             sandbox::run(
                 sandbox_name,
-                Some(DEFAULT_SCRIPT),
+                Some(START_SCRIPT_NAME),
                 Some(&canonical_project_dir),
                 Some(&config_file),
                 vec![],
                 true,
                 None,
+                true,
             )
             .await?;
         }
