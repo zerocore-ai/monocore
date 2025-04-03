@@ -8,7 +8,7 @@ use crate::{
     MonocoreResult,
 };
 
-use super::{Build, Group, Meta, Module, Monocore, Proxy, Sandbox, SandboxGroup, NetworkScope};
+use super::{Build, Group, Meta, Module, Monocore, NetworkScope, Proxy, Sandbox, SandboxGroup};
 
 //--------------------------------------------------------------------------------------------------
 // Types

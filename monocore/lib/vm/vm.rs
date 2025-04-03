@@ -275,6 +275,7 @@ impl MicroVm {
         Ok(status)
     }
 
+    /// Creates a new MicroVm context.
     fn create_ctx() -> u32 {
         let ctx_id = unsafe { ffi::krun_create_ctx() };
         assert!(ctx_id >= 0, "failed to create microvm context: {}", ctx_id);
@@ -339,6 +340,8 @@ impl MicroVm {
             }
         }
 
+        tracing::debug!("Applying config: {:#?}", config);
+
         // Add mapped directories using virtio-fs
         let mapped_dirs = &config.mapped_dirs;
         for (idx, dir) in mapped_dirs.iter().enumerate() {
@@ -365,7 +368,8 @@ impl MicroVm {
 
         // Set network scope
         unsafe {
-            let status = ffi::krun_set_tsi_scope(ctx_id, ptr::null(), ptr::null(), config.scope as u8);
+            let status =
+                ffi::krun_set_tsi_scope(ctx_id, ptr::null(), ptr::null(), config.scope as u8);
             assert!(status >= 0, "failed to set network scope: {}", status);
         }
 
