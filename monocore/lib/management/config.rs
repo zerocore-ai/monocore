@@ -4,6 +4,7 @@
 //! configuration.
 
 use nondestructive::yaml;
+use sqlx::{Pool, Sqlite};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -12,10 +13,13 @@ use tokio::fs;
 use typed_path::Utf8UnixPathBuf;
 
 use crate::{
-    config::{Monocore, PathSegment},
+    config::{EnvPair, Monocore, PathSegment, PortPair, Sandbox, START_SCRIPT_NAME},
+    oci::Reference,
     utils::MONOCORE_CONFIG_FILENAME,
     MonocoreError, MonocoreResult,
 };
+
+use super::db;
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -490,4 +494,207 @@ pub async fn resolve_config_paths(
         config_file.to_string(),
         full_config_path,
     ))
+}
+
+/// Applies defaults from an OCI image configuration to a sandbox configuration.
+///
+/// This function enhances the sandbox configuration with defaults from the OCI image
+/// configuration when they are not explicitly defined in the sandbox config.
+///
+/// The following defaults are applied:
+/// - Script: Uses the entrypoint and cmd from the image if a script is missing
+/// - Environment variables: Combines image env variables with sandbox env variables
+/// - Working directory: Uses the image's working directory if not specified
+/// - Exposed ports: Combines image exposed ports with sandbox ports
+///
+/// ## Arguments
+///
+/// * `sandbox_config` - Mutable reference to the sandbox configuration to enhance
+/// * `reference` - OCI image reference to get defaults from
+/// * `script_name` - The name of the script we're trying to run
+///
+/// ## Returns
+///
+/// Returns `Ok(())` if defaults were successfully applied, or a `MonocoreError` if:
+/// - The image configuration could not be retrieved
+/// - Any conversion or parsing operations fail
+pub async fn apply_image_defaults(
+    sandbox_config: &mut Sandbox,
+    reference: &Reference,
+    oci_db: &Pool<Sqlite>,
+) -> MonocoreResult<()> {
+    // Get the image configuration
+    if let Some(config) = db::get_image_config(&oci_db, &reference.to_string()).await? {
+        tracing::info!("Applying defaults from image configuration");
+        println!(">>>> Image config: {:#?}", config);
+        println!(">>>> Config cmd json: {:#?}", config.config_cmd_json);
+
+        // Apply working directory if not set in sandbox
+        if sandbox_config.get_workdir().is_none() && config.config_working_dir.is_some() {
+            let workdir = config.config_working_dir.unwrap();
+            tracing::debug!("Using image working directory: {}", workdir);
+            let workdir_path = Utf8UnixPathBuf::from(workdir);
+            sandbox_config.workdir = Some(workdir_path);
+        }
+
+        // Combine environment variables
+        if let Some(config_env_json) = config.config_env_json {
+            if let Ok(image_env_vars) = serde_json::from_str::<Vec<String>>(&config_env_json) {
+                let mut image_env_pairs = Vec::new();
+                for env_var in image_env_vars {
+                    if let Ok(env_pair) = env_var.parse::<EnvPair>() {
+                        image_env_pairs.push(env_pair);
+                    }
+                }
+                tracing::debug!("Image env vars: {:#?}", image_env_pairs);
+
+                // Combine image env vars with sandbox env vars (image vars come first)
+                let mut combined_env = image_env_pairs;
+                combined_env.extend_from_slice(sandbox_config.get_envs());
+                sandbox_config.envs = combined_env;
+            }
+        }
+
+        // Apply entrypoint and cmd as start script if no start script is defined
+        let shell = sandbox_config.shell.clone();
+        if !sandbox_config.scripts.contains_key(START_SCRIPT_NAME) {
+            let mut script_content = String::new();
+
+            // Try to use entrypoint and cmd from image config
+            let mut has_entrypoint_or_cmd = false;
+            if let Some(entrypoint_json) = &config.config_entrypoint_json {
+                println!(">>>> Entrypoint json: {:#?}", entrypoint_json);
+                if let Ok(entrypoint) = serde_json::from_str::<Vec<String>>(entrypoint_json) {
+                    if !entrypoint.is_empty() {
+                        has_entrypoint_or_cmd = true;
+                        script_content.push_str(&format!("#!{}\n", shell));
+
+                        // Format the entrypoint command with proper escaping
+                        let mut cmd_line = String::new();
+                        for (i, arg) in entrypoint.iter().enumerate() {
+                            if i > 0 {
+                                cmd_line.push(' ');
+                            }
+                            // Simple shell escaping for arguments
+                            if arg.contains(' ') || arg.contains('"') || arg.contains('\'') {
+                                cmd_line.push_str(&format!("'{}'", arg.replace('\'', "'\\''")));
+                            } else {
+                                cmd_line.push_str(arg);
+                            }
+                        }
+
+                        // Add CMD args if they exist
+                        if let Some(cmd_json) = &config.config_cmd_json {
+                            if let Ok(cmd) = serde_json::from_str::<Vec<String>>(cmd_json) {
+                                if !cmd.is_empty() {
+                                    for arg in cmd {
+                                        cmd_line.push(' ');
+                                        if arg.contains(' ')
+                                            || arg.contains('"')
+                                            || arg.contains('\'')
+                                        {
+                                            cmd_line.push_str(&format!(
+                                                "'{}'",
+                                                arg.replace('\'', "'\\''")
+                                            ));
+                                        } else {
+                                            cmd_line.push_str(&arg);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        tracing::debug!("Entrypoint start script content: {}", script_content);
+
+                        script_content.push_str(&cmd_line);
+                    }
+                }
+            } else if let Some(cmd_json) = &config.config_cmd_json {
+                println!(">>>> Inside Cmd json: {:#?}", cmd_json);
+                println!(
+                    ">>>> Cmd json array: {:#?}",
+                    serde_json::from_str::<Vec<String>>(cmd_json)
+                );
+                if let Ok(cmd) = serde_json::from_str::<Vec<String>>(cmd_json) {
+                    println!(">>>> Cmd: {:#?}", cmd);
+                    if !cmd.is_empty() {
+                        has_entrypoint_or_cmd = true;
+                        script_content.push_str(&format!("#!{}\n", shell));
+
+                        // Format the cmd command with proper escaping
+                        let mut cmd_line = String::new();
+                        for (i, arg) in cmd.iter().enumerate() {
+                            if i > 0 {
+                                cmd_line.push(' ');
+                            }
+                            // Simple shell escaping for arguments
+                            if arg.contains(' ') || arg.contains('"') || arg.contains('\'') {
+                                cmd_line.push_str(&format!("'{}'", arg.replace('\'', "'\\''")));
+                            } else {
+                                cmd_line.push_str(arg);
+                            }
+                        }
+
+                        tracing::debug!("Cmd start script content: {}", script_content);
+
+                        script_content.push_str(&cmd_line);
+                    }
+                }
+            }
+
+            // If no entrypoint or cmd, use shell as fallback
+            if !has_entrypoint_or_cmd {
+                tracing::debug!("Using shell as fallback start script");
+                script_content = shell;
+            }
+
+            // Add the script to the sandbox config
+            sandbox_config
+                .scripts
+                .insert(START_SCRIPT_NAME.to_string(), script_content);
+        }
+
+        // Combine exposed ports
+        if let Some(exposed_ports_json) = &config.config_exposed_ports_json {
+            if let Ok(exposed_ports_map) =
+                serde_json::from_str::<serde_json::Value>(exposed_ports_json)
+            {
+                if let Some(exposed_ports_obj) = exposed_ports_map.as_object() {
+                    let mut additional_ports = Vec::new();
+
+                    for port_key in exposed_ports_obj.keys() {
+                        // Port keys in OCI format are like "80/tcp"
+                        if let Some(container_port) = port_key.split('/').next() {
+                            if let Ok(port_num) = container_port.parse::<u16>() {
+                                // Create a port mapping from host port to container port
+                                // We'll use the same port on both sides
+                                let port_pair =
+                                    format!("{}:{}", port_num, port_num).parse::<PortPair>();
+                                if let Ok(port_pair) = port_pair {
+                                    // Only add if not already defined in sandbox config
+                                    let existing_ports = sandbox_config.get_ports();
+                                    if !existing_ports
+                                        .iter()
+                                        .any(|p| p.get_guest() == port_pair.get_guest())
+                                    {
+                                        additional_ports.push(port_pair);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    tracing::debug!("Additional ports: {:?}", additional_ports);
+
+                    // Add new ports to existing ones
+                    let mut combined_ports = sandbox_config.get_ports().to_vec();
+                    combined_ports.extend(additional_ports);
+                    sandbox_config.ports = combined_ports;
+                }
+            }
+        }
+    }
+
+    Ok(())
 }

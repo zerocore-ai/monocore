@@ -714,7 +714,10 @@ mod tests {
         // Test sandbox with explicit start script
         let sandbox2 = sandboxes.get("test2").unwrap();
         let scripts2 = sandbox2.get_full_scripts();
-        assert_eq!(scripts2.get(START_SCRIPT_NAME).unwrap(), "echo 'custom start'");
+        assert_eq!(
+            scripts2.get(START_SCRIPT_NAME).unwrap(),
+            "echo 'custom start'"
+        );
     }
 
     #[test]

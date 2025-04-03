@@ -739,16 +739,16 @@ pub(crate) async fn get_image_config(
         architecture: row.get("architecture"),
         os: row.get("os"),
         os_variant: row.get("os_variant"),
-        config_env_json: row.get("config_env_json"),
-        config_cmd_json: row.get("config_cmd_json"),
+        config_env_json: null_to_none(row.get("config_env_json")),
+        config_cmd_json: null_to_none(row.get("config_cmd_json")),
         config_working_dir: row.get("config_working_dir"),
-        config_entrypoint_json: row.get("config_entrypoint_json"),
-        config_volumes_json: row.get("config_volumes_json"),
-        config_exposed_ports_json: row.get("config_exposed_ports_json"),
+        config_entrypoint_json: null_to_none(row.get("config_entrypoint_json")),
+        config_volumes_json: null_to_none(row.get("config_volumes_json")),
+        config_exposed_ports_json: null_to_none(row.get("config_exposed_ports_json")),
         config_user: row.get("config_user"),
         rootfs_type: row.get("rootfs_type"),
         rootfs_diff_ids_json: row.get("rootfs_diff_ids_json"),
-        history_json: row.get("history_json"),
+        history_json: null_to_none(row.get("history_json")),
         created_at: parse_sqlite_datetime(&row.get::<String, _>("created_at")),
         modified_at: parse_sqlite_datetime(&row.get::<String, _>("modified_at")),
     }))
@@ -858,4 +858,10 @@ fn parse_sqlite_datetime(s: &str) -> DateTime<Utc> {
     let naive_dt = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
         .unwrap_or_else(|e| panic!("Failed to parse datetime string '{}': {:?}", s, e));
     DateTime::from_naive_utc_and_offset(naive_dt, Utc)
+}
+
+/// Sometimes the json columns in the database can have literal "null" values.
+/// This function converts those to None.
+fn null_to_none(value: Option<String>) -> Option<String> {
+    value.filter(|v| v != "null")
 }
