@@ -526,8 +526,6 @@ pub async fn apply_image_defaults(
     // Get the image configuration
     if let Some(config) = db::get_image_config(&oci_db, &reference.to_string()).await? {
         tracing::info!("Applying defaults from image configuration");
-        println!(">>>> Image config: {:#?}", config);
-        println!(">>>> Config cmd json: {:#?}", config.config_cmd_json);
 
         // Apply working directory if not set in sandbox
         if sandbox_config.get_workdir().is_none() && config.config_working_dir.is_some() {
@@ -563,7 +561,6 @@ pub async fn apply_image_defaults(
             // Try to use entrypoint and cmd from image config
             let mut has_entrypoint_or_cmd = false;
             if let Some(entrypoint_json) = &config.config_entrypoint_json {
-                println!(">>>> Entrypoint json: {:#?}", entrypoint_json);
                 if let Ok(entrypoint) = serde_json::from_str::<Vec<String>>(entrypoint_json) {
                     if !entrypoint.is_empty() {
                         has_entrypoint_or_cmd = true;
@@ -611,13 +608,7 @@ pub async fn apply_image_defaults(
                     }
                 }
             } else if let Some(cmd_json) = &config.config_cmd_json {
-                println!(">>>> Inside Cmd json: {:#?}", cmd_json);
-                println!(
-                    ">>>> Cmd json array: {:#?}",
-                    serde_json::from_str::<Vec<String>>(cmd_json)
-                );
                 if let Ok(cmd) = serde_json::from_str::<Vec<String>>(cmd_json) {
-                    println!(">>>> Cmd: {:#?}", cmd);
                     if !cmd.is_empty() {
                         has_entrypoint_or_cmd = true;
                         script_content.push_str(&format!("#!{}\n", shell));

@@ -175,5 +175,9 @@ pub enum McrunSubcommand {
         /// Disable default namespace
         #[arg(long, default_value_t = false)]
         disable_default: bool,
+
+        /// Set server secret key to authenticate API requests
+        #[arg(long)]
+        key: Option<String>,
     },
 }

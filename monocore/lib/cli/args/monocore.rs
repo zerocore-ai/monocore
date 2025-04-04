@@ -618,10 +618,30 @@ pub enum ServerSubcommand {
         /// Disable default namespace
         #[arg(long, default_value_t = false)]
         disable_default: bool,
+
+        /// Make server require a secure API key
+        #[arg(long, default_value_t = false)]
+        secure: bool,
+
+        /// Set secret key for server. Automatically generated if not provided.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// Run server in the background``
+        #[arg(short, long)]
+        detach: bool,
     },
 
     /// Stop the sandbox server
     Stop,
+
+    /// Generate a new API key
+    #[command(name = "keygen")]
+    Keygen {
+        /// Token expiration duration. format: 1s, 2m, 3h, 4d, 5w, 6mo, 7y
+        #[arg(long)]
+        expire: Option<String>,
+    },
 }
 
 /// Actions for the self subcommand

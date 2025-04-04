@@ -201,11 +201,18 @@ async fn main() -> MonocoreResult<()> {
                 port,
                 path,
                 disable_default,
+                secure,
+                key,
+                detach,
             } => {
-                server::start(port, path, disable_default, true).await?;
+                handlers::server_start_subcommand(port, path, disable_default, secure, key, detach)
+                    .await?;
             }
             ServerSubcommand::Stop => {
                 server::stop().await?;
+            }
+            ServerSubcommand::Keygen { expire } => {
+                handlers::server_keygen_subcommand(expire).await?;
             }
         },
         Some(_) => (), // TODO: implement other subcommands

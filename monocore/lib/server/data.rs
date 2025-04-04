@@ -78,6 +78,9 @@ pub enum ErrorType {
     /// Sandbox operation errors
     SandboxError,
 
+    /// Authentication related errors
+    AuthenticationError,
+
     /// Internal server errors
     InternalError,
 }
