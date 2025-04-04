@@ -65,7 +65,7 @@ use super::{db, menv};
 ///
 ///     // Or specify a custom project directory and config file
 ///     orchestra::apply(
-///         Some(PathBuf::from("/path/to/project")),
+///         Some(&PathBuf::from("/path/to/project")),
 ///         Some("custom-config.yaml"),
 ///     ).await?;
 ///     Ok(())
@@ -158,7 +158,7 @@ pub async fn apply(project_dir: Option<&Path>, config_file: Option<&str>) -> Mon
 ///     // Or specify a custom project directory and config file
 ///     orchestra::up(
 ///         vec!["sandbox1".to_string()],
-///         Some(PathBuf::from("/path/to/project")),
+///         Some(&PathBuf::from("/path/to/project")),
 ///         Some("custom-config.yaml"),
 ///     ).await?;
 ///     Ok(())
@@ -252,7 +252,7 @@ pub async fn up(
 ///     // Or specify a custom project directory and config file
 ///     orchestra::down(
 ///         vec!["sandbox1".to_string()],
-///         Some(PathBuf::from("/path/to/project")),
+///         Some(&PathBuf::from("/path/to/project")),
 ///         Some("custom-config.yaml"),
 ///     ).await?;
 ///     Ok(())

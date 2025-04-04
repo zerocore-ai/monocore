@@ -1171,7 +1171,7 @@ mod tests {
     #[test]
     fn test_microvm_builder_minimal() -> anyhow::Result<()> {
         let rootfs = Rootfs::Native(PathBuf::from("/tmp"));
-        let ram_mib = 512;
+        let ram_mib = 1024;
 
         let builder = MicroVmBuilder::default()
             .rootfs(rootfs.clone())

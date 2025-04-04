@@ -1,75 +1,56 @@
-# name: 🚀 Release Packages & Binaries
+name: 🚀 Release Packages & Binaries
 
-# on:
-#   push:
-#     branches: [ main ]
-#   workflow_dispatch:
-#     inputs:
-#       run_publish_release:
-#         description: 'Publish release'
-#         type: boolean
-#         required: true
-#         default: false
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      run_publish_release:
+        description: 'Publish release'
+        type: boolean
+        required: true
+        default: false
 
-# permissions:
-#   contents: write
-#   pull-requests: write
+permissions:
+  contents: write
+  pull-requests: write
 
-# jobs:
-#   release-please:
-#     runs-on: ubuntu-latest
-#     outputs:
-#       releases_created: ${{ steps.release.outputs.releases_created }}
-#       prs_created: ${{ steps.release.outputs.prs_created }}
-#       tag_name: ${{ steps.release.outputs.tag_name }}
-#     steps:
-#       - name: Setup release-please
-#         uses: googleapis/release-please-action@v4
-#         id: release
-#         with:
-#           token: ${{ secrets.GITHUB_TOKEN }}
-#           config-file: release-please-config.json
-#           manifest-file: .release-please-manifest.json
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      prs_created: ${{ steps.release.outputs.prs_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Setup release-please
+        uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
 
-#       - name: Check release status
-#         run: |
-#           echo "Release created: ${{ steps.release.outputs.releases_created }}"
-#           echo "PRs created: ${{ steps.release.outputs.prs_created }}"
-#           echo "monocore created: ${{ steps.release.outputs.monocore--releases_created }}"
-#           echo "monofs created: ${{ steps.release.outputs.monofs--releases_created }}"
-#           echo "monoutils-store created: ${{ steps.release.outputs.monoutils-store--releases_created }}"
+      - name: Check release status
+        run: |
+          echo "Release created: ${{ steps.release.outputs.releases_created }}"
+          echo "PRs created: ${{ steps.release.outputs.prs_created }}"
+          echo "monocore created: ${{ steps.release.outputs.monocore--releases_created }}"
+          echo "monofs created: ${{ steps.release.outputs.monofs--releases_created }}"
+          echo "monoutils-store created: ${{ steps.release.outputs.monoutils-store--releases_created }}"
 
-#   publish-release:
-#     needs:
-#       - release-please
-#     if: ${{ needs.release-please.outputs.releases_created == 'true' || github.event.inputs.run_publish_release }}
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
+  publish-release:
+    needs:
+      - release-please
+    if: ${{ needs.release-please.outputs.releases_created == 'true' || github.event.inputs.run_publish_release }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-#       - name: Publish monoutils-store
-#         working-directory: monoutils-store
-#         env:
-#           CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
-#         run: |
-#           cargo publish -p monoutils-store
-
-#       - name: Wait for crates.io index update
-#         run: |
-#           echo "Waiting for crates.io to update index..."
-#           sleep 30
-
-#       - name: Publish monofs
-#         working-directory: monofs
-#         env:
-#           CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
-#         run: |
-#           cargo publish -p monofs
-
-#       - name: Publish monocore
-#         working-directory: monocore
-#         env:
-#           CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
-#         run: |
-#           cargo publish -p monocore
+      - name: Publish monocore
+        working-directory: monocore
+        env:
+          CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
+        run: |
+          cargo publish -p monocore

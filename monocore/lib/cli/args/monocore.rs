@@ -367,6 +367,10 @@ pub enum MonocoreSubcommand {
         #[arg(long = "env", name = "ENV")]
         envs: Vec<String>,
 
+        /// Network scope, options: local, public, any, none
+        #[arg(long)]
+        scope: Option<String>,
+
         /// Working directory
         #[arg(long)]
         workdir: Option<Utf8UnixPathBuf>,

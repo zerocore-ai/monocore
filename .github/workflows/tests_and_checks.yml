@@ -1,225 +1,225 @@
-# name: 🧪 Tests and Checks
+name: 🧪 Tests and Checks
 
-# on:
-#   push:
-#     branches: [ main ]
-#   pull_request:
-#     branches: [ '**' ]
-#   workflow_dispatch:
-#     inputs:
-#       force_build_libkrun:
-#         description: 'Force build libkrun'
-#         required: false
-#         type: boolean
-#         default: false
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ '**' ]
+  workflow_dispatch:
+    inputs:
+      force_build_libkrun:
+        description: 'Force build libkrun'
+        required: false
+        type: boolean
+        default: false
 
-# concurrency:
-#   group: ${{ github.workflow }}-${{ github.ref }}
-#   cancel-in-progress: true
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
-# jobs:
-#   check-libkrun-cache-changes:
-#     runs-on: ubuntu-latest
-#     outputs:
-#       should_build: ${{ steps.check_build.outputs.should_build }}
-#       libkrun_hash: ${{ steps.hash_libkrun.outputs.hash }}
-#     steps:
-#       - uses: actions/checkout@v4
-#         with:
-#           fetch-depth: 2
+jobs:
+  check-libkrun-cache-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check_build.outputs.should_build }}
+      libkrun_hash: ${{ steps.hash_libkrun.outputs.hash }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
-#       - name: Hash build_libkrun.sh
-#         id: hash_libkrun
-#         run: |
-#           HASH=$(sha256sum build_libkrun.sh | awk '{ print $1 }')
-#           echo "hash=$HASH" >> $GITHUB_OUTPUT
-#           echo "Calculated hash: $HASH"
+      - name: Hash build_libkrun.sh
+        id: hash_libkrun
+        run: |
+          HASH=$(sha256sum build_libkrun.sh | awk '{ print $1 }')
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Calculated hash: $HASH"
 
-#       - name: Check if cache exists
-#         id: check_cache
-#         uses: actions/cache/restore@v4
-#         with:
-#           path: |
-#             build/libkrunfw/libkrunfw*.so*
-#             build/libkrun/target/release/libkrun*.so*
-#           key: ${{ runner.os }}-libkrun-${{ steps.hash_libkrun.outputs.hash }}
+      - name: Check if cache exists
+        id: check_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/libkrunfw/libkrunfw*.so*
+            build/libkrun/target/release/libkrun*.so*
+          key: ${{ runner.os }}-libkrun-${{ steps.hash_libkrun.outputs.hash }}
 
-#       - name: Check if build is needed
-#         id: check_build
-#         run: |
-#           if [ "${{ steps.check_cache.outputs.cache-hit }}" == 'true' ]; then
-#             echo "Cache hit, no need to build"
-#             echo "should_build=false" >> $GITHUB_OUTPUT
-#           elif [ $(git rev-list --count HEAD) -lt 2 ]; then
-#             echo "Only one commit in the repository, building libkrun"
-#             echo "should_build=true" >> $GITHUB_OUTPUT
-#           elif git diff --name-only HEAD^ HEAD | grep -qE 'build_libkrun.sh|.github/workflows/tests_and_checks.yml'; then
-#             echo "build_libkrun.sh or workflow file has changed, building libkrun"
-#             echo "should_build=true" >> $GITHUB_OUTPUT
-#           else
-#             echo "No relevant changes, no need to build"
-#             echo "should_build=false" >> $GITHUB_OUTPUT
-#           fi
+      - name: Check if build is needed
+        id: check_build
+        run: |
+          if [ "${{ steps.check_cache.outputs.cache-hit }}" == 'true' ]; then
+            echo "Cache hit, no need to build"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          elif [ $(git rev-list --count HEAD) -lt 2 ]; then
+            echo "Only one commit in the repository, building libkrun"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          elif git diff --name-only HEAD^ HEAD | grep -qE 'build_libkrun.sh|.github/workflows/tests_and_checks.yml'; then
+            echo "build_libkrun.sh or workflow file has changed, building libkrun"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "No relevant changes, no need to build"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          fi
 
-#   build-libkrun:
-#     needs: check-libkrun-cache-changes
-#     if: needs.check-libkrun-cache-changes.outputs.should_build == 'true' || github.event.inputs.force_build_libkrun == 'true'
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout repository
-#         uses: actions/checkout@v4
+  build-libkrun:
+    needs: check-libkrun-cache-changes
+    if: needs.check-libkrun-cache-changes.outputs.should_build == 'true' || github.event.inputs.force_build_libkrun == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-#       - name: Install Dependencies
-#         run: |
-#           sudo apt-get update -qqy
-#           sudo apt-get install -y jq libelf-dev build-essential flex bison libssl-dev libncurses5-dev python3-pip
-#           pip3 install --user pyelftools
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update -qqy
+          sudo apt-get install -y jq libelf-dev build-essential flex bison libssl-dev libncurses5-dev python3-pip
+          pip3 install --user pyelftools
 
-#       - name: Install Rust
-#         uses: actions-rs/toolchain@v1
-#         with:
-#           profile: minimal
-#           toolchain: stable
-#           override: true
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
 
-#       - name: Build libkrun
-#         run: |
-#           ./build_libkrun.sh --no-cleanup --force-build
+      - name: Build libkrun
+        run: |
+          ./scripts/build_libkrun.sh --no-cleanup --force-build
 
-#       - name: Cache libkrun
-#         uses: actions/cache/save@v4
-#         with:
-#           path: |
-#             build/libkrunfw/libkrunfw*.so*
-#             build/libkrun/target/release/libkrun*.so*
-#           key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-cache-changes.outputs.libkrun_hash }}
+      - name: Cache libkrun
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/libkrunfw/libkrunfw*.so*
+            build/libkrun/target/release/libkrun*.so*
+          key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-cache-changes.outputs.libkrun_hash }}
 
-#   run-checks:
-#     needs: [check-libkrun-cache-changes, build-libkrun]
-#     if: always()
-#     runs-on: ubuntu-latest
-#     strategy:
-#       fail-fast: false
-#       matrix:
-#         rust-toolchain:
-#           - stable
-#           - nightly
-#     steps:
-#       - name: Checkout Repository
-#         uses: actions/checkout@v4
+  run-checks:
+    needs: [check-libkrun-cache-changes, build-libkrun]
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust-toolchain:
+          - stable
+          - nightly
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-#       - name: Cache Project
-#         uses: Swatinem/rust-cache@v2
+      - name: Cache Project
+        uses: Swatinem/rust-cache@v2
 
-#       - name: Restore libkrun cache
-#         uses: actions/cache/restore@v4
-#         with:
-#           path: |
-#             build/libkrunfw/libkrunfw*.so*
-#             build/libkrun/target/release/libkrun*.so*
-#           key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-cache-changes.outputs.libkrun_hash }}
+      - name: Restore libkrun cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/libkrunfw/libkrunfw*.so*
+            build/libkrun/target/release/libkrun*.so*
+          key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-cache-changes.outputs.libkrun_hash }}
 
-#       - name: Install Rust Toolchain
-#         uses: actions-rs/toolchain@v1
-#         with:
-#           override: true
-#           components: rustfmt, clippy
-#           toolchain: ${{ matrix.rust-toolchain }}
+      - name: Install Rust Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          override: true
+          components: rustfmt, clippy
+          toolchain: ${{ matrix.rust-toolchain }}
 
-#       - name: Check Format
-#         uses: actions-rs/cargo@v1
-#         with:
-#           args: --all -- --check
-#           command: fmt
-#           toolchain: ${{ matrix.rust-toolchain }}
+      - name: Check Format
+        uses: actions-rs/cargo@v1
+        with:
+          args: -p monocore -- --check
+          command: fmt
+          toolchain: ${{ matrix.rust-toolchain }}
 
-#       - name: Run Linter
-#         uses: actions-rs/cargo@v1
-#         with:
-#           args: --all -- -D warnings
-#           command: clippy
-#           toolchain: ${{ matrix.rust-toolchain }}
+      - name: Run Linter
+        uses: actions-rs/cargo@v1
+        with:
+          args: -p monocore -- -D warnings
+          command: clippy
+          toolchain: ${{ matrix.rust-toolchain }}
 
-#       - name: Check Advisories
-#         if: ${{ matrix.rust-toolchain == 'stable' }}
-#         uses: EmbarkStudios/cargo-deny-action@v2
-#         with:
-#           command: check advisories
-#         continue-on-error: true
+      - name: Check Advisories
+        if: ${{ matrix.rust-toolchain == 'stable' }}
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+        continue-on-error: true
 
-#       - name: Check Bans, Licenses, and Sources
-#         if: ${{ matrix.rust-toolchain == 'stable' }}
-#         uses: EmbarkStudios/cargo-deny-action@v2
-#         with:
-#           command: check bans licenses sources
+      - name: Check Bans, Licenses, and Sources
+        if: ${{ matrix.rust-toolchain == 'stable' }}
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check bans licenses sources
 
-#       # A hack to make `ld` find the libkrunfw because right now it seems to only look for libkrunfw.so.x
-#       # and not libkrunfw.so or libkrunfw.so.x.x.x even though their SONAME is libkrunfw.so.x
-#       - name: Create symlinks
-#         run: |
-#           cd build/libkrunfw
-#           objdump -p libkrunfw.so.4.4.2 | grep SONAME # sanity check
-#           ln -sf libkrunfw.so.4.4.2 libkrunfw.so.4
-#           ln -sf libkrunfw.so.4 libkrunfw.so
+      # A hack to make `ld` find the libkrunfw because right now it seems to only look for libkrunfw.so.x
+      # and not libkrunfw.so or libkrunfw.so.x.x.x even though their SONAME is libkrunfw.so.x
+      - name: Create symlinks
+        run: |
+          cd build/libkrunfw
+          objdump -p libkrunfw.so.4.4.2 | grep SONAME # sanity check
+          ln -sf libkrunfw.so.4.4.2 libkrunfw.so.4
+          ln -sf libkrunfw.so.4 libkrunfw.so
 
-#       - name: Test Release
-#         if: ${{ matrix.rust-toolchain == 'stable'  && github.event_name == 'push' }}
-#         run: |
-#           LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LIBRARY_PATH }} \
-#           LD_LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LD_LIBRARY_PATH }} \
-#           cargo build --release
+      - name: Test Release
+        if: ${{ matrix.rust-toolchain == 'stable'  && github.event_name == 'push' }}
+        run: |
+          LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LIBRARY_PATH }} \
+          LD_LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release:${{ env.LD_LIBRARY_PATH }} \
+          cargo build -p monocore --release
 
-#   run-tests:
-#     needs: [check-libkrun-cache-changes, build-libkrun]
-#     if: always()
-#     runs-on: ubuntu-latest
-#     strategy:
-#       fail-fast: false
-#       matrix:
-#         rust-toolchain:
-#           - stable
-#           - nightly
-#     steps:
-#       - name: Checkout Repository
-#         uses: actions/checkout@v4
+  run-tests:
+    needs: [check-libkrun-cache-changes, build-libkrun]
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust-toolchain:
+          - stable
+          - nightly
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-#       - name: Install Environment Packages
-#         run: |
-#           sudo apt-get update -qqy
-#           sudo apt-get install jq
+      - name: Install Environment Packages
+        run: |
+          sudo apt-get update -qqy
+          sudo apt-get install jq
 
-#       - name: Cache Project
-#         uses: Swatinem/rust-cache@v2
+      - name: Cache Project
+        uses: Swatinem/rust-cache@v2
 
-#       - name: Restore libkrun cache
-#         uses: actions/cache/restore@v4
-#         with:
-#           path: |
-#             build/libkrunfw/libkrunfw*.so*
-#             build/libkrun/target/release/libkrun*.so*
-#           key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-cache-changes.outputs.libkrun_hash }}
+      - name: Restore libkrun cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/libkrunfw/libkrunfw*.so*
+            build/libkrun/target/release/libkrun*.so*
+          key: ${{ runner.os }}-libkrun-${{ needs.check-libkrun-cache-changes.outputs.libkrun_hash }}
 
-#       - name: Print Cache
-#         run: tree -L 2 build/
+      - name: Print Cache
+        run: tree -L 2 build/
 
-#       - name: Install Rust Toolchain
-#         uses: actions-rs/toolchain@v1
-#         with:
-#           override: true
-#           toolchain: ${{ matrix.rust-toolchain }}
+      - name: Install Rust Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          override: true
+          toolchain: ${{ matrix.rust-toolchain }}
 
-#       # A hack to make `ld` find the libkrunfw because right now it seems to only look for libkrunfw.so.x
-#       # and not libkrunfw.so or libkrunfw.so.x.x.x even though their SONAME is libkrunfw.so.x
-#       - name: Create symlinks
-#         run: |
-#           cd build/libkrunfw
-#           objdump -p libkrunfw.so.4.4.2 | grep SONAME # sanity check
-#           ln -sf libkrunfw.so.4.4.2 libkrunfw.so.4
-#           ln -sf libkrunfw.so.4 libkrunfw.so
+      # A hack to make `ld` find the libkrunfw because right now it seems to only look for libkrunfw.so.x
+      # and not libkrunfw.so or libkrunfw.so.x.x.x even though their SONAME is libkrunfw.so.x
+      - name: Create symlinks
+        run: |
+          cd build/libkrunfw
+          objdump -p libkrunfw.so.4.4.2 | grep SONAME # sanity check
+          ln -sf libkrunfw.so.4.4.2 libkrunfw.so.4
+          ln -sf libkrunfw.so.4 libkrunfw.so
 
-#       - name: Run Tests
-#         run: |
-#           sudo -E bash -c 'export LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release && \
-#           export LD_LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release && \
-#           /home/runner/.cargo/bin/cargo test && \
-#           /home/runner/.cargo/bin/cargo test -- --ignored'
+      - name: Run Tests
+        run: |
+          sudo -E bash -c 'export LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release && \
+          export LD_LIBRARY_PATH=${{ github.workspace }}/build/libkrunfw:${{ github.workspace }}/build/libkrun/target/release && \
+          /home/runner/.cargo/bin/cargo test -p monocore && \
+          /home/runner/.cargo/bin/cargo test -p monocore -- --ignored'

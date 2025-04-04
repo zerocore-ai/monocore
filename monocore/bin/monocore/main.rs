@@ -153,11 +153,12 @@ async fn main() -> MonocoreResult<()> {
             volumes,
             ports,
             envs,
+            scope,
             workdir,
             exec,
             args,
         }) => {
-            handlers::tmp_subcommand(name, cpus, ram, volumes, ports, envs, workdir, exec, args)
+            handlers::tmp_subcommand(name, cpus, ram, volumes, ports, envs, scope, workdir, exec, args)
                 .await?;
         }
         Some(MonocoreSubcommand::Apply { path, config }) => {

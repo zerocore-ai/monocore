@@ -27,7 +27,14 @@ pub const DEFAULT_OCI_REFERENCE_REPO_NAMESPACE: &str = "library";
 
 /// The default configuration file content
 pub(crate) const DEFAULT_CONFIG: &str = r#"# Sandbox configurations
-sandboxes: []
+sandboxes:
+  app:
+    image: "alpine:latest"
+    shell: "/bin/sh"
+    scripts:
+      start: "echo 'Hello, world!'"
+
+# See https://monocore.dev/docs/configuration/ for more information
 "#;
 
 /// The default shell to use for the sandbox.

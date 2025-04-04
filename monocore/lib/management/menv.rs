@@ -28,14 +28,14 @@ use super::db;
 ///
 /// ## Example
 /// ```no_run
-/// use monocore::management;
+/// use monocore::management::menv;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// // Initialize in current directory
-/// management::init_menv(None).await?;
+/// menv::initialize(None).await?;
 ///
 /// // Initialize in specific directory
-/// management::init_menv(Some("my_project".into())).await?;
+/// menv::initialize(Some("my_project".into())).await?;
 /// # Ok(())
 /// # }
 /// ```
