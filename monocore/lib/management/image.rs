@@ -54,23 +54,23 @@ const DOCKER_REGISTRY: &str = "docker.io";
 /// # Examples
 ///
 /// ```no_run
-/// use monocore::management::pull_image;
+/// use monocore::management::image;
 /// use monocore::oci::Reference;
 /// use std::path::PathBuf;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
 /// // Pull a single image from Docker registry
-/// pull("docker.io/library/ubuntu:latest".parse().unwrap(), true, false, None).await?;
+/// image::pull("docker.io/library/ubuntu:latest".parse().unwrap(), true, false, None).await?;
 ///
 /// // Pull an image from Sandboxes.io registry
-/// pull("myimage".parse().unwrap(), false, false, None).await?;
+/// image::pull("myimage".parse().unwrap(), false, false, None).await?;
 ///
 /// // Pull an image group from Sandboxes.io registry
-/// pull("sandboxes.io/mygroup:latest".parse().unwrap(), false, true, None).await?;
+/// image::pull("sandboxes.io/mygroup:latest".parse().unwrap(), false, true, None).await?;
 ///
 /// // Pull an image from Docker registry and store the layers in a custom directory
-/// pull("docker.io/library/ubuntu:latest".parse().unwrap(), true, false, Some(PathBuf::from("/custom/path"))).await?;
+/// image::pull("docker.io/library/ubuntu:latest".parse().unwrap(), true, false, Some(PathBuf::from("/custom/path"))).await?;
 /// # Ok(())
 /// # }
 /// ```

@@ -74,9 +74,9 @@ const TEMPORARY_SANDBOX_NAME: &str = "tmp";
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     // Run a sandbox named "dev" with the "start" script
-///     sandbox::run_sandbox(
+///     sandbox::run(
 ///         "dev",
-///         "start",
+///         Some("start"),
 ///         None,
 ///         None,
 ///         vec![],
@@ -242,14 +242,6 @@ pub async fn run(
         command.env("RUST_LOG", rust_log);
     }
 
-    // Pass the extra arguments last.
-    if !args.is_empty() {
-        command.arg("--");
-        for arg in args {
-            command.arg(arg);
-        }
-    }
-
     // In detached mode, ignore the i/o of the supervisor process.
     if detach {
         // Safety:
@@ -284,6 +276,14 @@ pub async fn run(
         command.stdin(Stdio::null());
     } else {
         command.arg("--forward-output");
+    }
+
+    // Pass the extra arguments last.
+    if !args.is_empty() {
+        command.arg("--");
+        for arg in args {
+            command.arg(arg);
+        }
     }
 
     let mut child = command.spawn()?;
@@ -329,6 +329,7 @@ pub async fn run(
 /// * `volumes` - List of volume mappings in the format "host_path:guest_path"
 /// * `ports` - List of port mappings in the format "host_port:guest_port"
 /// * `envs` - List of environment variables in the format "KEY=VALUE"
+/// * `scope` - Optional network scope for the sandbox
 /// * `workdir` - Optional working directory path inside the sandbox
 /// * `exec` - Optional command to execute within the sandbox. Overrides `script` if provided.
 /// * `args` - Additional arguments to pass to the specified script or command
@@ -354,9 +355,9 @@ pub async fn run(
 ///     let image = "ubuntu:latest".parse::<Reference>()?;
 ///
 ///     // Run a temporary Ubuntu sandbox with custom resources
-///     sandbox::run_temp_sandbox(
+///     sandbox::run_temp(
 ///         &image,
-///         "start",
+///         Some("start"),
 ///         Some(2),           // 2 CPUs
 ///         Some(1024),        // 1GB RAM
 ///         vec![              // Mount host's /tmp to sandbox's /data
@@ -368,6 +369,7 @@ pub async fn run(
 ///         vec![              // Set environment variables
 ///             "DEBUG=1".to_string()
 ///         ],
+///         Some("any".to_string()), // Set network scope
 ///         Some("/app".into()), // Set working directory
 ///         None,              // No exec command
 ///         vec![],            // No additional args
@@ -384,6 +386,7 @@ pub async fn run_temp(
     volumes: Vec<String>,
     ports: Vec<String>,
     envs: Vec<String>,
+    scope: Option<String>,
     workdir: Option<Utf8UnixPathBuf>,
     exec: Option<&str>,
     args: Vec<String>,
@@ -427,6 +430,10 @@ pub async fn run_temp(
 
         if !envs.is_empty() {
             b = b.envs(envs);
+        }
+
+        if let Some(scope) = scope {
+            b = b.scope(scope.parse()?);
         }
 
         b.build()
