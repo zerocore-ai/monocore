@@ -3,7 +3,7 @@ use monocore::{
     cli::{AnsiStyles, MonocoreArgs},
     management::{
         config::{self, Component, ComponentType},
-        menv, orchestra, sandbox,
+        menv, orchestra, sandbox, server,
     },
     oci::Reference,
     MonocoreError, MonocoreResult,
@@ -387,6 +387,42 @@ pub async fn log_subcommand(
     Ok(())
 }
 
+pub async fn server_start_subcommand(
+    port: Option<u16>,
+    path: Option<PathBuf>,
+    disable_default: bool,
+    secure: bool,
+    key: Option<String>,
+    detach: bool,
+) -> MonocoreResult<()> {
+    if !secure && key.is_some() {
+        MonocoreArgs::command()
+            .override_usage(usage("server start", "[OPTIONS]", None))
+            .error(
+                ErrorKind::InvalidValue,
+                format!(
+                    "cannot specify `{}` flag without `{}` flag",
+                    "--key".literal(),
+                    "--secure".literal(),
+                ),
+            )
+            .exit();
+    }
+
+    server::start(port, path, disable_default, secure, key, detach).await
+}
+
+pub async fn server_keygen_subcommand(expire: Option<String>) -> MonocoreResult<()> {
+    // Convert the string duration to chrono::Duration
+    let duration = if let Some(expire_str) = expire {
+        Some(parse_duration_string(&expire_str)?)
+    } else {
+        None
+    };
+
+    server::keygen(duration).await
+}
+
 //--------------------------------------------------------------------------------------------------
 // Functions: Common Errors
 //--------------------------------------------------------------------------------------------------
@@ -475,4 +511,64 @@ fn parse_name_and_script(name_and_script: &str) -> (&str, Option<&str>) {
     };
 
     (name, script)
+}
+
+/// Parse a duration string like "1s", "1m", "3h", "2d" into a chrono::Duration
+fn parse_duration_string(duration_str: &str) -> MonocoreResult<chrono::Duration> {
+    let duration_str = duration_str.trim();
+
+    if duration_str.is_empty() {
+        return Err(MonocoreError::InvalidArgument(
+            "Empty duration string".to_string(),
+        ));
+    }
+
+    // Extract the numeric value and unit
+    let (value_str, unit) = duration_str.split_at(
+        duration_str
+            .chars()
+            .position(|c| !c.is_ascii_digit())
+            .unwrap_or(duration_str.len()),
+    );
+
+    if value_str.is_empty() {
+        return Err(MonocoreError::InvalidArgument(format!(
+            "Invalid duration format: {}. Expected format like 1s, 2m, 3h, 4d, 5w, 6mo, 7y",
+            duration_str
+        )));
+    }
+
+    let value: i64 = value_str.parse().map_err(|_| {
+        MonocoreError::InvalidArgument(format!("Invalid numeric value in duration: {}", value_str))
+    })?;
+
+    // Safety check for very large numbers
+    if value < 0 || value > 8760 {
+        // 8760 is the number of hours in a year
+        return Err(MonocoreError::InvalidArgument(format!(
+            "Duration value too large or negative: {}. Maximum allowed is 8760 hours (1 year)",
+            value
+        )));
+    }
+
+    match unit {
+        "s" => Ok(chrono::Duration::seconds(value)),
+        "m" => Ok(chrono::Duration::minutes(value)),
+        "h" => Ok(chrono::Duration::hours(value)),
+        "d" => Ok(chrono::Duration::days(value)),
+        "w" => Ok(chrono::Duration::weeks(value)),
+        "mo" => {
+            // Approximate a month as 30 days
+            Ok(chrono::Duration::days(value * 30))
+        }
+        "y" => {
+            // Approximate a year as 365 days
+            Ok(chrono::Duration::days(value * 365))
+        }
+        "" => Ok(chrono::Duration::hours(value)), // Default to hours if no unit specified
+        _ => Err(MonocoreError::InvalidArgument(format!(
+            "Invalid duration unit: {}. Expected one of: s, m, h, d, w, mo, y",
+            unit
+        ))),
+    }
 }

@@ -29,7 +29,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 bytes.workspace = true
-chrono.workspace = true
+chrono = { workspace = true, features = ["serde"] }
 clap.workspace = true
 criterion.workspace = true
 dirs.workspace = true
@@ -83,6 +83,8 @@ async-recursion.workspace = true
 file-lock = "2.1.11"
 which = "7.0"
 nondestructive = { version = "0.0.26", features = ["serde"] }
+jsonwebtoken = "9.3.1"
+rand = "0.8.5"
 
 [dev-dependencies]
 test-log.workspace = true

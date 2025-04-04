@@ -82,6 +82,11 @@ pub const NAMESPACES_SUBDIR: &str = "namespaces";
 /// Example: <MONOCORE_HOME_DIR>/<SERVER_PID_FILE>
 pub const SERVER_PID_FILE: &str = "server.pid";
 
+/// The server secret key file
+///
+/// Example: <MONOCORE_HOME_DIR>/<SERVER_KEY_FILE>
+pub const SERVER_KEY_FILE: &str = "server.key";
+
 //--------------------------------------------------------------------------------------------------
 // Functions
 //--------------------------------------------------------------------------------------------------

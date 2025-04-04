@@ -59,7 +59,11 @@
 //!
 //! To start the sandbox server:
 //! ```bash
-//! mcrun server --port 8080 --path /path/to/namespaces --disable-default
+//! mcrun server \
+//!     --port 8080 \
+//!     --path /path/to/namespaces \
+//!     --disable-default \
+//!     --key my_secret_key
 //! ```
 
 use std::{
@@ -353,7 +357,10 @@ async fn main() -> Result<()> {
             port,
             path,
             disable_default,
+            key,
         } => {
+            tracing_subscriber::fmt::init();
+
             let server = SandboxServer::new(
                 path,
                 !disable_default,
@@ -361,6 +368,7 @@ async fn main() -> Result<()> {
                     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                     port.unwrap_or(DEFAULT_SERVER_PORT),
                 ),
+                key,
             )?;
             server.serve().await?;
         }
