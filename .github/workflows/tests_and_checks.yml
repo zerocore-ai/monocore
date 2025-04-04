@@ -84,7 +84,7 @@ jobs:
 
       - name: Build libkrun
         run: |
-          ./build_libkrun.sh --no-cleanup --force-build
+          ./scripts/build_libkrun.sh --no-cleanup --force-build
 
       - name: Cache libkrun
         uses: actions/cache/save@v4
